@@ -1,83 +1,44 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, CircleHelp, FileSearch, History, Lock, Search, TriangleAlert } from 'lucide-react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
-import { NazarMark } from '@/components/nazar/logo'
-import { Rings } from '@/components/nazar/rings'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { BatchArt, DotGrid, ProofArt, StatesArt, WatchArt } from '@/components/nazar/onboarding-art'
 import { cn } from '@/lib/utils'
 
 export const ONBOARDED_KEY = 'nazar:onboarded'
 
-const STATES = [
-  { icon: TriangleAlert, label: 'Flagged', note: 'Failed a government test', tone: 'text-flagged bg-flagged-soft border-flagged-border' },
-  { icon: History, label: 'Retracted', note: 'Alert was withdrawn', tone: 'text-caution bg-caution-soft border-caution-border' },
-  { icon: Search, label: 'No alert found', note: 'Not a safety certificate', tone: 'text-quiet bg-quiet-soft border-quiet-border' },
-  { icon: CircleHelp, label: "Can't tell", note: 'Batch number unclear', tone: 'text-caution bg-caution-soft border-caution-border' },
-]
-
-function PackIllustration() {
-  return (
-    <div className="mx-auto w-full max-w-72 rounded-xl border bg-background p-4 font-mono text-xs leading-6 text-muted-foreground" aria-hidden="true">
-      <p className="font-sans text-sm font-semibold text-foreground">Coldrif Syrup</p>
-      <p className="mt-1">
-        B.No. <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary ring-1 ring-primary/30">SR-13</span>
-      </p>
-      <p>Mfg. 05/2025 &nbsp; Exp. 04/2027</p>
-      <p className="truncate">Mfd. by: Sresan Pharmaceuticals</p>
-    </div>
-  )
-}
-
 const STEPS = [
   {
-    title: 'Welcome to Nazar',
-    body: 'Har batch par nazar: an eye on every batch. Nazar checks a medicine batch against alerts published by CDSCO and state drug regulators.',
-    art: (
-      <Rings className="mx-auto size-36">
-        <NazarMark className="h-9 w-16" />
-      </Rings>
-    ),
+    kicker: 'Welcome',
+    title: 'An eye on every batch',
+    body: 'Har batch par nazar. Nazar checks a medicine batch against the alerts CDSCO and state drug regulators publish, in seconds.',
+    points: ['Free, no account', 'Official sources only', 'Works for chemists and families'],
+    Art: WatchArt,
   },
   {
+    kicker: 'Step 1',
     title: 'Find the batch number',
-    body: 'Look for "B.No.", "Batch" or "Lot" on the strip, bottle or carton. Type it in, or scan the QR code on the pack.',
-    art: <PackIllustration />,
+    body: 'Look for "B.No.", "Batch" or "Lot" on the strip, bottle or carton. It usually sits next to the Mfg. and Exp. dates.',
+    points: ['Strips: on the foil edge', 'Bottles: on the label or cap', 'Type it in, or scan the QR'],
+    Art: BatchArt,
   },
   {
+    kicker: 'Step 2',
     title: 'Four honest answers',
-    body: 'Nazar never says a medicine is "safe". It only tells you what regulators have published.',
-    art: (
-      <ul className="grid gap-2 text-left">
-        {STATES.map(({ icon: Icon, label, note, tone }) => (
-          <li key={label} className={cn('flex items-center gap-3 rounded-lg border px-3 py-2.5', tone)}>
-            <Icon className="size-4 shrink-0" />
-            <span className="text-sm font-semibold">{label}</span>
-            <span className="ml-auto text-xs text-muted-foreground">{note}</span>
-          </li>
-        ))}
-      </ul>
-    ),
+    body: 'Nazar never says a medicine is "safe". It tells you exactly what regulators have published, and nothing more.',
+    points: ['Colour, icon and words always agree', '"No alert found" is never green'],
+    Art: StatesArt,
   },
   {
-    title: 'Proof, and privacy',
-    body: 'Every alert links to the regulator’s notice and its public record on Arkiv, so you can verify it yourself. Your checks stay on this device.',
-    art: (
-      <div className="grid grid-cols-2 gap-2 text-left">
-        <div className="rounded-lg border p-3">
-          <FileSearch className="size-5 text-primary" />
-          <p className="mt-2 text-sm font-semibold">How do we know?</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Source notice, record and wallet, one tap away.</p>
-        </div>
-        <div className="rounded-lg border p-3">
-          <Lock className="size-5 text-primary" />
-          <p className="mt-2 text-sm font-semibold">On your phone</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">No account. Nothing you check is uploaded.</p>
-        </div>
-      </div>
-    ),
+    kicker: 'Step 3',
+    title: 'Proof you can check',
+    body: 'Every alert links back to the regulator’s notice and its public record on Arkiv. Your own checks never leave this device.',
+    points: ['Tap "How do we know?" on any result', 'No tracking of what you check'],
+    Art: ProofArt,
   },
 ]
 
@@ -90,72 +51,118 @@ export function Onboarding({
   onOpenChange: (open: boolean) => void
   onTry: (batch: string) => void
 }) {
-  const [step, setStep] = useState(0)
+  const [[step, dir], setStep] = useState<[number, number]>([0, 1])
   const last = step === STEPS.length - 1
-  const current = STEPS[step]
+  const { kicker, title, body, points, Art } = STEPS[step]
 
+  const go = (next: number) => setStep([next, next > step ? 1 : -1])
   const finish = () => {
     try {
       localStorage.setItem(ONBOARDED_KEY, '1')
     } catch {}
     onOpenChange(false)
-    setTimeout(() => setStep(0), 300)
+    setTimeout(() => setStep([0, 1]), 300)
   }
 
   return (
-    <Drawer open={open} onOpenChange={(next) => (next ? onOpenChange(true) : finish())} showSwipeHandle>
-      <DrawerContent className="mx-auto w-full sm:max-w-md">
-        <div className="overflow-y-auto px-5 pb-2 pt-2">
-          <div className="flex items-center justify-between">
-            <div className="flex gap-1.5" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-              {STEPS.map((_, i) => (
-                <span key={i} className={cn('h-1.5 rounded-full transition-all', i === step ? 'w-6 bg-primary' : 'w-1.5 bg-border')} />
-              ))}
-            </div>
-            {!last && (
-              <Button variant="ghost" size="sm" onClick={finish}>
+    <MotionConfig reducedMotion="user">
+      <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : finish())}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[calc(100%-2rem)] gap-0 overflow-y-auto rounded-3xl p-0 sm:max-w-[min(56rem,calc(100%-3rem))] md:grid-cols-[1.1fr_1fr] md:overflow-hidden"
+        >
+          {/* Illustration panel */}
+          <div className="relative grid min-h-64 place-items-center overflow-hidden border-b bg-accent/50 px-6 py-8 md:min-h-[30rem] md:border-r md:border-b-0">
+            <DotGrid />
+            <AnimatePresence mode="wait" custom={dir}>
+              <motion.div
+                key={step}
+                custom={dir}
+                className="relative grid w-full place-items-center"
+                initial={{ opacity: 0, x: dir * 40 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: dir * -40 }}
+                transition={{ duration: 0.28, ease: 'easeOut' }}
+              >
+                <Art />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {/* Copy and controls */}
+          <div className="flex min-w-0 flex-col p-6 sm:p-8">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${STEPS.length}`}>
+                {STEPS.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-label={`Go to step ${i + 1}`}
+                    onClick={() => go(i)}
+                    className={cn('h-1.5 rounded-full transition-all duration-300', i === step ? 'w-7 bg-primary' : i < step ? 'w-3 bg-primary/40' : 'w-3 bg-border')}
+                  />
+                ))}
+              </div>
+              <Button variant="ghost" size="sm" onClick={finish} className={cn(last && 'invisible')}>
                 Skip
               </Button>
-            )}
-          </div>
+            </div>
 
-          <div key={step} className="animate-in fade-in-0 slide-in-from-right-2 duration-300 motion-reduce:slide-in-from-right-0">
-            <div className="mt-6 min-h-44">{current.art}</div>
-            <DrawerHeader className="px-0 pt-6 text-left group-data-[swipe-axis=y]/drawer-popup:text-left">
-              <DrawerTitle className="text-xl font-semibold tracking-tight">{current.title}</DrawerTitle>
-              <DrawerDescription className="text-left text-sm leading-6 text-pretty">{current.body}</DrawerDescription>
-            </DrawerHeader>
-          </div>
-        </div>
-
-        <DrawerFooter className="flex-row gap-2 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
-          {step > 0 && (
-            <Button variant="outline" className="h-12 px-4" onClick={() => setStep(step - 1)} aria-label="Previous step">
-              <ArrowLeft />
-            </Button>
-          )}
-          {last ? (
-            <>
-              <Button variant="outline" className="h-12 flex-1" onClick={finish}>
-                Start checking
-              </Button>
-              <Button
-                className="h-12 flex-1"
-                onClick={() => {
-                  finish()
-                  onTry('SR-13')
-                }}
+            <AnimatePresence mode="wait" custom={dir}>
+              <motion.div
+                key={step}
+                className="mt-6 flex-1 md:mt-10"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.22 }}
               >
-                Try SR-13
-              </Button>
-            </>
-          ) : (
-            <Button className="h-12 flex-1" onClick={() => setStep(step + 1)}>
-              Next <ArrowRight data-icon="inline-end" />
-            </Button>
-          )}
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">{kicker}</p>
+                <DialogTitle className="mt-2 text-2xl font-semibold tracking-tight text-balance sm:text-[1.75rem]">{title}</DialogTitle>
+                <DialogDescription className="mt-3 text-[15px] leading-6 text-pretty text-muted-foreground">{body}</DialogDescription>
+                <ul className="mt-5 grid gap-2.5">
+                  {points.map((p) => (
+                    <li key={p} className="flex items-start gap-2.5 text-sm">
+                      <span className="mt-0.5 grid size-4.5 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                        <Check className="size-3" strokeWidth={3} />
+                      </span>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            </AnimatePresence>
+
+            <div className="mt-8 flex gap-2">
+              {step > 0 && (
+                <Button variant="outline" className="h-12 px-4" onClick={() => go(step - 1)} aria-label="Previous step">
+                  <ArrowLeft />
+                </Button>
+              )}
+              {last ? (
+                <>
+                  <Button variant="outline" className="h-12 flex-1" onClick={finish}>
+                    Start checking
+                  </Button>
+                  <Button
+                    className="h-12 flex-1"
+                    onClick={() => {
+                      finish()
+                      onTry('SR-13')
+                    }}
+                  >
+                    Try SR-13
+                  </Button>
+                </>
+              ) : (
+                <Button className="h-12 flex-1" onClick={() => go(step + 1)}>
+                  {step === 0 ? 'Show me how' : 'Next'} <ArrowRight data-icon="inline-end" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </MotionConfig>
   )
 }

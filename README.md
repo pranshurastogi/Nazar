@@ -36,6 +36,10 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 |:---:|:---:|:---:|
 | ![Proof of record bottom sheet](docs/screenshots/mobile-proof.png) | ![No alert found state in dark mode](docs/screenshots/mobile-dark-no-alert.png) | ![Flagged result on desktop](docs/screenshots/desktop-flagged.png) |
 
+| First-run guide on desktop | Finding the batch number |
+|:---:|:---:|
+| ![Centred onboarding dialog, welcome step, dark mode](docs/screenshots/desktop-onboarding-dark.png) | ![Onboarding step showing where the batch number is printed](docs/screenshots/desktop-onboarding-batch-dark.png) |
+
 <details>
 <summary>Dark mode on desktop</summary>
 
@@ -88,7 +92,7 @@ The current build runs on a small demo data source, so you can see every result 
 - **Severity with reasons**: the card shows which rules fired, for example "Adulterated with a toxic glycol: base 5", not just the number.
 - **Child Shield**: children's formulations with glycol contamination get a banner telling parents to contact a doctor.
 - **"How do we know?"**: a swipe-down sheet with the publishing authority, notice, category, Arkiv entity key, creator wallet and source PDF hash.
-- **First-run guide**: four short steps covering where to find "B.No." on a pack, the four answers, and proof and privacy. Reopen it any time from **Guide** in the header.
+- **First-run guide**: a centred, animated four-step guide (the eye watching regulators, a bottle label being scanned for "B.No.", the four answers, and the chain of proof). Reopen it any time from **Guide** in the header.
 - **Private recent checks**: kept in `localStorage` only, never uploaded.
 - **Light and dark mode**, mobile bottom navigation, safe-area aware, 48px touch targets.
 - **Share**: the native share sheet, or copies a summary to the clipboard.
@@ -178,7 +182,7 @@ Nazar/
         └── mock-source.ts     Demo alerts and batch matching
 ```
 
-**Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, [shadcn/ui](https://ui.shadcn.com) on Base UI, lucide icons, next-themes, sonner, Noto Sans and JetBrains Mono.
+**Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, [shadcn/ui](https://ui.shadcn.com) on Base UI, [Motion](https://motion.dev), lucide icons, next-themes, sonner, Noto Sans and JetBrains Mono.
 
 ## Roadmap
 
