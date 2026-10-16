@@ -1,0 +1,12 @@
+# Dependencies and build output
+node_modules
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Environment variables
+.env*.local
+
+# Platform
+.vercel/
+.DS_Store

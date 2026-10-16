@@ -1,0 +1,144 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-noto-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Result states. Colour carries meaning only: red flagged, amber uncertain, slate no-alert (never green). */
+  --color-flagged: var(--flagged);
+  --color-flagged-soft: var(--flagged-soft);
+  --color-flagged-border: var(--flagged-border);
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-caution-border: var(--caution-border);
+  --color-quiet: var(--quiet);
+  --color-quiet-soft: var(--quiet-soft);
+  --color-quiet-border: var(--quiet-border);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* Nazar blue: chrome and logo only. */
+  --brand: hsl(224 70% 38%);
+  --brand-tint: hsl(205 75% 80%);
+  --brand-ink: hsl(225 45% 10%);
+
+  --background: hsl(40 33% 97%);
+  --foreground: hsl(225 45% 10%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: var(--foreground);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: var(--foreground);
+  --primary: hsl(224 70% 38%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(40 20% 93%);
+  --secondary-foreground: var(--foreground);
+  --muted: hsl(40 20% 93%);
+  --muted-foreground: hsl(220 10% 38%);
+  --accent: hsl(224 60% 95%);
+  --accent-foreground: hsl(224 70% 30%);
+  --destructive: hsl(0 72% 46%);
+  --border: hsl(35 15% 86%);
+  --input: hsl(35 15% 82%);
+  --ring: hsl(224 70% 38%);
+
+  --flagged: hsl(0 72% 44%);
+  --flagged-soft: hsl(0 86% 97%);
+  --flagged-border: hsl(0 72% 86%);
+  --caution: hsl(32 90% 36%);
+  --caution-soft: hsl(40 90% 95%);
+  --caution-border: hsl(38 75% 80%);
+  --quiet: hsl(215 18% 40%);
+  --quiet-soft: hsl(215 25% 95%);
+  --quiet-border: hsl(215 20% 85%);
+}
+
+.dark {
+  --brand: hsl(221 83% 62%);
+  --brand-tint: hsl(205 75% 80%);
+  --brand-ink: hsl(228 40% 7%);
+
+  --background: hsl(228 40% 7%);
+  --foreground: hsl(40 30% 96%);
+  --card: hsl(228 32% 11%);
+  --card-foreground: var(--foreground);
+  --popover: hsl(228 32% 12%);
+  --popover-foreground: var(--foreground);
+  --primary: hsl(221 83% 68%);
+  --primary-foreground: hsl(228 40% 7%);
+  --secondary: hsl(228 25% 16%);
+  --secondary-foreground: var(--foreground);
+  --muted: hsl(228 25% 15%);
+  --muted-foreground: hsl(220 12% 70%);
+  --accent: hsl(228 25% 18%);
+  --accent-foreground: var(--foreground);
+  --destructive: hsl(0 80% 66%);
+  --border: hsl(228 20% 20%);
+  --input: hsl(228 20% 24%);
+  --ring: hsl(221 83% 68%);
+
+  --flagged: hsl(0 80% 66%);
+  --flagged-soft: hsl(0 45% 13%);
+  --flagged-border: hsl(0 40% 30%);
+  --caution: hsl(38 90% 60%);
+  --caution-soft: hsl(35 45% 12%);
+  --caution-border: hsl(35 40% 30%);
+  --quiet: hsl(215 20% 72%);
+  --quiet-soft: hsl(220 22% 14%);
+  --quiet-border: hsl(220 18% 26%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
