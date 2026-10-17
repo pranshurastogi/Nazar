@@ -40,18 +40,18 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       NAZAR_HOST_DELAY_MS: '5000'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.15.1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: Nazar-backend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       # The ledger and raw store are caches; restoring them avoids refetching documents we already hold.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             Nazar-backend/data/raw
