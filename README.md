@@ -179,7 +179,7 @@ Nazar/
     │   ├── nazar/             Logo, ring motif, onboarding, result card
     │   └── ui/                shadcn/ui components (Base UI)
     └── lib/
-        └── mock-source.ts     Demo alerts and batch matching
+        └── source/            API client, browser Arkiv reader, demo fallback, batch matching
 ```
 
 **Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, [shadcn/ui](https://ui.shadcn.com) on Base UI, [Motion](https://motion.dev), lucide icons, next-themes, sonner, Noto Sans and JetBrains Mono.

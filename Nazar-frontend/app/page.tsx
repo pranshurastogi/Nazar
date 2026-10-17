@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   History,
   House,
+  LoaderCircle,
   Menu,
   Moon,
   ScanLine,
@@ -24,12 +25,22 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { CheckingCard } from '@/components/nazar/checking-card'
 import { Logo } from '@/components/nazar/logo'
 import { Onboarding, ONBOARDED_KEY } from '@/components/nazar/onboarding'
-import { ResultCard } from '@/components/nazar/result-card'
+import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
-import { activeAlerts, checkBatch, childAlerts, type CheckResult, type ResultState } from '@/lib/mock-source'
+import { StatusPill } from '@/components/nazar/status-pill'
+import {
+  checkBatch,
+  loadAlerts,
+  loadPipelineStatus,
+  type AlertFeed,
+  type CheckResult,
+  type PipelineStatus,
+  type ResultState,
+  type Stage,
+} from '@/lib/source'
 import { cn } from '@/lib/utils'
 
 const RECENT_KEY = 'nazar:recent'
@@ -50,6 +61,14 @@ const STATE_STYLE: Record<ResultState, { icon: typeof Search; cls: string; label
 }
 
 const soon = (what: string) => toast(`${what} is coming in the next build.`)
+
+/** Answers faster than this skip the loading card, so quick checks do not flicker. */
+const PENDING_DELAY_MS = 120
+const STATUS_REFRESH_MS = 2 * 60 * 1000
+
+function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn('block animate-pulse rounded bg-muted motion-reduce:animate-none', className)} />
+}
 
 function NavItem({ icon: Icon, label, active, compact }: { icon: typeof House; label: string; active?: boolean; compact?: boolean }) {
   return (
@@ -83,6 +102,11 @@ function ThemeToggle() {
 export default function Page() {
   const [batch, setBatch] = useState('')
   const [result, setResult] = useState<CheckResult | null>(null)
+  const [pending, setPending] = useState<{ batch: string; stage: Stage } | null>(null)
+  const [status, setStatus] = useState<PipelineStatus>({ kind: 'checking' })
+  const [feed, setFeed] = useState<AlertFeed | null>(null)
+  const [childFeed, setChildFeed] = useState<AlertFeed | null>(null)
+  const checkRef = useRef<AbortController | null>(null)
   const [recent, setRecent] = useState<Recent[]>([])
   const [guideOpen, setGuideOpen] = useState(false)
   const [today, setToday] = useState('')
@@ -106,23 +130,71 @@ export default function Page() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const runCheck = (value = batch) => {
+  useEffect(() => {
+    const ctrl = new AbortController()
+    const quiet = (err: unknown) => {
+      if (!ctrl.signal.aborted) console.info('Nazar source unavailable', err)
+    }
+    const refreshStatus = () => loadPipelineStatus(ctrl.signal).then((s) => !ctrl.signal.aborted && setStatus(s), quiet)
+    refreshStatus()
+    loadAlerts({ limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
+    loadAlerts({ peds: true, minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setChildFeed(f), quiet)
+    const t = setInterval(refreshStatus, STATUS_REFRESH_MS)
+    return () => {
+      ctrl.abort()
+      clearInterval(t)
+    }
+  }, [])
+
+  const runCheck = async (value = batch) => {
     if (!value.trim()) {
       inputRef.current?.focus()
       return
     }
-    const r = checkBatch(value)
-    setBatch(r.batch)
-    setResult(r)
-    if (r.state !== 'unreadable') {
-      const entry: Recent = { batch: r.batch, name: 'alert' in r ? r.alert.brand : 'Batch check', state: r.state }
-      const next = [entry, ...recent.filter((x) => x.batch !== r.batch)].slice(0, 6)
-      setRecent(next)
-      try {
-        localStorage.setItem(RECENT_KEY, JSON.stringify(next))
-      } catch {}
+    checkRef.current?.abort()
+    const ctrl = new AbortController()
+    checkRef.current = ctrl
+    const shown = value.trim().toUpperCase()
+    let stage: Stage = 'api'
+    setBatch(shown)
+    const timer = setTimeout(() => {
+      if (ctrl.signal.aborted) return
+      setResult(null)
+      setPending({ batch: shown, stage })
+      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+    }, PENDING_DELAY_MS)
+    try {
+      const r = await checkBatch(value, {
+        signal: ctrl.signal,
+        onStage: (s) => {
+          stage = s
+          if (!ctrl.signal.aborted) setPending((p) => (p ? { ...p, stage: s } : p))
+        },
+      })
+      if (ctrl.signal.aborted) return
+      setBatch(r.batch)
+      setResult(r)
+      if (r.state !== 'unreadable') {
+        const entry: Recent = { batch: r.batch, name: 'alert' in r ? r.alert.brand : 'Batch check', state: r.state }
+        setRecent((prev) => {
+          const next = [entry, ...prev.filter((x) => x.batch !== r.batch)].slice(0, 6)
+          try {
+            localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+          } catch {}
+          return next
+        })
+      }
+      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+    } catch {
+      if (ctrl.signal.aborted) return
+      toast.error("Couldn't check right now. Please try again.")
+    } finally {
+      clearTimeout(timer)
+      if (checkRef.current === ctrl) {
+        setPending(null)
+        checkRef.current = null
+      }
     }
-    requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
   }
 
   const clearRecent = () => {
@@ -155,16 +227,7 @@ export default function Page() {
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">Check a medicine batch</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Badge variant="outline" className="hidden h-8 gap-2 rounded-full px-3 text-xs font-semibold text-muted-foreground sm:inline-flex" />
-                }
-              >
-                <span className="size-2 rounded-full bg-primary" /> Demo data
-              </TooltipTrigger>
-              <TooltipContent>Sample alerts while the Arkiv pipeline is being connected</TooltipContent>
-            </Tooltip>
+            <StatusPill status={status} />
             <Button variant="outline" className="h-11 rounded-full px-3.5" onClick={() => setGuideOpen(true)}>
               <CircleHelp /> <span className="hidden sm:inline">Guide</span>
             </Button>
@@ -209,14 +272,33 @@ export default function Page() {
                 className="h-14 min-w-0 flex-1 bg-transparent font-mono text-xl tracking-wider uppercase outline-none placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:normal-case placeholder:text-muted-foreground/70"
               />
               {batch && (
-                <button onClick={() => { setBatch(''); setResult(null); inputRef.current?.focus() }} className="grid size-10 place-items-center text-muted-foreground" aria-label="Clear batch">
+                <button
+                  onClick={() => {
+                    checkRef.current?.abort()
+                    checkRef.current = null
+                    setPending(null)
+                    setBatch('')
+                    setResult(null)
+                    inputRef.current?.focus()
+                  }}
+                  className="grid size-10 place-items-center text-muted-foreground"
+                  aria-label="Clear batch"
+                >
                   <X className="size-5" />
                 </button>
               )}
             </div>
             <div className="mt-4 flex gap-3">
-              <Button className="h-13 flex-1 rounded-xl text-base font-semibold" onClick={() => runCheck()}>
-                Check batch <ArrowRight data-icon="inline-end" />
+              <Button className="h-13 flex-1 rounded-xl text-base font-semibold" onClick={() => runCheck()} aria-busy={!!pending}>
+                {pending ? (
+                  <>
+                    Checking <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
+                  </>
+                ) : (
+                  <>
+                    Check batch <ArrowRight data-icon="inline-end" />
+                  </>
+                )}
               </Button>
               <Button variant="outline" className="size-13 rounded-xl text-primary" aria-label="Scan the pack" onClick={() => soon('Camera scan')}>
                 <ScanLine className="size-5" />
@@ -237,7 +319,11 @@ export default function Page() {
         </section>
 
         <div ref={resultRef} className="scroll-mb-28 scroll-mt-6">
-          {result && <div className="mt-8"><ResultCard result={result} onCheck={runCheck} /></div>}
+          {pending ? (
+            <div className="mt-8"><CheckingCard batch={pending.batch} stage={pending.stage} /></div>
+          ) : (
+            result && <div className="mt-8"><ResultCard result={result} onCheck={runCheck} /></div>
+          )}
         </div>
 
         <section className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
@@ -247,11 +333,26 @@ export default function Page() {
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Regulator notices</p>
                 <h3 className="mt-1 text-lg font-semibold tracking-tight">Active alerts</h3>
               </div>
-              <Badge variant="secondary" className="h-6 px-2.5">{activeAlerts.length} active</Badge>
+              <Badge variant="secondary" className="h-6 min-w-16 px-2.5" aria-busy={!feed}>
+                {feed ? `${feed.total} active` : <Skeleton className="h-3 w-10" />}
+              </Badge>
             </div>
-            <ul className="mt-4 divide-y">
-              {activeAlerts.map((a) => (
-                <li key={a.batch}>
+            <ul className="mt-4 min-h-[10.5rem] divide-y" aria-busy={!feed} aria-label="Active alerts">
+              {!feed &&
+                [0, 1, 2].map((i) => (
+                  <li key={i} className="flex min-h-14 items-center gap-3 py-2.5">
+                    <Skeleton className="size-9 rounded-lg" />
+                    <span className="grid flex-1 gap-1.5">
+                      <Skeleton className="h-3.5 w-2/5" />
+                      <Skeleton className="h-3 w-3/4" />
+                    </span>
+                  </li>
+                ))}
+              {feed?.items.length === 0 && (
+                <li className="py-6 text-sm text-muted-foreground">No active alerts published yet.</li>
+              )}
+              {feed?.items.slice(0, 5).map((a) => (
+                <li key={a.id}>
                   <button onClick={() => runCheck(a.batch)} className="flex min-h-14 w-full items-center gap-3 py-2.5 text-left">
                     <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-flagged-soft text-flagged"><TriangleAlert className="size-4" /></span>
                     <span className="min-w-0 flex-1">
@@ -265,6 +366,7 @@ export default function Page() {
                 </li>
               ))}
             </ul>
+            <div className="mt-3 h-4">{feed && <SourceTag source={feed.source} />}</div>
           </div>
 
           <div className="flex flex-col rounded-2xl border bg-card p-5 sm:p-6">
@@ -277,12 +379,22 @@ export default function Page() {
             </div>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
               Children&apos;s medicines with a glycol contamination alert are ranked at the highest severity.{' '}
-              <span className="font-semibold text-foreground">{childAlerts.length} active right now.</span>
+              {childFeed ? (
+                <span className="font-semibold text-foreground">{childFeed.total} active right now.</span>
+              ) : (
+                <Skeleton className="inline-block h-3.5 w-28 align-middle" />
+              )}
             </p>
-            <div className="mt-auto pt-5">
-              <Button variant="outline" className="h-11" onClick={() => runCheck(childAlerts[0].batch)}>
+            <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
+              <Button
+                variant="outline"
+                className="h-11"
+                disabled={!childFeed?.items.length}
+                onClick={() => childFeed?.items[0] && runCheck(childFeed.items[0].batch)}
+              >
                 See the latest <ArrowRight data-icon="inline-end" />
               </Button>
+              {childFeed && <SourceTag source={childFeed.source} />}
             </div>
           </div>
         </section>
