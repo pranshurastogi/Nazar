@@ -87,7 +87,11 @@ export async function loadAlerts(q: { minSeverity?: number; peds?: boolean; limi
 export async function loadPipelineStatus(signal?: AbortSignal): Promise<PipelineStatus> {
   const r = await probeApi()
   if (signal?.aborted) throw signal.reason
-  if (r) return { kind: 'api', lastOkMs: r.heartbeat?.lastOkMs ?? null }
+  if (r) {
+    // Prefer the on-chain heartbeat; before the first publish, fall back to the ledger's latest good source check.
+    const ledgerMs = Math.max(0, ...Object.values(r.sources ?? {}).filter((s) => s.ok && s.lastCheckedMs).map((s) => s.lastCheckedMs as number))
+    return { kind: 'api', lastOkMs: r.heartbeat?.lastOkMs ?? (ledgerMs || null) }
+  }
   try {
     const arkiv = await loadArkiv()
     const lastOkMs = await arkiv.arkivHeartbeat(signal)

@@ -137,7 +137,8 @@ export default function Page() {
     }
     const refreshStatus = () => loadPipelineStatus(ctrl.signal).then((s) => !ctrl.signal.aborted && setStatus(s), quiet)
     refreshStatus()
-    loadAlerts({ limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
+    // Lead with the most dangerous: severity 4-5 (spurious, toxic glycol, sterility, injectables).
+    loadAlerts({ minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
     loadAlerts({ peds: true, minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setChildFeed(f), quiet)
     const t = setInterval(refreshStatus, STATUS_REFRESH_MS)
     return () => {
@@ -331,13 +332,13 @@ export default function Page() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Regulator notices</p>
-                <h3 className="mt-1 text-lg font-semibold tracking-tight">Active alerts</h3>
+                <h3 className="mt-1 text-lg font-semibold tracking-tight">High-severity alerts</h3>
               </div>
               <Badge variant="secondary" className="h-6 min-w-16 px-2.5" aria-busy={!feed}>
                 {feed ? `${feed.total} active` : <Skeleton className="h-3 w-10" />}
               </Badge>
             </div>
-            <ul className="mt-4 min-h-[10.5rem] divide-y" aria-busy={!feed} aria-label="Active alerts">
+            <ul className="mt-4 min-h-[10.5rem] divide-y" aria-busy={!feed} aria-label="High-severity alerts">
               {!feed &&
                 [0, 1, 2].map((i) => (
                   <li key={i} className="flex min-h-14 items-center gap-3 py-2.5">

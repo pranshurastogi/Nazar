@@ -57,3 +57,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
+
+  e2e:
+    name: Frontend e2e (headless Chrome)
+    runs-on: ubuntu-latest
+    needs: frontend
+    defaults:
+      run:
+        working-directory: Nazar-frontend
+    env:
+      # Real Arkiv RPC, but a publisher with no entities and no API: answers are deterministic (demo fallback / mocked API).
+      NEXT_PUBLIC_NAZAR_PUBLISHER: '0x000000000000000000000000000000000000dEaD'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: Nazar-frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: Nazar-frontend/e2e/screenshots
+          if-no-files-found: ignore

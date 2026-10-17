@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# e2e screenshots
+Nazar-frontend/e2e/screenshots/

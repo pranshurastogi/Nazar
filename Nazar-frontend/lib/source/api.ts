@@ -90,6 +90,8 @@ export async function apiAlerts(q: AlertQuery = {}, opts?: Opts): Promise<{ item
 export type PipelineStatusResponse = {
   heartbeat: { lastOkMs: number; entityKey: string | null } | null
   runs?: unknown
+  /** Per-source last successful check from the ledger, used when no on-chain heartbeat exists yet. */
+  sources?: Record<string, { lastCheckedMs: number | null; ok: boolean }>
   stats?: unknown
   publisher: { address: string; balanceGlm: number | string } | null
   mode: string
