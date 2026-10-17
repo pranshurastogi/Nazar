@@ -44,10 +44,21 @@ const EnvSchema = z.object({
   NAZAR_HOST_DELAY_MS: z.coerce.number().int().min(0).default(10_000),
   NAZAR_HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60_000),
   NAZAR_HTTP_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
+  // Read-only public documents from hosts that serve incomplete or expired certificate chains.
   NAZAR_INSECURE_TLS_HOSTS: z
     .string()
-    .default('')
+    .default('drugscontrol.tn.gov.in,dc.kerala.gov.in')
     .transform((v) => v.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)),
+  /** Fallback IPs for hosts with flaky DNS, used only when normal resolution fails: "host=ip,host=ip". */
+  NAZAR_HOST_FALLBACK_IPS: z
+    .string()
+    .default('fda.maharashtra.gov.in=164.100.51.41')
+    .transform((v) =>
+      Object.fromEntries(
+        v.split(',').map((p) => p.trim().split('=').map((x) => x.trim().toLowerCase())).filter((p) => p.length === 2 && p[0] && p[1]),
+      ) as Record<string, string>,
+    ),
+  NAZAR_ROBOTS_TIMEOUT_MS: z.coerce.number().int().min(500).default(10_000),
   NAZAR_SOURCES: z
     .string()
     .default('')

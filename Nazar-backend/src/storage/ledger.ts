@@ -219,7 +219,9 @@ export class Ledger {
       const ins = this.db.prepare(
         `INSERT INTO alerts (rid, case_id, batch_key, confusion_key, batch, brand, category, severity, peds, state, alert_ym, exp_ym, tier, source_id, notice_sha, data)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(rid) DO UPDATE SET case_id = excluded.case_id, severity = excluded.severity, tier = excluded.tier, data = excluded.data,
+         ON CONFLICT(rid) DO UPDATE SET case_id = excluded.case_id, severity = excluded.severity, tier = excluded.tier,
+           -- pages refreshed in place (e.g. Maharashtra) re-list old rows: keep the month we first saw the alert
+           data = json_set(excluded.data, '$.alertYm', alerts.alert_ym),
            brand = excluded.brand, category = excluded.category, peds = excluded.peds, state = excluded.state, exp_ym = excluded.exp_ym`,
       )
       const delFts = this.db.prepare('DELETE FROM alerts_fts WHERE rid = ?')

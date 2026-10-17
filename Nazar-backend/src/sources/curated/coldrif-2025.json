@@ -1,0 +1,52 @@
+{
+  "id": "coldrif-2025",
+  "title": "WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines identified in India (diethylene glycol)",
+  "authority": "WHO / CDSCO",
+  "jurisdiction": "IN",
+  "url": "https://www.who.int/news/item/13-10-2025-medical-product-alert-n5-2025",
+  "publishedAt": "2025-10-13",
+  "noticeYm": 202510,
+  "reviewedBy": "Pranshu Rastogi",
+  "reviewedAt": "2026-10-17",
+  "sources": [
+    {
+      "label": "WHO Medical Product Alert N°5/2025 (13 October 2025)",
+      "url": "https://www.who.int/news/item/13-10-2025-medical-product-alert-n5-2025"
+    },
+    {
+      "label": "WHO alert PDF with the annex of affected batches",
+      "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf"
+    }
+  ],
+  "notes": "CDSCO reported DEG contamination in these three oral liquid medicines to WHO on 8 October 2025, after clusters of child deaths in India. The Tamil Nadu Drugs Control Department declared COLDRIF batch SR-13 (Sresan Pharmaceutical) Not of Standard Quality / adulterated on 2 October 2025. Contamination values are as reported by CDSCO in the WHO annex.",
+  "rows": [
+    {
+      "product": "Paracetamol, Chlorpheniramine Maleate, Phenylephrine and Sodium Citrate Syrup (COLDRIF)",
+      "batch": "SR-13",
+      "mfg": "05/2025",
+      "exp": "04/2027",
+      "manufacturer": "Sresan Pharmaceutical, No. 787, Bangalore Highways, Sunguvarchatraam (Mathura), Kancheepuram Dist. 602106, Tamil Nadu",
+      "reason": "Contaminated with diethylene glycol (DEG): 48.6% w/v, as reported by CDSCO",
+      "reportedBy": "CDSCO (reported to WHO); declared by Tamil Nadu Drugs Control on 2 Oct 2025",
+      "note": "Tamil Nadu Drugs Control Department declared batch SR-13 Not of Standard Quality / adulterated on 2 October 2025."
+    },
+    {
+      "product": "Bromhexine Hydrochloride, Terbutaline Sulphate, Guaiphenesin and Menthol Syrup (Respifresh TR)",
+      "batch": "R01GL2523",
+      "mfg": "01/2025",
+      "exp": "12/2026",
+      "manufacturer": "Rednex Pharmaceutical Pvt Ltd., Survey No. 586 & 231, Nr. SKF Bearing, Bavla Bagodra N.H. 8A, Kerala, Tal. Bavla, Dist. Ahmedabad-383220, Gujarat",
+      "reason": "Contaminated with diethylene glycol (DEG): 1.34% w/v, as reported by CDSCO",
+      "reportedBy": "CDSCO (reported to WHO)"
+    },
+    {
+      "product": "Ambroxol Hydrochloride, Guaiphenesin, Terbutaline Sulphate and Menthol Syrup (ReLife)",
+      "batch": "LSL25160",
+      "mfg": "01/2025",
+      "exp": "12/2026",
+      "manufacturer": "Shape Pharma Pvt. Ltd., Plot No. 4, Surendranagar Rajkot Highway Rd., Shekhpur 363510, Gujarat",
+      "reason": "Contaminated with diethylene glycol (DEG): 0.61% w/v, as reported by CDSCO",
+      "reportedBy": "CDSCO (reported to WHO)"
+    }
+  ]
+}

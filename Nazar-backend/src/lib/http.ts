@@ -1,3 +1,4 @@
+import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from 'node:dns'
 import { Agent, fetch as undiciFetch, type Dispatcher } from 'undici'
 
 import { env } from '../config/env.ts'
@@ -27,6 +28,16 @@ export interface PoliteFetchOptions {
   headers?: Record<string, string>
 }
 
+export interface PoliteHttpOptions {
+  userAgent: string
+  hostDelayMs: number
+  timeoutMs: number
+  retries: number
+  insecureHosts: string[]
+  fallbackIps?: Record<string, string>
+  robotsTimeoutMs?: number
+}
+
 type FetchImpl = (url: string, init: { headers: Record<string, string>; signal: AbortSignal; dispatcher?: Dispatcher; redirect: 'follow' }) => Promise<Response>
 
 /**
@@ -39,20 +50,27 @@ type FetchImpl = (url: string, init: { headers: Record<string, string>; signal: 
 export class PoliteHttp {
   private nextSlot = new Map<string, number>()
   private robots = new Map<string, RobotsRules>()
-  private insecureAgent = new Agent({ connect: { rejectUnauthorized: false } })
+  private readonly agent: Agent
+  private readonly insecureAgent: Agent
 
   constructor(
-    private readonly opts = {
+    private readonly opts: PoliteHttpOptions = {
       userAgent: env().NAZAR_USER_AGENT,
       hostDelayMs: env().NAZAR_HOST_DELAY_MS,
       timeoutMs: env().NAZAR_HTTP_TIMEOUT_MS,
       retries: env().NAZAR_HTTP_RETRIES,
       insecureHosts: env().NAZAR_INSECURE_TLS_HOSTS,
+      fallbackIps: env().NAZAR_HOST_FALLBACK_IPS,
+      robotsTimeoutMs: env().NAZAR_ROBOTS_TIMEOUT_MS,
     },
     private readonly fetchImpl: FetchImpl = undiciFetch as unknown as FetchImpl,
     private readonly now = () => Date.now(),
     private readonly wait = sleep,
-  ) {}
+  ) {
+    const lookup = fallbackLookup(opts.fallbackIps ?? {})
+    this.agent = new Agent({ connect: { lookup } })
+    this.insecureAgent = new Agent({ connect: { rejectUnauthorized: false, lookup } })
+  }
 
   async get(url: string, o: PoliteFetchOptions = {}): Promise<FetchResult> {
     const u = new URL(url)
@@ -77,10 +95,10 @@ export class PoliteHttp {
     return { ...r, text: decodeText(r.bytes, r.contentType) }
   }
 
-  private async once(url: string, o: PoliteFetchOptions): Promise<FetchResult> {
+  private async once(url: string, o: PoliteFetchOptions, timeoutMs = this.opts.timeoutMs): Promise<FetchResult> {
     const u = new URL(url)
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.opts.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     let res: Response
     try {
       res = await this.fetchImpl(url, {
@@ -92,7 +110,7 @@ export class PoliteHttp {
         },
         signal: controller.signal,
         redirect: 'follow',
-        dispatcher: this.opts.insecureHosts.includes(u.hostname.toLowerCase()) ? this.insecureAgent : undefined,
+        dispatcher: this.opts.insecureHosts.includes(u.hostname.toLowerCase()) ? this.insecureAgent : this.agent,
       })
     } catch (err) {
       clearTimeout(timer)
@@ -137,7 +155,9 @@ export class PoliteHttp {
     let rules = this.robots.get(u.host)
     if (!rules) {
       try {
-        const r = await this.once(`${u.protocol}//${u.host}/robots.txt`, { accept: 'text/plain' })
+        // Hard deadline: a hung robots.txt (seen on state sites) must never stall discovery.
+        const t = this.opts.robotsTimeoutMs ?? 10_000
+        const r = await withDeadline(this.once(`${u.protocol}//${u.host}/robots.txt`, { accept: 'text/plain' }, t), t + 1000)
         rules = parseRobots(decodeText(r.bytes, r.contentType), this.opts.userAgent)
       } catch {
         rules = { disallow: [], allow: [] } // no robots.txt (or unreachable) means no restrictions
@@ -145,6 +165,31 @@ export class PoliteHttp {
       this.robots.set(u.host, rules)
     }
     return isAllowed(rules, u.pathname + u.search)
+  }
+}
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TransientError(`deadline of ${ms} ms exceeded`)), ms)
+  })
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
+}
+
+type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
+
+/** DNS lookup that falls back to a pinned IP only when normal resolution fails (some state sites have flaky nameservers). */
+export function fallbackLookup(fallbacks: Record<string, string>) {
+  return (hostname: string, options: LookupOptions, cb: LookupCallback) => {
+    dnsLookup(hostname, options, (err, address, family) => {
+      const ip = fallbacks[hostname.toLowerCase()]
+      if (err && ip) {
+        if (options.all) cb(null, [{ address: ip, family: 4 }])
+        else cb(null, ip, 4)
+        return
+      }
+      cb(err, address as string | LookupAddress[], family)
+    })
   }
 }
 
