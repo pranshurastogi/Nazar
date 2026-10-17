@@ -6,21 +6,27 @@
 
 **Har batch par nazar.** An eye on every batch.
 
-Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself.
+Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself on Arkiv.
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [Arkiv data model](#arkiv-data-model) · [Roadmap](#roadmap)
+[![CI](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml)
+[![Pipeline](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml)
+
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [Pipeline](#the-pipeline) · [Arkiv](#arkiv) · [Tests](#tests) · [Roadmap](#roadmap)
 
 </div>
 
-![Nazar home screen on desktop](docs/screenshots/desktop-home.png)
+![Nazar flagging COLDRIF batch SR-13 from live regulator data, with Child Shield and two notices](docs/screenshots/live-desktop-sr13.png)
 
 ---
 
 ## The problem
 
-India's drug regulators publish failed medicine batches as PDFs and press notes, days apart, in formats no pharmacy billing software can read.
+India's drug regulators publish failed medicine batches as PDFs, tables and press notes, days apart, in formats no pharmacy billing software can read.
 
-During the Coldrif crisis, Tamil Nadu declared batch **SR-13** adulterated on **2 October 2025** (48.6% diethylene glycol). Maharashtra issued its own notice on 6 October, and Telangana a separate stop-use notice. Every state rewrote the same alert by hand, and the batch's printed expiry runs to April 2027.
+**The Coldrif case**
+- **2 October 2025:** Tamil Nadu declared batch **SR-13** of COLDRIF syrup adulterated (48.6% w/v diethylene glycol), after clusters of child deaths.
+- **13 October 2025:** WHO's Medical Product Alert N°5/2025 listed it with two more DEG-contaminated syrups, Respifresh TR (`R01GL2523`) and ReLife (`LSL25160`).
+- Every state rewrote the same alert by hand, while the batch's printed expiry ran to April 2027.
 
 Nazar turns those scattered notices into one live, verifiable feed that a chemist at the counter, a parent at 11 PM, or an AI agent can check in under three seconds.
 
@@ -28,20 +34,24 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 
 ## Screenshots
 
-| First-run guide | Four honest answers | Flagged result |
-|:---:|:---:|:---:|
-| ![Onboarding welcome step](docs/screenshots/mobile-onboarding.png) | ![Onboarding step explaining the four result states](docs/screenshots/mobile-onboarding-states.png) | ![Flagged result for Coldrif SR-13 with Child Shield](docs/screenshots/mobile-flagged.png) |
+**Live data**, from the pipeline run on 17 Oct 2026 against the real regulator sources:
 
-| "How do we know?" proof | No alert found (dark) | Desktop result |
+| Home: high-severity alerts | A CDSCO NSQ batch | "How do we know?" |
 |:---:|:---:|:---:|
-| ![Proof of record bottom sheet](docs/screenshots/mobile-proof.png) | ![No alert found state in dark mode](docs/screenshots/mobile-dark-no-alert.png) | ![Flagged result on desktop](docs/screenshots/desktop-flagged.png) |
+| ![Home page listing live high-severity alerts and pipeline status](docs/screenshots/live-desktop-home.png) | ![Flagged result for SST25006 from the CDSCO August 2026 NSQ list](docs/screenshots/live-mobile-cdsco-result.png) | ![Proof sheet with publisher, notice, batch dates, extraction method and source hash](docs/screenshots/live-mobile-proof.png) |
 
-| First-run guide on desktop | Finding the batch number |
-|:---:|:---:|
-| ![Centred onboarding dialog, welcome step, dark mode](docs/screenshots/desktop-onboarding-dark.png) | ![Onboarding step showing where the batch number is printed](docs/screenshots/desktop-onboarding-batch-dark.png) |
+**First-run guide**, centred and animated:
+
+| Desktop | Finding the batch number | Four honest answers |
+|:---:|:---:|:---:|
+| ![Onboarding welcome step on desktop](docs/screenshots/desktop-onboarding-dark.png) | ![Onboarding step showing a bottle label being scanned for B.No.](docs/screenshots/desktop-onboarding-batch-dark.png) | ![Onboarding step explaining the four result states](docs/screenshots/mobile-onboarding-states.png) |
 
 <details>
-<summary>Dark mode on desktop</summary>
+<summary>More screens (demo data, dark mode, no-alert state)</summary>
+
+| Flagged result | Proof sheet | No alert found (dark) |
+|:---:|:---:|:---:|
+| ![Flagged result for Coldrif SR-13 with Child Shield](docs/screenshots/mobile-flagged.png) | ![Proof of record bottom sheet](docs/screenshots/mobile-proof.png) | ![No alert found state in dark mode](docs/screenshots/mobile-dark-no-alert.png) |
 
 ![Nazar home screen in dark mode](docs/screenshots/desktop-dark-home.png)
 
@@ -49,151 +59,183 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 
 ## Quick start
 
-Requires Node 22+ and pnpm 10.
+Requires Node 22.5+ (24 recommended) and pnpm 10.
 
 ```bash
-cd Nazar-frontend
+# 1. Backend: harvest real alerts, then serve the API on :8787
+cd Nazar-backend
 pnpm install
-pnpm dev          # http://localhost:3000
-```
+cp .env.example .env && pnpm cli wallet:new     # prints only the address; the key stays in .env
+pnpm cli run --since 202601 --limit 6           # discover → harvest → extract → resolve (dry-run publish)
+pnpm start
 
-Production build:
-
-```bash
-pnpm build && pnpm start
-pnpm typecheck    # tsc --noEmit
+# 2. Web app on :3000 (reads the API, then Arkiv directly, then demo data)
+cd ../Nazar-frontend
+pnpm install
+cp .env.example .env.local
+pnpm dev
 ```
 
 ### Try these batches
 
-The current build runs on a small demo data source, so you can see every result state:
-
-| Type this | You get | Why |
+| Type this | You get | Where it comes from |
 |---|---|---|
-| `SR-13` | **Flagged**, severity 5, Child Shield | Coldrif syrup, diethylene glycol adulteration |
-| `R01GL2523`, `LSL25160` | **Flagged** | Respifresh TR and Relife, the related syrup alerts |
-| `DEMO-RT1` | **Retracted** | A synthetic alert withdrawn after appeal |
-| `AB1234` | **No alert found** | Any well-formed batch with no published alert |
+| `SR-13` | **Flagged**, severity 5, Child Shield, 2 notices | COLDRIF, WHO Medical Product Alert N°5/2025 (DEG 48.6% w/v) |
+| `R01GL2523`, `LSL25160` | **Flagged**, severity 5 | Respifresh TR and ReLife, same WHO alert |
+| `SST25006` | **Flagged** | Salbutamol tablets, CDSCO and Tamil Nadu NSQ lists, Aug 2026 |
 | `5R-13` | **Can't tell**, "Did you mean SR-13?" | A look-alike is never shown as a flag |
-| `!!` | **Can't tell** | Not a valid batch number |
-
-## What's in this build
-
-- **Batch check**: type a batch number (or press <kbd>/</kbd> to focus) and get one of four result states.
-- **Four result states**: each has its own colour, icon and words, so colour never carries meaning alone.
-
-  | State | Look | Headline |
-  |---|---|---|
-  | Flagged | Red, warning icon, severity 1 to 5 | This batch failed a government quality test |
-  | Retracted | Amber, history icon | An alert on this batch was withdrawn |
-  | No alert found | Slate, search icon | No official alert for this batch as of *date, time* |
-  | Can't tell | Amber, question icon | We couldn't read the batch number clearly |
-
-- **Severity with reasons**: the card shows which rules fired, for example "Adulterated with a toxic glycol: base 5", not just the number.
-- **Child Shield**: children's formulations with glycol contamination get a banner telling parents to contact a doctor.
-- **"How do we know?"**: a swipe-down sheet with the publishing authority, notice, category, Arkiv entity key, creator wallet and source PDF hash.
-- **First-run guide**: a centred, animated four-step guide (the eye watching regulators, a bottle label being scanned for "B.No.", the four answers, and the chain of proof). Reopen it any time from **Guide** in the header.
-- **Private recent checks**: kept in `localStorage` only, never uploaded.
-- **Light and dark mode**, mobile bottom navigation, safe-area aware, 48px touch targets.
-- **Share**: the native share sheet, or copies a summary to the clipboard.
-
-> Entity keys, wallets and hashes in the proof sheet are placeholders until the Arkiv pipeline is live. The app labels them as such.
+| `AB1234` | **No alert found** | Not a safety certificate |
+| `DEMO-RT1` | **Retracted** | Demo-only record |
 
 ## How it works
-
-Nazar is a one-way pipeline into [Arkiv](https://arkiv.network) plus a set of readers out of it. Arkiv is the source of truth; everything Nazar runs is a rebuildable cache.
 
 ```mermaid
 flowchart LR
   subgraph Sources
-    A[CDSCO monthly<br/>NSQ / spurious PDFs]
-    B[State drug<br/>controller notices]
+    A[CDSCO online<br/>JSON tables]
+    B[CDSCO alert PDFs]
+    C[Tamil Nadu NSQ<br/>+ recall PDFs]
+    D[Maharashtra FDA<br/>NSQ table]
+    E[WHO Medical<br/>Product Alerts]
   end
-  subgraph Pipeline
-    H[Harvest<br/>store bytes by SHA-256]
-    X[Extract<br/>geometry + grammar,<br/>grounded LLM fallback]
-    R[Resolve<br/>drug, plant, case,<br/>severity rules]
+  subgraph Pipeline [Nazar-backend]
+    H[Harvest<br/>sha256 store]
+    X[Extract<br/>ruled tables · OCR ·<br/>grounded LLM]
+    R[Resolve<br/>brand · plant · case ·<br/>severity rules]
     P[Publisher<br/>atomic batches]
   end
   K[(Arkiv<br/>Tiramisu)]
+  L[(SQLite ledger<br/>cache + FTS5)]
   subgraph Readers
     W[Web app]
-    M[MCP server]
-    T[Telegram bot]
-    I[Public API]
+    I[Nazar API]
   end
-  A --> H
-  B --> H
-  H --> X --> R --> P --> K
-  K --> W
-  K --> M
-  K --> T
-  K --> I
+  A & B & C & D & E --> H --> X --> R --> P --> K
+  R --> L --> I --> W
+  K -- "direct read, no backend needed" --> W
 ```
 
-Design principles:
+- **Truth on chain, caches off chain.** The ledger and search index can be deleted and rebuilt from Arkiv.
+- **Content-addressed lineage.** Source bytes sha256 → row id → alert entity → case. Any alert traces back to the exact document.
+- **Deterministic first, AI at the edges.** A table-geometry parser handles almost every row. An LLM sees only rejected rows, and every value it returns must appear in the source text.
+- **No backend needed to check.** The web app queries Arkiv directly, filtered by the publisher's `$creator`, if the API is down.
+- **Privacy by locality.** Batches you check stay on your device.
 
-- **Truth on chain, caches off chain.** Every Nazar database can be deleted and rebuilt from Arkiv.
-- **Content-addressed lineage.** Source PDF hash → row ID → alert entity → case ID. Any alert traces back to the exact bytes it came from.
-- **Deterministic first, AI at the edges.** A table-geometry parser and a label grammar handle most rows. An LLM sees only rejected rows, and every value it returns must appear in the source text.
-- **Privacy by locality.** Stock files, medicine lists and photos are processed on the device, never on a server.
-- **No backend needed to check.** The web app and MCP server can read Arkiv directly, so a check still works if every Nazar server is down.
+## The pipeline
 
-## Arkiv data model
+[`Nazar-backend/`](Nazar-backend/README.md) is a TypeScript/Node 24 service. It has a CLI, a cron worker and a Hono API.
 
-Every Arkiv feature Nazar uses changes something the user sees.
+### Sources (live-verified)
 
-| Entity | Created by | Lifetime | Flags | What the user sees |
-|---|---|---|---|---|
-| `alert` | Publisher | Batch expiry + 180 days | readonly, permissionless extension | The alert disappears when the batch can no longer be sold; anyone can **Keep Alive** a batch still on shelves |
-| `notice` | Publisher | 5 years | readonly | The source document behind every alert |
-| `retraction` | Publisher or curator | Alert's life + 1 year | readonly | Corrections appear on the timeline instead of silent edits |
-| `sighting` | Anyone | 30 days, extended by each confirmation | readonly, permissionless extension | "Still on shelves" reports by district |
-| `roster` | Root wallet | 1-year lease | none | Only roster publishers show as official; anything else is labelled "Not from a listed publisher" |
-| `snapshot` | Publisher | 7 days | readonly | The offline pack, verified by hash |
-| `heartbeat` | Pipeline worker | 20 minutes, extended every 5 | none | "Pipeline live: CDSCO checked 4 minutes ago" |
+| Source | Format | Notes |
+|---|---|---|
+| CDSCO online (`cdscoonline.gov.in`) | JSON tables | Monthly NSQ and spurious lists, 2019 onwards |
+| CDSCO alerts (`cdsco.gov.in`) | PDF, text layer | 2024+ landscape and legacy portrait templates |
+| Tamil Nadu Drugs Control | PDF, text layer | NSQ lists (columns change month to month) and recall notices |
+| Maharashtra FDA | HTML table | Mixed date formats, flaky DNS (fallback IP) |
+| WHO Medical Product Alerts | API + PDF annex | Only India-related alerts |
+| Curated seed | JSON | Reviewed rows with source links, e.g. the Oct 2025 DEG syrups |
+| Telangana, Karnataka, Kerala | not enabled | Off by default: geo-blocked outside India, or site down |
 
-Example query (batch check):
+### Extraction
+
+1. **Text layer first.** pdfjs reads text positions and **the table rules drawn in the PDF** to rebuild cells.
+2. **Templates:** CDSCO modern, legacy, state and spurious; TN NSQ and recall; WHO annex; generic.
+3. **OCR fallback.** Tesseract on rendered pages, with a batch-only re-read for rejected cells.
+4. **LLM fallback.** Claude, grounded: only for rejected rows, and any value not found in the row text is dropped.
+
+Rows are scored for confidence:
+
+| Confidence | Result |
+|---|---|
+| ≥ 0.90 | auto-publish |
+| 0.60–0.89 | "Machine-read, awaiting pharmacist confirmation" |
+| below 0.60 | curator queue only |
+
+### First full run (17 Oct 2026, from Kazakhstan)
+
+| Source | Docs | Rows |
+|---|---|---|
+| cdsco-online | 6 | 811 |
+| cdsco-pdf | 6 | 322 |
+| tn-dc | 6 | 102 |
+| mh-fda | 1 | 162 |
+| who-mpa | 2 | 3 |
+| curated | 1 | 3 |
+| **Total** | **22** | **1,403** |
+
+- 0 documents failed.
+- 1,389 rows auto-publish, 13 are machine-read and 1 went to the curator queue.
+- Severity distribution: 119 at 5, 109 at 4, 427 at 3, 594 at 2, 154 at 1.
+
+```bash
+pnpm cli sources | discover | harvest | extract <sha|file> | run | publish | check <batch> | status | heartbeat | worker
+```
+
+## Arkiv
+
+Nazar uses Arkiv as its data layer. The full data contract is in [`arkiv/schema.md`](arkiv/schema.md), and building notes are in [`arkiv/friction.md`](arkiv/friction.md).
+
+- **Publisher wallet:** `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` ([explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2))
+- **Entities:** `notice`, `alert`, `retraction`, `heartbeat`, `snapshot`. Each carries `project=nazar-in-batch-alerts`, `t` and `v`.
+- **Typed attributes for what we query:** `batch`, `sev`, `peds`, `exp_ym`, `alert_ym`, `state`, `case`, `rid`, `notice` (key)… Display detail goes in the JSON payload.
+- **Lifetimes follow product logic.** An alert lives until the batch expires + 180 days, and a notice lives 5 years. A retraction lives for the alert's remaining life + 1 year. The heartbeat lives 20 minutes and is renewed every 5.
+- **Flags:** alerts are `readonly` and allow `permissionlessExtension`. No one can rewrite an alert, but anyone can keep one alive while the batch is still on shelves.
+- **Writes:** one atomic `executeBatch` per notice, using predicted keys so alerts link to their notice in the same transaction. Writes are idempotent by row id and serialised per wallet. Dry-run is the default and uses real gas estimation.
+- **Reads:** always use `.createdBy(publisher)`. Example batch check:
 
 ```ts
-where(eq('app', 'nazar'), eq('t', 'alert'), eq('batch', 'sr13'))
+client.select({ key: true, attributes: true, payload: true })
+  .where(eq('project', str('nazar-in-batch-alerts')), eq('t', str('alert')), eq('batch', str('sr13')))
+  .createdBy('0xd06d85Eb20f126f796E4a341b711B1a757c66bD2')
+  .fetch()
 ```
 
-Batch numbers are matched in a normalised form (`SR-13` → `sr13`). Characters that OCR and people commonly confuse (0/O, 1/I/L, 5/S, 8/B) can only produce a "Did you mean…?" prompt, never a flag.
+## Tests
+
+| Suite | What it covers | Run |
+|---|---|---|
+| Backend unit + golden | 241 tests. Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking), reader, API, orchestrator | `cd Nazar-backend && pnpm test` |
+| Backend live | Hits the real regulator sites (opt-in) | `pnpm test:live` |
+| Frontend e2e | 68 checks in headless Chrome over CDP: onboarding, every result state, look-alikes, proof sheet, status pill, 360–430px layout, dark mode, reduced motion, console errors. Run with the API down (fallback) and with a mocked API | `cd Nazar-frontend && pnpm build && pnpm e2e` |
+
+GitHub Actions:
+- **CI**, on every push: backend typecheck and tests, frontend typecheck and build, and the e2e suite.
+- **Pipeline**, every 6 hours: harvest, extract and publish. This is dry-run unless `NAZAR_PUBLISH_MODE=live` is set and the publisher key is in the repository secrets.
 
 ## Project structure
 
 ```
 Nazar/
-├── README.md
-├── docs/screenshots/          README images
-└── Nazar-frontend/            Next.js 16 web app
-    ├── app/
-    │   ├── page.tsx           Check screen
-    │   ├── layout.tsx         Fonts, theme, metadata
-    │   ├── globals.css        Design tokens (incl. result-state colours)
-    │   ├── icon.svg           Nazar mark
-    │   ├── apple-icon.tsx     Generated Apple touch icon
-    │   └── manifest.ts        Web app manifest
-    ├── components/
-    │   ├── nazar/             Logo, ring motif, onboarding, result card
-    │   └── ui/                shadcn/ui components (Base UI)
-    └── lib/
-        └── source/            API client, browser Arkiv reader, demo fallback, batch matching
+├── arkiv/                  schema.md (data contract), friction.md
+├── Nazar-backend/          pipeline, Arkiv publisher/reader, API, CLI, worker
+│   ├── src/{sources,pipeline,extract,resolve,arkiv,api,domain,storage,lib}
+│   └── test/{unit,golden,fixtures,live}
+├── Nazar-frontend/         Next.js 16 web app
+│   ├── app/                check screen, layout, icons, manifest
+│   ├── components/nazar/   onboarding (animated), result card, status pill
+│   ├── lib/source/         API client, browser Arkiv reader, demo fallback, batch matching
+│   └── e2e/                CDP end-to-end suite + runner
+├── docs/screenshots/
+└── .github/workflows/      ci.yml, pipeline.yml
 ```
 
-**Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, [shadcn/ui](https://ui.shadcn.com) on Base UI, [Motion](https://motion.dev), lucide icons, next-themes, sonner, Noto Sans and JetBrains Mono.
+**Stack:**
+- **Frontend:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui on Base UI, Motion.
+- **Backend:** Node 24, TypeScript, pdfjs-dist, tesseract.js, Hono, node:sqlite (FTS5), Zod.
+- **Arkiv:** `@arkiv-network/sdk` 0.8 with viem.
 
 ## Roadmap
 
-- [x] Batch check with four result states, severity reasons and Child Shield
-- [x] Proof sheet, first-run guide, private recent checks, dark mode
-- [ ] Live data: Arkiv reader with the demo source kept as an automatic fallback, WebSocket feed, offline snapshot
-- [ ] Strip Scan: QR decode, with on-device OCR as fallback
-- [ ] Batch Passport timeline, live Feed and Keep Alive
-- [ ] Shelf Sweep: match a pharmacy stock CSV in the browser, plus a bilingual Return Note
-- [ ] MCP server (`check_batch`, `search_alerts`, `get_case`, `recent_alerts`)
-- [ ] Hindi and Kannada, then all 10 languages with read-aloud
+- [x] Batch check with four result states, severity reasons, Child Shield, look-alike guard
+- [x] Animated first-run guide, proof sheet, private recent checks, dark mode
+- [x] Real pipeline: CDSCO (API + PDFs), Tamil Nadu, Maharashtra, WHO; OCR and grounded LLM fallback
+- [x] Arkiv data contract, publisher (atomic, idempotent), reader, heartbeat; dry-run verified with gas estimates
+- [x] Web app reads the API, then Arkiv directly, then demo data
+- [ ] Fund the publisher wallet and publish live to Tiramisu
+- [ ] Telangana and Karnataka adapters from an Indian host; Kerala when its site is back
+- [ ] Strip Scan (QR + on-device OCR), Batch Passport timeline, Keep Alive, Shelf Sweep CSV, MCP server
+- [ ] Hindi and Kannada, then 10 languages with read-aloud
 
 ## Author
 
@@ -201,4 +243,4 @@ Built by **Pranshu Rastogi**.
 
 ## License
 
-MIT
+[MIT](LICENSE)

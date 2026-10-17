@@ -33,7 +33,7 @@ const SUFFIX_ANY = /\s*,?\s*\b(?:p(?:vt|rivate)\.?\s*,?\s*l(?:td|imited)\.?|l(?:
 
 /** Where the firm name usually stops and the address begins. */
 const ADDRESS_START =
-  /(?:\s+[-–]\s+|\s*,\s*|\.\s+|\s+)(?=(?:(?:plot|sy\.?|survey|s\.?\s?no|d\.?\s?no|khasra|kh\.?\s?no|vill(?:age)?\.?|at\s*[:&]|at\s*post|door|no\.|unit|gat|g\.?i\.?d\.?c|m\.?i\.?d\.?c|sidcul|i\.?i\.?e|industrial|phase|sector|block|near|opp\.?|road|street|nh-?\d|fac\.?|baddi|kala\s+amb|paonta|selaqui|haridwar)\b|\d|#|[A-Z]-\d))/i
+  /(?:\s+[-–]\s+|\s*,\s*|\.\s+|\s+)(?=(?:(?:plot|sy\.?|survey|s\.?\s?no|d\.?\s?no|khasra|kh\.?\s?no|vill(?:age)?\.?|at\s*[:&]|at\s*post|door|unit|gat|g\.?i\.?d\.?c|m\.?i\.?d\.?c|sidcul|i\.?i\.?e|industrial|phase|sector|block|near|opp\.?|road|street|nh-?\d|fac\.?|baddi|kala\s+amb|paonta|selaqui|haridwar)\b|\d|#|[A-Z]-\d|no\.?\s*\d))/i
 
 export function splitFirm(raw: string): { name: string; address: string | null } {
   const s = raw.replace(PREFIX, '').replace(/\s+/g, ' ').trim()

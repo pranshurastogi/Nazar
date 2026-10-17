@@ -137,3 +137,10 @@ describe('splitDrug: brand before an ingredient bracket', () => {
     expect(d.generic).toMatch(/paracetamol/)
   })
 })
+
+describe('splitFirm: door numbers', () => {
+  it('stops the firm name before "No. 787"', async () => {
+    const { splitFirm } = await import('../../src/resolve/manufacturer.ts')
+    expect(splitFirm('Sresan Pharmaceutical, No. 787, Bangalore Highways, Kancheepuram Dist. 602106').name).toBe('Sresan Pharmaceutical')
+  })
+})
