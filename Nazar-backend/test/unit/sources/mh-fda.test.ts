@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { isUnspecifiedBatch } from '../../../src/domain/batch.ts'
 import { mhFda, mhRows, parseMhTable, readMhDates } from '../../../src/sources/mh-fda.ts'
 import { fixtureText } from './fake-http.ts'
 
@@ -50,10 +51,29 @@ describe('mhRows', () => {
   const rows = mhRows(html, doc)
   const byBatch = (b: string) => rows.find((r) => r.batch === b)
 
-  it('emits one row per usable batch and skips "not mentioned" batches', () => {
-    expect(rows).toHaveLength(162)
+  it('emits one row per usable batch; "not mentioned" batches become placeholders', () => {
+    const real = rows.filter((r) => !isUnspecifiedBatch(r.batch))
+    expect(real).toHaveLength(162)
     expect(rows.some((r) => /mention/i.test(r.batch))).toBe(false)
     expect(rows.map((r) => r.rowNo)).toEqual(rows.map((_, i) => i + 1))
+  })
+
+  it('keeps rows with no batch under a stable placeholder and counts unreadable batches', () => {
+    const skipped: Record<string, number> = {}
+    const all = mhRows(html, doc, skipped)
+    const none = all.filter((r) => isUnspecifiedBatch(r.batch))
+    expect(none).toHaveLength(31)
+    expect(none[0]).toMatchObject({ batch: expect.stringMatching(/^UNSPECIFIED-[0-9A-F]{8}$/), confidence: 0.5 })
+    expect(none[0]!.issues).toContain('batch not stated on the notice')
+    // "2", "6", "9" and "2.50E+07" are not batches; they are dropped but counted
+    expect(skipped).toEqual({ 'implausible batch': 4 })
+    expect(mhRows(html, { ...doc, sha256: 'c'.repeat(64) }).filter((r) => isUnspecifiedBatch(r.batch)).map((r) => r.batch)).toEqual(none.map((r) => r.batch))
+  })
+
+  it('says the page has no publication date without lowering confidence', () => {
+    const r = byBatch('CA-251')!
+    expect(r.issues).toContain('date not published; first seen Oct 2026')
+    expect(r.confidence).toBe(0.92)
   })
 
   it('maps rows 2, 4 and 9 of the page', () => {

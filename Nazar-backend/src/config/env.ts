@@ -64,6 +64,9 @@ const EnvSchema = z.object({
     .default('')
     .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
   NAZAR_MAX_DOCS_PER_RUN: z.coerce.number().int().min(1).default(6),
+  // Watchdogs: a document or source that runs past these is marked failed and the run moves on.
+  NAZAR_DOC_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300_000),
+  NAZAR_SOURCE_TIMEOUT_MS: z.coerce.number().int().min(1000).default(900_000),
 
   // Extraction
   NAZAR_OCR_ENABLED: bool(true),

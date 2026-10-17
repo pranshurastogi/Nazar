@@ -68,8 +68,11 @@ export class PoliteHttp {
     private readonly wait = sleep,
   ) {
     const lookup = fallbackLookup(opts.fallbackIps ?? {})
-    this.agent = new Agent({ connect: { lookup } })
-    this.insecureAgent = new Agent({ connect: { rejectUnauthorized: false, lookup } })
+    // undici's own defaults wait 300 s for headers and between body chunks; bound every phase by our timeout.
+    const t = opts.timeoutMs
+    const timeouts = { headersTimeout: t, bodyTimeout: t }
+    this.agent = new Agent({ ...timeouts, connect: { lookup, timeout: t } })
+    this.insecureAgent = new Agent({ ...timeouts, connect: { rejectUnauthorized: false, lookup, timeout: t } })
   }
 
   async get(url: string, o: PoliteFetchOptions = {}): Promise<FetchResult> {
@@ -95,10 +98,31 @@ export class PoliteHttp {
     return { ...r, text: decodeText(r.bytes, r.contentType) }
   }
 
+  /**
+   * One request with a hard deadline over the whole exchange (connect, headers and body). The abort
+   * signal asks undici to stop, but the race is what guarantees the caller is released even if a
+   * fetch or body promise never settles after the abort.
+   */
   private async once(url: string, o: PoliteFetchOptions, timeoutMs = this.opts.timeoutMs): Promise<FetchResult> {
-    const u = new URL(url)
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let timer: NodeJS.Timeout | undefined
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new TransientError(`request timed out after ${timeoutMs} ms: ${url}`, { url, timeoutMs }))
+      }, timeoutMs)
+    })
+    const work = this.exchange(url, o, controller.signal)
+    work.catch(() => {}) // when the deadline wins, a late rejection must not surface as unhandled
+    try {
+      return await Promise.race([work, deadline])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private async exchange(url: string, o: PoliteFetchOptions, signal: AbortSignal): Promise<FetchResult> {
+    const u = new URL(url)
     let res: Response
     try {
       res = await this.fetchImpl(url, {
@@ -108,12 +132,11 @@ export class PoliteHttp {
           'accept-language': 'en-IN,en;q=0.9',
           ...o.headers,
         },
-        signal: controller.signal,
+        signal,
         redirect: 'follow',
         dispatcher: this.opts.insecureHosts.includes(u.hostname.toLowerCase()) ? this.insecureAgent : this.agent,
       })
     } catch (err) {
-      clearTimeout(timer)
       throw new TransientError(`network error for ${url}: ${errorMessage(err)}`, { url }, { cause: err })
     }
     try {
@@ -138,8 +161,6 @@ export class PoliteHttp {
     } catch (err) {
       if (err instanceof PermanentError || err instanceof TransientError) throw err
       throw new TransientError(`failed reading body of ${url}: ${errorMessage(err)}`, { url }, { cause: err })
-    } finally {
-      clearTimeout(timer)
     }
   }
 
@@ -157,7 +178,7 @@ export class PoliteHttp {
       try {
         // Hard deadline: a hung robots.txt (seen on state sites) must never stall discovery.
         const t = this.opts.robotsTimeoutMs ?? 10_000
-        const r = await withDeadline(this.once(`${u.protocol}//${u.host}/robots.txt`, { accept: 'text/plain' }, t), t + 1000)
+        const r = await this.once(`${u.protocol}//${u.host}/robots.txt`, { accept: 'text/plain' }, t)
         rules = parseRobots(decodeText(r.bytes, r.contentType), this.opts.userAgent)
       } catch {
         rules = { disallow: [], allow: [] } // no robots.txt (or unreachable) means no restrictions
@@ -168,28 +189,49 @@ export class PoliteHttp {
   }
 }
 
-function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new TransientError(`deadline of ${ms} ms exceeded`)), ms)
-  })
-  return Promise.race([p, deadline]).finally(() => clearTimeout(timer))
-}
-
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
+type Resolve = (hostname: string, options: LookupOptions, cb: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void) => void
 
-/** DNS lookup that falls back to a pinned IP only when normal resolution fails (some state sites have flaky nameservers). */
-export function fallbackLookup(fallbacks: Record<string, string>) {
-  return (hostname: string, options: LookupOptions, cb: LookupCallback) => {
-    dnsLookup(hostname, options, (err, address, family) => {
-      const ip = fallbacks[hostname.toLowerCase()]
-      if (err && ip) {
-        if (options.all) cb(null, [{ address: ip, family: 4 }])
-        else cb(null, ip, 4)
-        return
+/**
+ * DNS lookup that falls back to a pinned IP only when normal resolution fails (some state sites have
+ * flaky nameservers). It accepts every calling convention net/tls use — (host, cb), (host, family, cb),
+ * (host, { all, family }, cb) — and always calls back exactly once: a resolver that never answers
+ * gets a deadline, so a stuck getaddrinfo cannot leave a connection waiting forever.
+ */
+export function fallbackLookup(fallbacks: Record<string, string>, o: { resolve?: Resolve; timeoutMs?: number } = {}) {
+  const resolve: Resolve = o.resolve ?? (dnsLookup as unknown as Resolve)
+  const timeoutMs = o.timeoutMs ?? 15_000
+  return (hostname: string, optionsOrCb?: LookupOptions | number | LookupCallback, maybeCb?: LookupCallback) => {
+    const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb
+    if (typeof cb !== 'function') throw new TypeError('fallbackLookup needs a callback')
+    const options: LookupOptions =
+      typeof optionsOrCb === 'number' ? { family: optionsOrCb } : typeof optionsOrCb === 'object' && optionsOrCb ? optionsOrCb : {}
+    const ip = fallbacks[hostname.toLowerCase()]
+    let done = false
+    const finish = (err: NodeJS.ErrnoException | null, address?: string | LookupAddress[], family?: number) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      if (err && ip) return options.all ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4)
+      if (err) return cb(err, options.all ? [] : '', undefined)
+      if (options.all) {
+        const list = Array.isArray(address) ? address : [{ address: String(address), family: family ?? 4 }]
+        return cb(null, list)
       }
-      cb(err, address as string | LookupAddress[], family)
-    })
+      const one = Array.isArray(address) ? address[0] : { address: String(address), family: family ?? 4 }
+      return cb(null, one?.address ?? '', one?.family ?? family ?? 4)
+    }
+    const timer = setTimeout(() => {
+      const err: NodeJS.ErrnoException = new Error(`DNS lookup for ${hostname} timed out after ${timeoutMs} ms`)
+      err.code = 'ETIMEOUT'
+      finish(err)
+    }, timeoutMs)
+    timer.unref()
+    try {
+      resolve(hostname, options, (err, address, family) => finish(err, address, family))
+    } catch (err) {
+      finish(err as NodeJS.ErrnoException)
+    }
   }
 }
 

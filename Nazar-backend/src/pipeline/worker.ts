@@ -22,10 +22,21 @@ export const isNationalSource = (id: string) => id.startsWith('cdsco')
 
 export interface WorkerHandle {
   stop(): Promise<void>
+  /** Renew the heartbeat now (also what the cron calls); concurrent calls share one beat. */
+  beat(): Promise<void>
   jobs: { name: string; pattern: string; next: string | null }[]
 }
 
-export async function startWorker(o: { ledger: Ledger; deps?: Partial<RunDeps>; publish?: boolean; handleSignals?: boolean }): Promise<WorkerHandle> {
+export async function startWorker(o: {
+  ledger: Ledger
+  deps?: Partial<RunDeps>
+  publish?: boolean
+  handleSignals?: boolean
+  /** Injected in tests; defaults to the real heartbeat (live when NAZAR_PUBLISH_MODE=live). */
+  heartbeat?: Pick<Heartbeat, 'beat'>
+  /** Run every source once at start-up (fresh deploys with an empty ledger). Defaults to NAZAR_RUN_ON_START. */
+  runOnStart?: boolean
+}): Promise<WorkerHandle> {
   const e = env()
   const { enabledSources } = await import('../sources/registry.ts')
   const all: SourceAdapter[] = enabledSources()
@@ -33,9 +44,24 @@ export async function startWorker(o: { ledger: Ledger; deps?: Partial<RunDeps>; 
   const states = all.filter((s) => !isNationalSource(s.id)).map((s) => s.id)
   const publish = o.publish ?? e.NAZAR_PUBLISH_MODE === 'live'
   const publisher = new Publisher({ ledger: o.ledger })
-  const heartbeat = new Heartbeat({ ledger: o.ledger })
+  const heartbeat = o.heartbeat ?? new Heartbeat({ ledger: o.ledger })
   const controller = new AbortController()
   let current: Promise<unknown> | null = null
+
+  // Renews the heartbeat entity (patch + extend; created if gone). A failure only logs: the next tick retries,
+  // and if the pipeline stays down the entity expires on its own, which is exactly the signal we want.
+  let beating: Promise<void> | null = null
+  const beat = () =>
+    (beating ??= (async () => {
+      try {
+        const r = await heartbeat.beat()
+        log.info({ action: r.action, key: r.entityKey, tx: r.txHash }, 'heartbeat')
+      } catch (err) {
+        log.warn({ err: errorMessage(err) }, 'heartbeat failed')
+      } finally {
+        beating = null
+      }
+    })())
 
   const runGroup = async (name: string, ids: string[]) => {
     if (!ids.length || controller.signal.aborted) return
@@ -62,19 +88,18 @@ export async function startWorker(o: { ledger: Ledger; deps?: Partial<RunDeps>; 
     {
       name: 'heartbeat',
       pattern: e.NAZAR_CRON_HEARTBEAT,
-      cron: new Cron(e.NAZAR_CRON_HEARTBEAT, opts, async () => {
-        try {
-          const r = await heartbeat.beat()
-          log.debug({ action: r.action, key: r.entityKey }, 'heartbeat')
-        } catch (err) {
-          log.warn({ err: errorMessage(err) }, 'heartbeat failed')
-        }
-      }),
+      cron: new Cron(e.NAZAR_CRON_HEARTBEAT, opts, () => beat()),
     },
   ]
   log.info({ national, states, publish, jobs: crons.map((c) => ({ name: c.name, next: c.cron.nextRun()?.toISOString() ?? null })) }, 'worker started')
   // A beat right away, so a fresh deploy shows as alive without waiting five minutes.
-  void heartbeat.beat().catch((err) => log.warn({ err: errorMessage(err) }, 'initial heartbeat failed'))
+  const first = beat()
+  if (o.runOnStart ?? ['1', 'true', 'yes'].includes((process.env.NAZAR_RUN_ON_START ?? '').toLowerCase())) {
+    void (async () => {
+      await runGroup('start:cdsco', national)
+      await runGroup('start:states', states)
+    })()
+  }
 
   let stopping: Promise<void> | null = null
   const stop = () =>
@@ -82,6 +107,7 @@ export async function startWorker(o: { ledger: Ledger; deps?: Partial<RunDeps>; 
       log.info('stopping worker')
       for (const c of crons) c.cron.stop()
       controller.abort()
+      await first
       if (current) await Promise.race([current.catch(() => undefined), new Promise((r) => setTimeout(r, 30_000))])
       log.info('worker stopped')
     })())
@@ -97,6 +123,7 @@ export async function startWorker(o: { ledger: Ledger; deps?: Partial<RunDeps>; 
 
   return {
     stop,
+    beat,
     jobs: crons.map((c) => ({ name: c.name, pattern: c.pattern, next: c.cron.nextRun()?.toISOString() ?? null })),
   }
 }

@@ -43,8 +43,45 @@ export function sourceLastChecks(ledger: Ledger): Record<string, { lastCheckedMs
   return out
 }
 
+export const HEARTBEAT_LAST = 'heartbeat:last'
+/** The heartbeat lives 20 minutes; older than that and the pipeline is offline. */
+export const HEARTBEAT_STALE_MS = 20 * 60 * 1000
+
+/** What the last beat did, kept in the ledger for /v1/pipeline/status. */
+export interface HeartbeatRecord {
+  mode: 'dry-run' | 'live'
+  action: 'created' | 'renewed' | 'dry-run'
+  atMs: number
+  entityKey: string | null
+  txHash: string | null
+}
+
+export function lastHeartbeat(ledger: Ledger): HeartbeatRecord | null {
+  const raw = ledger.getKv(HEARTBEAT_LAST)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as HeartbeatRecord
+  } catch {
+    return null
+  }
+}
+
+export interface HeartbeatStatus {
+  lastOkMs: number
+  entityKey: string | null
+  /** dry-run beats are local only; live beats are entities on Arkiv. */
+  mode: 'dry-run' | 'live' | null
+  action: HeartbeatRecord['action'] | null
+  txHash: string | null
+  ageMs: number
+  /** Older than the heartbeat's 20-minute life: the pipeline is not running. */
+  stale: boolean
+  /** The newest heartbeat entity read from Arkiv (when a reader is wired), so a separate API host sees the truth. */
+  chain: { entityKey: string; lastOkMs: number; expiresAtBlock: string | null } | null
+}
+
 export interface PipelineStatus {
-  heartbeat: { lastOkMs: number; entityKey: string | null } | null
+  heartbeat: HeartbeatStatus | null
   runs: unknown[]
   stats: ReturnType<Ledger['stats']>
   publisher: { address: string; balanceGlm: string | null } | null
@@ -73,8 +110,29 @@ export async function pipelineStatus(o: {
   address: Hex | null
   client?: Pick<PublicArkivClient, 'getBalance'> | null
   runs?: number
+  /** On-chain heartbeat (Q6); errors and slow answers are ignored. */
+  chainHeartbeat?: (() => Promise<{ entityKey: string; lastOkMs: number; expiresAtBlock: string | null } | null>) | null
+  now?: () => number
 }): Promise<PipelineStatus> {
+  const now = o.now?.() ?? Date.now()
   const lastOk = o.ledger.getKv('heartbeat:lastOkMs')
+  const last = lastHeartbeat(o.ledger)
+  const chain = o.chainHeartbeat
+    ? await Promise.race([o.chainHeartbeat().catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 4000).unref())])
+    : null
+  const lastOkMs = Math.max(lastOk ? Number(lastOk) : 0, chain?.lastOkMs ?? 0)
+  const heartbeat: HeartbeatStatus | null = lastOkMs
+    ? {
+        lastOkMs,
+        entityKey: chain?.entityKey ?? o.ledger.getKv('heartbeat:entityKey') ?? null,
+        mode: last?.mode ?? (chain ? 'live' : null),
+        action: last?.action ?? null,
+        txHash: last?.txHash ?? null,
+        ageMs: Math.max(0, now - lastOkMs),
+        stale: now - lastOkMs > HEARTBEAT_STALE_MS,
+        chain: chain ? { entityKey: chain.entityKey, lastOkMs: chain.lastOkMs, expiresAtBlock: chain.expiresAtBlock } : null,
+      }
+    : null
   const sources: Record<string, SourceCheck> = {}
   const rows = o.ledger.db.prepare("SELECT key, value FROM kv WHERE key LIKE 'source:%:last'").all() as { key: string; value: string }[]
   for (const r of rows) {
@@ -83,7 +141,7 @@ export async function pipelineStatus(o: {
     } catch {}
   }
   return {
-    heartbeat: lastOk ? { lastOkMs: Number(lastOk), entityKey: o.ledger.getKv('heartbeat:entityKey') ?? null } : null,
+    heartbeat,
     runs: o.ledger.recentRuns(o.runs ?? 10),
     stats: o.ledger.stats(),
     publisher: o.address ? { address: o.address, balanceGlm: o.client ? await publisherBalance(o.client, o.address) : null } : null,

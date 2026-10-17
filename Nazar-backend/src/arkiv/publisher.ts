@@ -1,12 +1,8 @@
 import {
   createWalletClient,
   EntityMutationError,
-  MAX_ATTRIBUTES,
-  MAX_NAME_BYTES,
-  MAX_PAYLOAD_BYTES,
-  MAX_STRING_BYTES,
-  isValidAttributeName,
   type CreateEntityParameters,
+  type ExecuteBatchParameters,
   type PublicArkivClient,
   type WalletArkivClient,
 } from '@arkiv-network/sdk'
@@ -24,7 +20,9 @@ import { sleep } from '../lib/retry.ts'
 import { isPublishableTier } from '../resolve/case.ts'
 import type { Ledger } from '../storage/ledger.ts'
 import { explorerEntity, explorerTx, publicClient, publisherAddress, walletClient } from './client.ts'
-import { PROJECT, alertLifetimeDays, buildAlert, buildNotice, buildRetraction, type RetractionReason } from './schema.ts'
+import { FAUCET_URL, fundingInstructions } from './funding.ts'
+import { PROJECT, alertLifetimeDays, buildAlert, buildNotice, buildRetraction, type EntityType, type RetractionReason } from './schema.ts'
+import { checkEntity, planChunks, publishOrder } from './validate.ts'
 
 const log = child('publisher')
 
@@ -45,10 +43,13 @@ const log = child('publisher')
  */
 
 export const MAX_CREATES_PER_TX = 12
-/** Measured on Tiramisu: one alert create ≈ 136k gas. Padded for the balance pre-check. */
-const GAS_PER_CREATE = 160_000n
-const FALLBACK_GAS_PRICE = 1_000_000_002n
-export const FAUCET_URL = 'https://hub.arkiv.network/faucet'
+/**
+ * eth_estimateGas on real 12-alert batches from the ledger: ≈210k gas per create (a bare create with
+ * a tiny payload is ≈136k; real alerts carry 25 attributes and a ~1 KB payload). Padded for the balance pre-check.
+ */
+export const GAS_PER_CREATE = 230_000n
+export const FALLBACK_GAS_PRICE = 1_000_000_002n
+export { FAUCET_URL }
 const PLACEHOLDER_KEY = `0x${'00'.repeat(32)}` as Hex
 
 export type PublishMode = 'dry-run' | 'live'
@@ -61,18 +62,20 @@ export interface SimulationResult {
   gas: string | null
   gasPrice: string | null
   costGlm: string | null
+  /** Size of the encoded transaction data, when it could be captured. */
+  calldataBytes?: number | null
   error?: string
 }
 export type SimulateFn = (creates: CreateEntityParameters[], from: Hex | null) => Promise<SimulationResult>
 
 export class InsufficientFundsError extends NazarError {
-  constructor(address: Hex, balanceWei: bigint, neededWei: bigint) {
-    super(
-      `Publisher ${address} has ${formatEther(balanceWei)} GLM but this publish needs about ${formatEther(neededWei)} GLM. ` +
-        `Fund it from the Tiramisu faucet: ${FAUCET_URL}`,
-      'FUNDS',
-      { address, balance: balanceWei.toString(), needed: neededWei.toString(), faucet: FAUCET_URL },
-    )
+  constructor(address: Hex, balanceWei: bigint, neededWei: bigint, what = 'this publish') {
+    super(fundingInstructions({ address, balanceWei, neededWei, what }), 'FUNDS', {
+      address,
+      balance: balanceWei.toString(),
+      needed: neededWei.toString(),
+      faucet: FAUCET_URL,
+    })
   }
 }
 
@@ -155,24 +158,11 @@ export async function withWriterLock<T>(address: string, fn: () => Promise<T>): 
   }
 }
 
-// ---- validation against Arkiv's limits, before anything is sent
-const enc = new TextEncoder()
+// ---- validation against Arkiv's limits (and our contract when the kind is known), before anything is sent
 type Tagged = { type: string; value: unknown }
 
-export function validateEntity(p: CreateEntityParameters): string[] {
-  const problems: string[] = []
-  const attrs = Object.entries((p.attributes ?? {}) as Record<string, unknown>)
-  if (attrs.length > MAX_ATTRIBUTES) problems.push(`${attrs.length} attributes > ${MAX_ATTRIBUTES}`)
-  for (const [name, v] of attrs) {
-    if (!isValidAttributeName(name) || enc.encode(name).length > MAX_NAME_BYTES) problems.push(`bad attribute name "${name}"`)
-    const t = v as Tagged
-    if (t && typeof t === 'object' && t.type === 'str' && enc.encode(String(t.value)).length > MAX_STRING_BYTES) {
-      problems.push(`attribute ${name} exceeds ${MAX_STRING_BYTES} bytes`)
-    }
-    if (t && typeof t === 'object' && t.type === 'i32' && !Number.isInteger(t.value)) problems.push(`attribute ${name} is not an integer`)
-  }
-  if (p.payload.length > MAX_PAYLOAD_BYTES) problems.push(`payload ${p.payload.length} bytes > ${MAX_PAYLOAD_BYTES}`)
-  return problems
+export function validateEntity(p: CreateEntityParameters, kind?: EntityType): string[] {
+  return checkEntity(p, kind).problems
 }
 
 export function summarise(kind: EntitySummary['kind'], p: CreateEntityParameters, rid: string | null = null): EntitySummary {
@@ -306,21 +296,14 @@ export class Publisher {
     return this.publishInner(sha, mode)
   }
 
-  /** Every notice that still has publishable alerts waiting, oldest first. */
-  pendingNotices(limit = 50): string[] {
-    return (
-      this.ledger.db
-        .prepare(
-          `SELECT notice_sha FROM alerts WHERE entity_key IS NULL AND retracted = 0 AND tier IN ('auto','machine_read')
-           GROUP BY notice_sha ORDER BY MIN(alert_ym), notice_sha LIMIT ?`,
-        )
-        .all(limit) as { notice_sha: string }[]
-    ).map((r) => r.notice_sha)
+  /** Every notice that still has publishable alerts waiting, oldest first, optionally from some sources only. */
+  pendingNotices(limit = 50, sources?: string[]): string[] {
+    return publishOrder(this.ledger, { limit, sources, pendingOnly: true })
   }
 
-  async publishPending(opts: { live?: boolean; limit?: number } = {}): Promise<PublishReport[]> {
+  async publishPending(opts: { live?: boolean; limit?: number; sources?: string[] } = {}): Promise<PublishReport[]> {
     const out: PublishReport[] = []
-    for (const sha of this.pendingNotices(opts.limit)) out.push(await this.publishNotice(sha, opts))
+    for (const sha of this.pendingNotices(opts.limit, opts.sources)) out.push(await this.publishNotice(sha, opts))
     return out
   }
 
@@ -367,14 +350,19 @@ export class Publisher {
       .map((r) => r.record)
     const valid: AlertRecord[] = []
     for (const a of pending) {
-      const problems = validateEntity(buildAlert(a, PLACEHOLDER_KEY, this.now()))
+      let problems: string[]
+      try {
+        problems = validateEntity(buildAlert(a, PLACEHOLDER_KEY, this.now()), 'alert')
+      } catch (err) {
+        problems = [`builder threw: ${errorMessage(err)}`]
+      }
       if (problems.length) {
         report.invalid.push({ rid: a.rid, problems })
         this.ledger.logPublish({ kind: 'alert', ref: a.rid, status: 'failed', error: problems.join('; ') })
       } else valid.push(a)
     }
     report.candidates = valid.length
-    const noticeProblems = validateEntity(buildNotice(notice.record))
+    const noticeProblems = validateEntity(buildNotice(notice.record), 'notice')
     if (noticeProblems.length) throw new PublishError(`Notice ${sha} fails Arkiv limits: ${noticeProblems.join('; ')}`)
     if (!valid.length) {
       if (!report.warnings.length) report.warnings.push('nothing to publish: every alert is already on chain')
@@ -382,13 +370,7 @@ export class Publisher {
     }
 
     // 3. Plan the chunks: the first one carries the notice when it is not on chain yet.
-    const plan: { notice: boolean; alerts: AlertRecord[] }[] = []
-    let rest = valid
-    if (!report.noticeKey) {
-      plan.push({ notice: true, alerts: rest.slice(0, this.chunkSize - 1) })
-      rest = rest.slice(this.chunkSize - 1)
-    }
-    for (let i = 0; i < rest.length; i += this.chunkSize) plan.push({ notice: false, alerts: rest.slice(i, i + this.chunkSize) })
+    const plan = planChunks(valid, !!report.noticeKey, this.chunkSize)
 
     if (mode === 'live') {
       await this.checkBalance(address!, valid.length + (report.noticeKey ? 0 : 1))
@@ -532,7 +514,7 @@ export class Publisher {
       (this.o.gasPrice ?? defaultGasPrice)().catch(() => FALLBACK_GAS_PRICE),
     ])
     const needed = BigInt(creates) * GAS_PER_CREATE * gasPrice
-    if (balance < needed) throw new InsufficientFundsError(address, balance, needed)
+    if (balance < needed) throw new InsufficientFundsError(address, balance, needed, `${creates} entity create(s)`)
     log.info({ address, balance: formatEther(balance), needed: formatEther(needed) }, 'balance ok')
   }
 
@@ -559,7 +541,7 @@ export class Publisher {
       note: note.slice(0, 2000),
       remainingAlertDays: alertLifetimeDays(row.record, this.now()),
     })
-    const problems = validateEntity(params)
+    const problems = validateEntity(params, 'retraction')
     if (problems.length) throw new PublishError(`Retraction fails Arkiv limits: ${problems.join('; ')}`)
     const entity = summarise('retraction', params, rid)
     if (mode === 'dry-run') {
@@ -602,7 +584,7 @@ function upstreamRpc(): RpcRequest {
   return t.request as unknown as RpcRequest
 }
 
-async function defaultGasPrice(): Promise<bigint> {
+export async function defaultGasPrice(): Promise<bigint> {
   return BigInt((await upstreamRpc()({ method: 'eth_gasPrice' })) as string)
 }
 
@@ -612,8 +594,9 @@ class DryRunCapture extends Error {}
  * Dry-run simulation without spending anything, even if the wallet is funded:
  * the SDK encodes the batch through a transport that captures the calldata and refuses to send,
  * then we ask the node for eth_estimateGas on that calldata (no fee fields, so an empty wallet works).
+ * Works for any batch: creates, patches, extensions.
  */
-export const rpcSimulate: SimulateFn = async (creates, from) => {
+export async function rpcSimulateBatch(batch: ExecuteBatchParameters, from: Hex | null): Promise<SimulationResult> {
   const upstream = upstreamRpc()
   let captured: { to: Hex; data: Hex } | undefined
   const transport = custom({
@@ -630,8 +613,9 @@ export const rpcSimulate: SimulateFn = async (creates, from) => {
   // A throwaway signer: it never sends, it only lets the SDK encode the transaction.
   const account = privateKeyToAccount(generatePrivateKey())
   const wc = createWalletClient({ chain: tiramisu, account, transport })
-  await wc.executeBatch({ creates }).catch(() => undefined)
+  await wc.executeBatch(batch).catch(() => undefined)
   if (!captured) return { ok: false, gas: null, gasPrice: null, costGlm: null, error: 'could not capture calldata from the SDK' }
+  const calldataBytes = (captured.data.length - 2) / 2
   const sender = from ?? account.address
   try {
     const [gasHex, priceHex] = await Promise.all([
@@ -640,9 +624,10 @@ export const rpcSimulate: SimulateFn = async (creates, from) => {
     ])
     const gas = BigInt(gasHex)
     const price = BigInt(priceHex)
-    return { ok: true, gas: gas.toString(), gasPrice: price.toString(), costGlm: formatEther(gas * price) }
+    return { ok: true, gas: gas.toString(), gasPrice: price.toString(), costGlm: formatEther(gas * price), calldataBytes }
   } catch (err) {
-    return { ok: false, gas: null, gasPrice: null, costGlm: null, error: errorMessage(err).split('\n')[0] }
+    return { ok: false, gas: null, gasPrice: null, costGlm: null, calldataBytes, error: errorMessage(err).split('\n')[0] }
   }
 }
 
+export const rpcSimulate: SimulateFn = (creates, from) => rpcSimulateBatch({ creates }, from)

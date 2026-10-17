@@ -13,6 +13,16 @@ export type ManagedSource = SourceAdapter & { readonly enabled?: boolean; readon
 
 export const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
 
+/** 202610 → "Oct 2026". */
+export const monthLabel = (ym: number) => `${MONTH_ABBR[(ym % 100) - 1] ?? '?'} ${Math.floor(ym / 100)}`
+
+/**
+ * Issue on rows from pages that print no publication date (Maharashtra): the alert month is the
+ * month Nazar first saw the row, and the pipeline keeps that earliest month when the page is re-read.
+ */
+export const FIRST_SEEN_ISSUE = 'date not published; first seen'
+export const firstSeenIssue = (ym: number) => `${FIRST_SEEN_ISSUE} ${monthLabel(ym)}`
+
 /** "Aug" → 8, "august" → 8. */
 export function monthIndex(name: string): number | null {
   const i = MONTH_ABBR.findIndex((m) => m.toLowerCase() === name.trim().slice(0, 3).toLowerCase())

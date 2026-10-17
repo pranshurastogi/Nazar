@@ -1,4 +1,4 @@
-import { cleanBatch, matchKey } from '../domain/batch.ts'
+import { cleanBatch, isUnspecifiedBatch, matchKey, unspecifiedBatchKey } from '../domain/batch.ts'
 import { findYmInText, parseYm, ymOf } from '../domain/dates.ts'
 import { scoreSeverity } from '../domain/severity.ts'
 import type { AlertRecord, ExtractedRow, NoticeRecord, RawDoc } from '../domain/types.ts'
@@ -32,7 +32,9 @@ const isSpuriousDoc = (doc: RawDoc) =>
 
 export function resolveRow(doc: RawDoc, row: ExtractedRow, alertYm = noticeYmOf(doc)): AlertRecord {
   const batch = cleanBatch(row.batch) ?? row.batch.trim().toUpperCase()
-  const batchKey = matchKey(batch)
+  // A notice row with no batch is a drug-level record: visible in the ledger, never a batch match.
+  const unspecified = isUnspecifiedBatch(batch)
+  const batchKey = unspecified ? unspecifiedBatchKey(batch) : matchKey(batch)
   const spuriousDoc = isSpuriousDoc(doc)
   const reason = (row.reason ?? '').replace(/\s+/g, ' ').trim() || (spuriousDoc ? 'Spurious drug' : 'Not of standard quality')
   const failures0 = classifyFailures(reason)
@@ -79,7 +81,7 @@ export function resolveRow(doc: RawDoc, row: ExtractedRow, alertYm = noticeYmOf(
     noticeDate: doc.publishedAt,
     method: row.method,
     confidence: row.confidence,
-    tier: tierFor(row.confidence, batchUncertain(batch, row.issues)),
+    tier: unspecified ? 'drug_level' : tierFor(row.confidence, batchUncertain(batch, row.issues)),
   }
 }
 
@@ -99,16 +101,28 @@ export function noticeFor(doc: RawDoc, rows: ExtractedRow[]): NoticeRecord {
   }
 }
 
-export function resolveRows(doc: RawDoc, rows: ExtractedRow[]): { notice: NoticeRecord; alerts: AlertRecord[]; curator: AlertRecord[] } {
+/** `skipped`, when given, counts rows dropped here by reason (duplicate row id, empty batch key). */
+export function resolveRows(
+  doc: RawDoc,
+  rows: ExtractedRow[],
+  skipped?: Record<string, number>,
+): { notice: NoticeRecord; alerts: AlertRecord[]; curator: AlertRecord[] } {
+  const skip = (reason: string) => skipped && (skipped[reason] = (skipped[reason] ?? 0) + 1)
   const alertYm = noticeYmOf(doc)
   const alerts: AlertRecord[] = []
   const curator: AlertRecord[] = []
   const seen = new Set<string>()
   for (const row of rows) {
-    if (seen.has(row.rid)) continue
+    if (seen.has(row.rid)) {
+      skip('duplicate row id')
+      continue
+    }
     seen.add(row.rid)
     const rec = resolveRow(doc, row, alertYm)
-    if (!rec.batchKey) continue
+    if (!rec.batchKey) {
+      skip('empty batch key')
+      continue
+    }
     ;(isPublishableTier(rec.tier) ? alerts : curator).push(rec)
   }
   return { notice: noticeFor(doc, rows), alerts, curator }

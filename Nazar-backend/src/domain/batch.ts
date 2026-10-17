@@ -1,3 +1,4 @@
+import { stableId } from '../lib/hash.ts'
 import { parseYm } from './dates.ts'
 
 /**
@@ -5,8 +6,11 @@ import { parseYm } from './dates.ts'
  * batch typed in the app and a batch read from a PDF meet at the same key.
  */
 
-/** Shape a person might type: letters, digits and - / . space, 2 to 20 chars. */
-export const BATCH_SHAPE = /^[A-Za-z0-9\-/. ]{2,20}$/
+/**
+ * Shape a person might type: letters, digits, - / . space and parentheses, 2 to 24 chars.
+ * Parentheses are real: CDSCO lists Sodium chloride injection batch "(N)25567".
+ */
+export const BATCH_SHAPE = /^[A-Za-z0-9\-/. ()]{2,24}$/
 
 /** Lowercase, separators removed: "SR-13" becomes "sr13". */
 export function matchKey(batch: string): string {
@@ -18,7 +22,7 @@ export function confusionKey(batch: string): string {
   return matchKey(batch).replace(/o/g, '0').replace(/[il]/g, '1').replace(/s/g, '5').replace(/b/g, '8')
 }
 
-const NOT_A_BATCH = /^(n\.?\s*a\.?|nil|none|not\s+(mentioned|available|given)|--?|—|batch|b\.?\s*no\.?)$/i
+const NOT_A_BATCH = /^(n\.?\s*a\.?|nil|none|not\s+(mentioned|mention|available|given|stated|known)|unknown|--?|—|batch|b\.?\s*no\.?)$/i
 
 /** Cleans a raw cell into a display batch number, or null if it is not one. */
 export function cleanBatch(raw: string): string | null {
@@ -28,6 +32,8 @@ export function cleanBatch(raw: string): string | null {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[,;:.]+$/, '')
+    // A trailing note such as "SR-13 (Syrup)" is not part of the batch; "(N)25567" keeps its prefix.
+    .replace(/\s+\([^()\d]*\)$/, '')
   if (!s || NOT_A_BATCH.test(s)) return null
   return s.toUpperCase()
 }
@@ -63,4 +69,26 @@ export function splitBatches(cell: string): string[] {
     }
   }
   return out
+}
+
+/**
+ * Rows that name a product but no batch ("Not Mentioned", blank) are kept as drug-level records
+ * under a placeholder batch. Their batch key carries a ':' that matchKey() can never produce,
+ * so no typed batch can ever match one.
+ */
+export const UNSPECIFIED_PREFIX = 'UNSPECIFIED-'
+
+export const unspecifiedBatch = (...seed: (string | number)[]) => `${UNSPECIFIED_PREFIX}${stableId('unspecified', ...seed).slice(0, 8).toUpperCase()}`
+
+export const isUnspecifiedBatch = (batch: string) => batch.trim().toUpperCase().startsWith(UNSPECIFIED_PREFIX)
+
+export const unspecifiedBatchKey = (batch: string) => `unspecified:${matchKey(batch.trim().slice(UNSPECIFIED_PREFIX.length))}`
+
+/** "Not mentioned on sample", "NOT STATED", "Not Mentioned//": the notice says there is no batch. */
+const NO_BATCH_STATED = /^(not\s+(mentioned|mention|stated|known|available|given|declared)|n\.?\s*a\.?|nil|none|unknown)\b[^0-9]*$/i
+
+/** True when a cell states no batch at all (as opposed to one we cannot read). */
+export function isMissingBatch(cell: string | null | undefined): boolean {
+  const c = cleanBatch(cell ?? '')
+  return c === null || NO_BATCH_STATED.test(c)
 }

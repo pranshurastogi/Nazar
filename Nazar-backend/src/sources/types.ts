@@ -28,6 +28,13 @@ export interface SourceAdapter {
   /** Cron expression this source should be polled on. */
   readonly schedule: string
   discover(ctx: SourceContext): Promise<DiscoveredDoc[]>
-  /** Optional structured extraction for non-PDF sources. */
-  rows?(doc: RawDoc, bytes: Uint8Array): Promise<ExtractedRow[]>
+  /** Optional structured extraction for non-PDF sources. Rows it drops are counted in `skipped` by reason. */
+  rows?(doc: RawDoc, bytes: Uint8Array, skipped?: SkipTally): Promise<ExtractedRow[]>
+}
+
+/** Rows dropped on the way to the ledger, by reason, so silent losses show up in run stats. */
+export type SkipTally = Record<string, number>
+
+export function countSkip(tally: SkipTally | undefined, reason: string, n = 1) {
+  if (tally && n > 0) tally[reason] = (tally[reason] ?? 0) + n
 }

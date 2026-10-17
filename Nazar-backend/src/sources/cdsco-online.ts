@@ -1,5 +1,5 @@
 import { env } from '../config/env.ts'
-import { matchKey, splitBatches } from '../domain/batch.ts'
+import { isMissingBatch, matchKey, splitBatches, unspecifiedBatch } from '../domain/batch.ts'
 import { parseYm } from '../domain/dates.ts'
 import type { DiscoveredDoc, ExtractedRow, RawDoc } from '../domain/types.ts'
 import { ExtractionError } from '../lib/errors.ts'
@@ -7,7 +7,7 @@ import { stableId } from '../lib/hash.ts'
 import { decodeText } from '../lib/http.ts'
 import { child } from '../lib/logger.ts'
 import { CDSCO_ONLINE_BASE, MONTH_ABBR, clean, docBase, fetchJson, monthIndex, type ManagedSource } from './common.ts'
-import type { SourceContext } from './types.ts'
+import { countSkip, type SkipTally, type SourceContext } from './types.ts'
 
 const log = child('source:cdsco-online')
 
@@ -63,8 +63,11 @@ const orNull = (s: string | undefined) => {
  * Row ids are derived from the row's content (tab, month, batch, product, occurrence), not from the
  * document hash: the newest month is re-fetched while it fills up, and a growing table must not
  * re-mint ids for rows that were already published.
+ *
+ * A row that names no batch ("Not Mentioned") is kept under a placeholder batch so resolve can file
+ * it as drug-level; a batch cell we cannot read is dropped and counted in `skipped`.
  */
-export function cdscoRows(table: CdscoTable, doc: Pick<RawDoc, 'sha256' | 'hints'>): ExtractedRow[] {
+export function cdscoRows(table: CdscoTable, doc: Pick<RawDoc, 'sha256' | 'hints'>, skipped?: SkipTally): ExtractedRow[] {
   if (!Array.isArray(table.aaData)) throw new ExtractionError('cdscoonline table has no aaData array', { sha: doc.sha256 })
   const tab: CdscoTab = doc.hints.tab === 'spurious' ? 'spurious' : 'nsq'
   const month = doc.hints.month ?? ''
@@ -72,9 +75,17 @@ export function cdscoRows(table: CdscoTable, doc: Pick<RawDoc, 'sha256' | 'hints
   const occurrences = new Map<string, number>()
   for (const item of table.aaData) {
     const product = clean(item.str_product_name ?? item.product_name_from_dtl)
-    const batches = splitBatches(item.str_batch_no ?? '')
-    if (!product || !batches.length) {
-      log.debug({ product, batch: item.str_batch_no }, 'skipping row without a usable product or batch')
+    if (!product) {
+      countSkip(skipped, 'no product name')
+      continue
+    }
+    const missing = isMissingBatch(item.str_batch_no)
+    const batches = missing
+      ? [unspecifiedBatch(tab, month, product.toLowerCase(), clean(item.str_manufactured_by), clean(item.dt_manufacturing_date))]
+      : splitBatches(item.str_batch_no ?? '')
+    if (!batches.length) {
+      log.debug({ product, batch: item.str_batch_no }, 'skipping row with an implausible batch')
+      countSkip(skipped, 'implausible batch')
       continue
     }
     const reason =
@@ -87,6 +98,7 @@ export function cdscoRows(table: CdscoTable, doc: Pick<RawDoc, 'sha256' | 'hints
     if (mfgYm === null) issues.push('manufacturing date missing or unreadable')
     if (expYm === null) issues.push('expiry date missing or unreadable')
     if (batches.length > 1) issues.push(`cell listed ${batches.length} batches`)
+    if (missing) issues.push('batch not stated on the notice')
     for (const batch of batches) {
       const key = [tab, month, matchKey(batch), product.toLowerCase()].join('|')
       const n = (occurrences.get(key) ?? 0) + 1
@@ -105,7 +117,7 @@ export function cdscoRows(table: CdscoTable, doc: Pick<RawDoc, 'sha256' | 'hints
         reportedBy: orNull(item.str_reported_by_lab_or_state) ?? orNull(item.str_reporting_source),
         method: 'api',
         parser: CDSCO_JSON_PARSER,
-        confidence: issues.length ? 0.9 : 0.97,
+        confidence: missing ? 0.5 : issues.length ? 0.9 : 0.97,
         issues,
         rawText: JSON.stringify(item),
       })
@@ -163,13 +175,13 @@ export const cdscoOnline: ManagedSource = {
       .slice(0, ctx.limit)
   },
 
-  async rows(doc, bytes) {
+  async rows(doc, bytes, skipped) {
     let table: CdscoTable
     try {
       table = JSON.parse(decodeText(bytes, doc.contentType)) as CdscoTable
     } catch (err) {
       throw new ExtractionError('stored cdscoonline document is not JSON', { sha: doc.sha256 }, { cause: err })
     }
-    return cdscoRows(table, doc)
+    return cdscoRows(table, doc, skipped)
   },
 }

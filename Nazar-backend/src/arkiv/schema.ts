@@ -9,6 +9,7 @@ import type { Hex } from 'viem'
 
 import { endOfYm, ymOf } from '../domain/dates.ts'
 import type { AlertRecord, NoticeRecord } from '../domain/types.ts'
+import { firmKey } from '../resolve/manufacturer.ts'
 
 /**
  * Nazar's Arkiv data contract (documented for judges and other builders in /arkiv/schema.md).
@@ -35,6 +36,8 @@ export const LIFETIME = {
   /** Alerts live until the batch can no longer be sold, plus 180 days; never less than 90 days from now. */
   alertGraceDays: 180,
   alertMinDays: 90,
+  /** Ceiling for a printed expiry far in the future (no medicine has a 10-year shelf life; it is a misread). */
+  alertMaxDays: 10 * 365,
   /** Alerts with no printed expiry: three years from the alert month. */
   alertNoExpiryDays: 3 * 365,
   /** Retractions outlive the alert they correct by a year. */
@@ -52,16 +55,37 @@ export function alertLifetimeDays(a: Pick<AlertRecord, 'expYm' | 'alertYm'>, now
   const until = a.expYm
     ? endOfYm(a.expYm).getTime() + LIFETIME.alertGraceDays * DAY
     : endOfYm(a.alertYm).getTime() + LIFETIME.alertNoExpiryDays * DAY
-  return clampDays(Math.max((until - now.getTime()) / DAY, LIFETIME.alertMinDays))
+  return clampDays(Math.min(Math.max((until - now.getTime()) / DAY, LIFETIME.alertMinDays), LIFETIME.alertMaxDays))
 }
 
-const slug = (s: string | null | undefined, max = 64) =>
-  (s ?? '')
-    .toLowerCase()
+/** Longest slug we put in a query attribute; long names live in the payload. */
+export const SLUG_MAX = 48
+
+/**
+ * Lowercase ASCII slug cut at a word boundary, so a long product name gives a stable, readable key
+ * ("amino-acids-10-w-v-injection-with-electrolytes") instead of one that ends mid-word or on a dash.
+ */
+export function slugAttr(s: string | null | undefined, max = SLUG_MAX): string {
+  const full = (s ?? '')
     .normalize('NFKD')
+    .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, max)
+  if (full.length <= max) return full
+  const cut = full.slice(0, max + 1)
+  const atWord = cut.lastIndexOf('-')
+  return (atWord >= max / 2 ? cut.slice(0, atWord) : full.slice(0, max)).replace(/-+$/, '')
+}
+
+/**
+ * The manufacturer attribute is the resolver's firm key, the same slug that prefixes the plant id
+ * ("sresan-pharmaceuticals" in "sresan-pharmaceuticals-602106"), so mfr and plant always agree.
+ */
+export function manufacturerKey(a: Pick<AlertRecord, 'manufacturer' | 'plantId'>): string {
+  const fromPlant = a.plantId?.replace(/-\d{6}$/, '')
+  if (fromPlant && fromPlant !== a.plantId) return slugAttr(fromPlant)
+  return a.manufacturer ? slugAttr(firmKey(a.manufacturer)) || 'unknown' : 'unknown'
+}
 
 /** Strings on Arkiv are capped at 128 UTF-8 bytes; keep attributes short and put the long form in the payload. */
 export const short = (s: string, maxBytes = 120) => {
@@ -163,13 +187,13 @@ export function buildAlert(a: AlertRecord, noticeKey: Hex | null, now = new Date
       batch_raw: str(short(a.batch, 64)),
       case: str(a.caseId),
       rid: str(a.rid),
-      brand: str(short(slug(a.brand), 64) || 'unknown'),
+      brand: str(slugAttr(a.brand) || 'unknown'),
       form: str(a.form),
       cat: str(a.category),
       fail: str(a.failures[0] ?? 'other'),
       sev: i32(a.severity),
       peds: i32(a.peds ? 1 : 0),
-      mfr: str(short(slug(a.manufacturer) || 'unknown', 64)),
+      mfr: str(manufacturerKey(a)),
       ...(a.plantId ? { plant: str(short(a.plantId, 64)) } : {}),
       ...(a.state ? { state: str(a.state) } : {}),
       ...(a.mfgYm ? { mfg_ym: i32(a.mfgYm) } : {}),

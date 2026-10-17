@@ -38,10 +38,34 @@ These are notes taken while building, with dates. Each entry says what happened,
 - **Cost:** we couldn't tell at first whether the public RPC needs a key. It doesn't: reads and gas estimates work without one.
 - **Would help:** a clear "copy full key" action, and one sentence saying the key is optional and only raises rate limits.
 
+## 7. Real alerts cost about 210k gas per create, not 136k (17 Oct)
+
+- **What happened:** our first measurement, about 136k gas per create, used a tiny test entity. We then ran `eth_estimateGas` on real 12-alert batches from the ledger: 25 attributes and a ~1 KB JSON payload each. That came to about 2.5M gas and about 71 KB of calldata per batch, roughly 210k gas per alert. The cause is the encoding: each attribute is an ABI tuple `(bytes32 name, uint8 type, bytes value)`, about 160 bytes of words before the value, so the attributes outweigh the payload.
+- **Cost:** our balance pre-check under-reserved gas by about 35 %. Our first calldata estimate was off by 2.5×.
+- **Would help:** a per-attribute gas and calldata figure in the docs, or an SDK `estimateBatch()` that returns gas and encoded size without a signer.
+
+## 8. Estimating gas without funds needs a calldata-capturing transport (17 Oct)
+
+- **What happened:** the SDK has no `simulate`/`estimate` action. To price a publish before the wallet was funded, we built the batch through a custom viem transport. The transport refuses `eth_fillTransaction`/`eth_estimateGas` and records the `to` and `data` the SDK produced. We then call `eth_estimateGas` on that ourselves. An empty sender works, because no fee fields are sent.
+- **Cost:** about an hour, plus a hack that depends on SDK internals: which RPC method the SDK calls first.
+- **Would help:** `client.estimateExecuteBatch({ creates, … })`, or an `encodeExecuteBatch()` that returns calldata, so tools can dry-run and price writes.
+
+## 9. `extendEntity` sets, it doesn't add, and a shorter extension is an error (17 Oct)
+
+- **What happened:** the JSDoc says an extension sets a new expiry from now, and the engine rejects one that would not move the expiry later. A "+N days" Keep Alive button that sends `fromDays(N)` therefore fails whenever the alert has more than N days left.
+- **Cost:** our keep-alive client now reads `expiresAt` and the current block (`getBlockTiming`) first, and skips no-op extensions.
+- **Would help:** an `ExpirationTime.extendBy(days)` helper that resolves against the entity's current expiry, or a clearer revert reason than a generic execution error.
+
+## 10. Telling "expired" from "RPC hiccup" before re-creating a heartbeat (17 Oct)
+
+- **What happened:** the heartbeat is renewed with `patchEntity` + `extendEntity`. When the patch fails we must decide: recreate the entity (it expired) or retry later (network error)? The patch error does not say which. We call `getEntity` and only recreate on `NoEntityFoundError`.
+- **Cost:** one extra read per failed beat, and a near miss: an earlier version created a duplicate heartbeat on any failure.
+- **Would help:** a typed `EntityNotFound`/`EntityExpired` mutation error from the write path.
+
 ## What worked well
 
 - **Typed values:** `i32`, `u64` and `key` attributes, plus the query builder (`eq`, `gte`, `createdBy`, cursor `next()`), made the batch lookup and range queries straightforward.
 - **Creation flags:** `readonly` plus `permissionlessExtension` match our product rules exactly: alerts can't be edited, and anyone can keep one alive.
 - **Atomic notices:** `executeBatch` with predicted keys let a notice and its alerts land atomically, already linked.
-- **Cost:** one alert costs about 136k gas, and a batch of 10 about 1.36M gas.
+- **Cost:** a bare create is about 136k gas. A real alert (25 attributes, ~1 KB payload) is about 210k gas, and a 12-alert batch about 2.5M gas. At 1 gwei that is about 0.0002 GLM per alert.
 - **Read path:** reads through the public RPC need no key, so the web app can check a batch directly against Arkiv even when every Nazar server is down.

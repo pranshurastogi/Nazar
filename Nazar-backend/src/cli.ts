@@ -2,13 +2,18 @@ import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { ExpirationTime } from '@arkiv-network/sdk'
 import { Command } from 'commander'
-import { formatEther, type Hex } from 'viem'
+import type { Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
-import { explorerAddress, publicClient, publisherAddress } from './arkiv/client.ts'
+import { explorerAddress, explorerEntity, explorerTx, publicClient, publisherAddress, walletClient } from './arkiv/client.ts'
+import { FAUCET_URL, fundingInstructions, glm } from './arkiv/funding.ts'
 import { Heartbeat } from './arkiv/heartbeat.ts'
-import { FAUCET_URL, Publisher } from './arkiv/publisher.ts'
+import { keepAlive } from './arkiv/keepalive.ts'
+import { FALLBACK_GAS_PRICE, GAS_PER_CREATE, MAX_CREATES_PER_TX, Publisher, defaultGasPrice, rpcSimulate, rpcSimulateBatch } from './arkiv/publisher.ts'
+import { buildHeartbeat } from './arkiv/schema.ts'
+import { validateLedger, type LedgerCheckReport } from './arkiv/validate.ts'
 import { env } from './config/env.ts'
 import { parseYm } from './domain/dates.ts'
 import type { ExtractionResult, RawDoc } from './domain/types.ts'
@@ -28,6 +33,46 @@ const list = (v?: string) => (v ? v.split(',').map((s) => s.trim()).filter(Boole
 
 async function registry() {
   return import('./sources/registry.ts')
+}
+
+/** Builds every entity the ledger would publish, validates it, and estimates gas on a sample of real chunks. */
+async function checkLedger(o: { sources?: string[]; limitNotices?: number; sample?: number; offline?: boolean }) {
+  const from = publisherAddress()
+  return validateLedger(sharedLedger(), {
+    sources: o.sources,
+    limitNotices: o.limitNotices,
+    chunkSize: MAX_CREATES_PER_TX,
+    from,
+    chainId: env().ARKIV_CHAIN_ID,
+    simulate: o.offline ? null : rpcSimulate,
+    sampleChunks: o.sample ?? 3,
+    fallbackGasPerCreate: GAS_PER_CREATE,
+    fallbackGasPrice: await defaultGasPrice().catch(() => FALLBACK_GAS_PRICE),
+  })
+}
+
+function printCheck(r: LedgerCheckReport, verbose = false) {
+  const n = (x: number) => x.toLocaleString('en-US')
+  print(`Arkiv publish check (${r.ok ? 'PASS' : 'FAIL'})`)
+  print(`  notices        ${n(r.notices.total)} (${n(r.notices.onChain)} on chain, ${n(r.notices.pending)} with pending alerts)`)
+  print(`  entities       ${n(r.entities.total)} built: ${n(r.entities.notice)} notice, ${n(r.entities.alert)} alert`)
+  print(`  skipped        ${n(r.skipped.curator)} curator-only, ${n(r.skipped.retracted)} retracted, ${n(r.skipped.alreadyOnChain)} already on chain`)
+  for (const [src, v] of Object.entries(r.bySource)) print(`    ${src.padEnd(14)} ${String(v.notices).padStart(4)} notices  ${String(v.alerts).padStart(6)} alerts  ${String(v.pendingAlerts).padStart(6)} pending`)
+  print(`  to publish     ${n(r.pending.creates)} creates in ${n(r.pending.chunks)} atomic batches (sizes ${Object.entries(r.chunks.sizes).map(([k, v]) => `${k}×${v}`).join(', ') || '-'})`)
+  print(`  limits         max ${r.limits.maxAttributes}/32 attributes, longest str ${r.limits.maxStr ? `${r.limits.maxStr.bytes}/128 B (${r.limits.maxStr.name})` : '-'}, largest payload ${n(r.limits.maxPayloadBytes)} B, largest batch ~${n(r.chunks.maxApproxBytes)} B`)
+  if (r.limits.alertLifetimeDays) print(`  alert lifetime ${r.limits.alertLifetimeDays.min}–${r.limits.alertLifetimeDays.max} days`)
+  print(`  notice links   ${n(r.links.alertsChecked)} checked, ${n(r.links.broken)} broken`)
+  for (const s of r.gas.samples) print(`  estimate       ${s.notice.slice(0, 12)}#${s.index} ${s.creates} creates: ${s.ok ? `${n(Number(s.gas))} gas` : `failed (${s.error})`}${s.calldataBytes ? `, ${n(s.calldataBytes)} B calldata` : ''}`)
+  print(`  gas            ${r.gas.method}: ~${n(Number(r.gas.gasPerCreate))} gas per create × ${n(r.pending.creates)} = ${n(Number(r.gas.totalGas))} gas`)
+  print(`  cost           ~${glm(BigInt(r.gas.totalGas) * BigInt(r.gas.gasPrice))} GLM at ${Number(r.gas.gasPrice) / 1e9} gwei (have ${r.gas.recommendedGlm.slice(0, 10)} GLM to be safe)`)
+  if (r.warnings.count) {
+    print(`  warnings       ${n(r.warnings.count)}`)
+    for (const [m, c] of Object.entries(r.warnings.byMessage).sort((a, b) => b[1] - a[1]).slice(0, verbose ? 50 : 5)) print(`    ${String(c).padStart(5)}  ${m}`)
+  }
+  if (r.failures.length) {
+    print(`  failures       ${n(r.failures.length)}`)
+    for (const f of r.failures.slice(0, verbose ? 500 : 20)) print(`    ${f.kind} ${f.ref.slice(0, 24)} (notice ${f.notice.slice(0, 12)}): ${f.problems.join('; ')}`)
+  }
 }
 
 const program = new Command()
@@ -164,13 +209,56 @@ program
   .command('publish')
   .description('publish resolved notices to Arkiv (dry-run by default)')
   .option('--notice <sha>', 'one notice; default: every notice with pending alerts')
+  .option('--source <ids>', 'only notices from these sources, e.g. who-mpa,curated')
+  .option('--limit-notices <n>', 'max notices (oldest first)')
+  .option('--limit <n>', 'alias of --limit-notices', '20')
+  .option('--check', 'validate every entity the ledger would publish and estimate gas; sends nothing')
+  .option('--sample <n>', 'chunks to estimate with eth_estimateGas', '3')
+  .option('--offline', 'with --check: skip gas estimation RPC calls')
   .option('--live', 'actually send transactions (needs a funded wallet)')
-  .option('--limit <n>', 'max notices', '20')
+  .option('--preflight', 'with --live: run every live pre-check (validation, gas estimate, balance, chain reconcile, key prediction) and stop before sending')
   .option('--verbose', 'print every entity that would be sent')
-  .action(async (o: { notice?: string; live?: boolean; limit: string; verbose?: boolean }) => {
+  .action(async (o: { notice?: string; source?: string; limitNotices?: string; limit: string; check?: boolean; sample: string; offline?: boolean; live?: boolean; preflight?: boolean; verbose?: boolean }) => {
+    const sources = list(o.source)
+    const limitNotices = Number(o.limitNotices ?? o.limit)
+    if (o.check) {
+      const r = await checkLedger({ sources, limitNotices: o.limitNotices ? limitNotices : undefined, sample: Number(o.sample), offline: o.offline })
+      printCheck(r, o.verbose)
+      if (!r.ok) process.exitCode = 1
+      return
+    }
     const ledger = sharedLedger()
-    const pub = new Publisher({ ledger, mode: o.live ? 'live' : 'dry-run' })
-    const reports = o.notice ? [await pub.publishNotice(o.notice, { live: o.live })] : await pub.publishPending({ live: o.live, limit: Number(o.limit) })
+    if (o.live) {
+      // Validate and price exactly what this run would send, and stop before anything goes out if it is short or broken.
+      const address = publisherAddress()
+      if (!address) {
+        print('No publisher key configured. Run `pnpm cli wallet:new` first.')
+        process.exitCode = 2
+        return
+      }
+      const r = await checkLedger({ sources, limitNotices: o.notice ? undefined : limitNotices, sample: 1 })
+      if (!r.ok) {
+        printCheck(r, o.verbose)
+        print('\nRefusing to publish live: fix the failures above (alerts are readonly once published).')
+        process.exitCode = 1
+        return
+      }
+      const balance = await publicClient().getBalance({ address })
+      const needed = BigInt(r.gas.totalGas) * BigInt(r.gas.gasPrice)
+      const safe = (needed * 125n) / 100n
+      if (balance < safe) {
+        const flags = [o.source ? `--source ${o.source}` : '', `--limit-notices ${limitNotices}`].filter(Boolean).join(' ')
+        print(fundingInstructions({ address, balanceWei: balance, neededWei: safe, what: `${r.pending.creates} creates in ${r.pending.chunks} batches (estimate + 25%)`, rerun: `pnpm cli publish --live ${flags}` }))
+        process.exitCode = 2
+        return
+      }
+      print(`balance ${glm(balance)} GLM covers ~${glm(safe)} GLM for ${r.pending.creates} creates in ${r.pending.chunks} batches (${r.gas.method})`)
+      if (o.preflight) print('preflight: all live checks passed; running the publisher in dry-run (reads Arkiv, predicts keys, simulates, sends nothing)')
+      else print('publishing…')
+    }
+    const live = !!o.live && !o.preflight
+    const pub = new Publisher({ ledger, mode: live ? 'live' : 'dry-run' })
+    const reports = o.notice ? [await pub.publishNotice(o.notice, { live })] : await pub.publishPending({ live, limit: limitNotices, sources })
     if (!reports.length) print('nothing pending')
     for (const r of reports) {
       print(
@@ -179,7 +267,52 @@ program
       if (r.simulation) print(`  simulation: ${r.simulation.ok ? `gas ${r.simulation.gas} (~${r.simulation.costGlm} GLM)` : `failed: ${r.simulation.error}`}`)
       for (const w of r.warnings) print(`  warning: ${w}`)
       for (const x of r.explorer) print(`  ${x}`)
+      if (r.chunks.some((c) => c.status === 'failed')) process.exitCode = 1
       if (o.verbose) print(r.chunks)
+    }
+  })
+
+program
+  .command('arkiv:validate')
+  .description('same as `publish --check`: validate every notice/alert entity in the ledger and estimate gas/GLM')
+  .option('--source <ids>', 'only notices from these sources')
+  .option('--limit-notices <n>', 'max notices')
+  .option('--sample <n>', 'chunks to estimate with eth_estimateGas', '3')
+  .option('--offline', 'skip gas estimation RPC calls')
+  .option('--json', 'print the full report as JSON')
+  .option('--verbose', 'list every failure and warning')
+  .action(async (o: { source?: string; limitNotices?: string; sample: string; offline?: boolean; json?: boolean; verbose?: boolean }) => {
+    const r = await checkLedger({ sources: list(o.source), limitNotices: o.limitNotices ? Number(o.limitNotices) : undefined, sample: Number(o.sample), offline: o.offline })
+    if (o.json) print(r)
+    else printCheck(r, o.verbose)
+    if (!r.ok) process.exitCode = 1
+  })
+
+program
+  .command('keep-alive <entityKey>')
+  .description('extend a Nazar alert while the batch is still on shelves (permissionless: any funded wallet can do this)')
+  .requiredOption('--days <n>', 'new lifetime, counted from now')
+  .option('--live', 'actually send (dry-run reads the entity and estimates gas)')
+  .action(async (entityKey: string, o: { days: string; live?: boolean }) => {
+    const signer = publisherAddress()
+    try {
+      const r = await keepAlive(entityKey as Hex, Number(o.days), {
+        public: publicClient(),
+        mode: o.live ? 'live' : 'dry-run',
+        signer,
+        wallet: () => walletClient(),
+        publisher: (env().NAZAR_ROOT_ADDRESS as Hex | undefined) ?? signer,
+        simulate: (key, days, from) => rpcSimulateBatch({ extensions: [{ entityKey: key, expires: ExpirationTime.fromDays(days) }] }, from),
+        gasPrice: defaultGasPrice,
+      })
+      print({ ...r, explorer: { entity: explorerEntity(r.entityKey), tx: r.txHash ? explorerTx(r.txHash) : null } })
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'FUNDS') {
+        print(err.message)
+        process.exitCode = 2
+        return
+      }
+      throw err
     }
   })
 
@@ -236,12 +369,26 @@ program
 
 program
   .command('wallet:balance')
-  .description('publisher address and GLM balance on Tiramisu')
-  .action(async () => {
+  .description('publisher address, GLM balance, and what publishing the current ledger would cost')
+  .option('--source <ids>', 'price only notices from these sources')
+  .option('--limit-notices <n>', 'price only the first N notices')
+  .action(async (o: { source?: string; limitNotices?: string }) => {
     const address = publisherAddress()
-    if (!address) return print('No publisher key configured. Run `pnpm cli wallet:new`.')
+    if (!address) {
+      print('No publisher key configured. Run `pnpm cli wallet:new`.')
+      process.exitCode = 2
+      return
+    }
     const bal = await publicClient().getBalance({ address: address as Hex })
-    print(`${address}  ${formatEther(bal)} GLM${bal === 0n ? `\nFund it: ${FAUCET_URL}` : ''}\n${explorerAddress(address)}`)
+    const r = await checkLedger({ sources: list(o.source), limitNotices: o.limitNotices ? Number(o.limitNotices) : undefined, sample: 1 })
+    const needed = (BigInt(r.gas.totalGas) * BigInt(r.gas.gasPrice) * 125n) / 100n
+    print(`publisher  ${address}\nbalance    ${glm(bal)} GLM\nexplorer   ${explorerAddress(address)}`)
+    print(`ledger     ${r.pending.creates} creates pending in ${r.pending.chunks} batches → ~${glm(needed)} GLM with a 25% margin (${r.gas.method})`)
+    if (bal < needed || bal === 0n) {
+      print('')
+      print(fundingInstructions({ address, balanceWei: bal, neededWei: needed > 0n ? needed : 1n, what: `${r.pending.creates} pending creates (estimate + 25%)` }))
+      process.exitCode = 2
+    } else print('status     funded: enough for the pending ledger')
   })
 
 program
@@ -249,7 +396,10 @@ program
   .description('renew (or create) the pipeline heartbeat entity')
   .option('--live', 'actually send')
   .action(async (o: { live?: boolean }) => {
-    print(await new Heartbeat({ ledger: sharedLedger() }).beat({ live: o.live }))
+    const r = await new Heartbeat({ ledger: sharedLedger() }).beat({ live: o.live })
+    // In dry-run, price the create a live beat would send (renewals are a patch + an extend on the same entity).
+    const estimate = r.mode === 'dry-run' ? await rpcSimulate([buildHeartbeat(r.payload)], publisherAddress()).catch(() => null) : null
+    print({ ...r, explorer: r.entityKey && r.mode === 'live' ? explorerEntity(r.entityKey) : null, ...(estimate ? { estimate } : {}) })
   })
 
 program
@@ -273,7 +423,7 @@ program
   .parseAsync(process.argv)
   .then(() => {
     // One-shot commands exit promptly instead of waiting for idle HTTP keep-alive sockets.
-    if (!LONG_RUNNING.has(process.argv[2] ?? '')) process.exit(0)
+    if (!LONG_RUNNING.has(process.argv[2] ?? '')) process.exit(process.exitCode ?? 0)
   })
   .catch((err) => {
     console.error(`error: ${errorMessage(err)}`)

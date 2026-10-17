@@ -1,0 +1,8 @@
+#!/bin/sh
+# Operator CLI inside the container, e.g.  nazar status | nazar arkiv:validate | nazar publish --live --preflight
+set -eu
+cd /app
+if [ "$(id -u)" = "0" ]; then
+  exec setpriv --reuid=node --regid=node --init-groups node --experimental-transform-types --no-warnings src/cli.ts "$@"
+fi
+exec node --experimental-transform-types --no-warnings src/cli.ts "$@"

@@ -1,10 +1,11 @@
 import { env } from '../config/env.ts'
-import { matchKey, splitBatches } from '../domain/batch.ts'
+import { isMissingBatch, matchKey, splitBatches, unspecifiedBatch } from '../domain/batch.ts'
 import { ymOf } from '../domain/dates.ts'
 import type { ExtractedRow, RawDoc } from '../domain/types.ts'
 import { stableId } from '../lib/hash.ts'
 import { decodeText } from '../lib/http.ts'
-import { clean, docBase, loadHtml, type ManagedSource } from './common.ts'
+import { clean, docBase, firstSeenIssue, loadHtml, type ManagedSource } from './common.ts'
+import { countSkip, type SkipTally } from './types.ts'
 
 export const MH_URL = 'https://fda.maharashtra.gov.in/nsq-alerts/'
 export const MH_PARSER = 'mh-html@1'
@@ -91,19 +92,36 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 /**
  * Sr. No. shifts whenever new rows are added at the top, so a row is identified by what it says:
  * hash(product, batch, manufacturer). That key also makes the row id stable across page versions.
+ *
+ * The page prints no publication dates, so every row notes the month it was first seen (the
+ * ledger keeps the earliest one when the page is re-read). Rows with no batch at all are kept
+ * under a placeholder batch for drug-level records; unreadable batch cells are counted in `skipped`.
  */
-export function mhRows(html: string, doc: Pick<RawDoc, 'sha256' | 'fetchedAt'>): ExtractedRow[] {
+export function mhRows(html: string, doc: Pick<RawDoc, 'sha256' | 'fetchedAt'>, skipped?: SkipTally): ExtractedRow[] {
   const nowYm = ymOf(new Date(doc.fetchedAt || Date.now()))
   const rows: ExtractedRow[] = []
   const seen = new Map<string, number>()
   for (const r of parseMhTable(html)) {
-    const batches = splitBatches(r.batch.replace(/^[#*]+/, ''))
-    if (!r.product || !batches.length) continue
+    if (!r.product) {
+      countSkip(skipped, 'no product name')
+      continue
+    }
+    const cell = r.batch.replace(/^[#*]+/, '')
+    const missing = isMissingBatch(cell)
+    const batches = missing ? [unspecifiedBatch(norm(r.product), norm(r.manufacturer), r.mfg)] : splitBatches(cell)
+    if (!batches.length) {
+      countSkip(skipped, 'implausible batch')
+      continue
+    }
     const { mfgYm, expYm, ambiguous } = readMhDates(r.mfg, r.exp, nowYm)
     const issues: string[] = []
     if (ambiguous) issues.push(`dates ambiguous: mfg "${r.mfg}", exp "${r.exp}"`)
     if (mfgYm === null || expYm === null) issues.push('manufacturing or expiry date missing')
     if (batches.length > 1) issues.push(`cell listed ${batches.length} batches`)
+    if (missing) issues.push('batch not stated on the notice')
+    // Informational only: it applies to every row of this page, so it must not lower confidence.
+    const confidence = missing ? 0.5 : issues.length ? 0.8 : 0.92
+    issues.push(firstSeenIssue(nowYm))
     const manufacturer = r.manufacturer && !/^not\s+mention/i.test(r.manufacturer) ? r.manufacturer : null
     for (const batch of batches) {
       const base = stableId(norm(r.product), matchKey(batch), norm(r.manufacturer))
@@ -124,7 +142,7 @@ export function mhRows(html: string, doc: Pick<RawDoc, 'sha256' | 'fetchedAt'>):
         reportedBy: 'FDA Maharashtra',
         method: 'html',
         parser: MH_PARSER,
-        confidence: issues.length ? 0.8 : 0.92,
+        confidence,
         issues,
         rawText: `key:${key} | ${r.srNo} | ${r.product} | ${r.manufacturer} | ${r.batch} | ${r.mfg} | ${r.exp} | ${r.reason}`,
       })
@@ -157,7 +175,7 @@ export const mhFda: ManagedSource = {
     ]
   },
 
-  async rows(doc, bytes) {
-    return mhRows(decodeText(bytes, doc.contentType), doc)
+  async rows(doc, bytes, skipped) {
+    return mhRows(decodeText(bytes, doc.contentType), doc, skipped)
   },
 }

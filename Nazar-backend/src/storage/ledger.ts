@@ -270,7 +270,7 @@ export class Ledger {
   }
 
   unpublishedAlerts(noticeSha: string): AlertRow[] {
-    return this.alertRows("SELECT * FROM alerts WHERE notice_sha = ? AND entity_key IS NULL AND tier != 'curator_only' ORDER BY rid", [noticeSha])
+    return this.alertRows("SELECT * FROM alerts WHERE notice_sha = ? AND entity_key IS NULL AND tier IN ('auto', 'machine_read') ORDER BY rid", [noticeSha])
   }
 
   markAlertPublished(rid: string, entityKey: string, txHash: string) {
@@ -287,7 +287,8 @@ export class Ledger {
       documents: one('SELECT COUNT(*) n FROM documents'),
       alerts: one('SELECT COUNT(*) n FROM alerts'),
       published: one('SELECT COUNT(*) n FROM alerts WHERE entity_key IS NOT NULL'),
-      pending: one("SELECT COUNT(*) n FROM alerts WHERE entity_key IS NULL AND tier != 'curator_only'"),
+      pending: one("SELECT COUNT(*) n FROM alerts WHERE entity_key IS NULL AND tier IN ('auto', 'machine_read')"),
+      drugLevel: one("SELECT COUNT(*) n FROM alerts WHERE tier = 'drug_level'"),
       curatorQueue: one("SELECT COUNT(*) n FROM alerts WHERE tier = 'curator_only'"),
       failedDocuments: one("SELECT COUNT(*) n FROM documents WHERE status = 'failed'"),
     }

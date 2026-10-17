@@ -1,0 +1,62 @@
+# Fly.io config for the Nazar backend. Deploy from Nazar-backend/:
+#   fly launch --no-deploy --copy-config --name nazar-api   (once; or edit `app` below)
+#   fly volumes create nazar_data --region bom --size 1
+#   fly secrets set NAZAR_PUBLISHER_PRIVATE_KEY=0x... NAZAR_CORS_ORIGINS=https://<your-app>.vercel.app
+#   fly deploy
+# See docs/deploy.md.
+
+app = "nazar-api"
+# Mumbai: Indian state regulator sites (Telangana DCA, Karnataka DC) refuse non-Indian IPs.
+primary_region = "bom"
+kill_signal = "SIGTERM"
+kill_timeout = "45s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  # One machine runs the API and the pipeline worker against one SQLite ledger on the volume.
+  NAZAR_ROLE = "all"
+  NAZAR_DATA_DIR = "/app/data"
+  HOST = "0.0.0.0"
+  PORT = "8787"
+  LOG_LEVEL = "info"
+  # Flip to "live" once the publisher wallet is funded and `nazar publish --live --preflight` passes.
+  NAZAR_PUBLISH_MODE = "dry-run"
+  # Fill an empty ledger on the first boot instead of waiting for the next cron tick.
+  NAZAR_RUN_ON_START = "true"
+  # Enable the geo-blocked state sources only after `curl` from the machine shows they answer (docs/deploy.md).
+  # NAZAR_SOURCES = "cdsco-online,cdsco-pdf,tn-dc,mh-fda,who-mpa,curated,tg-dca,ka-dc"
+
+# The volume lives in the same region as the machine (volumes are pinned to one region).
+[[mounts]]
+  source = "nazar_data"
+  destination = "/app/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # The worker runs crons and renews the Arkiv heartbeat every 5 minutes: never scale to zero.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  # OCR (tesseract) and PDF parsing want some headroom.
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

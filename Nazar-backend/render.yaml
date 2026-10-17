@@ -1,0 +1,30 @@
+# Render Blueprint (alternative to Fly.io). Render has no Indian region: keep the geo-blocked
+# state sources off here (the default). See docs/deploy.md.
+services:
+  - type: web
+    name: nazar-api
+    runtime: docker
+    rootDir: Nazar-backend
+    dockerfilePath: ./Dockerfile
+    region: singapore
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NAZAR_ROLE
+        value: all
+      - key: NAZAR_PUBLISH_MODE
+        value: dry-run
+      - key: NAZAR_RUN_ON_START
+        value: "true"
+      - key: NAZAR_CORS_ORIGINS
+        sync: false
+      - key: NAZAR_PUBLISHER_PRIVATE_KEY
+        sync: false
+      - key: ARKIV_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    disk:
+      name: nazar-data
+      mountPath: /app/data
+      sizeGB: 1

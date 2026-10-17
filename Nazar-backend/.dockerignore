@@ -1,0 +1,13 @@
+# Never bake secrets or local state into the image.
+.env
+.env.*
+!.env.example
+data
+coverage
+node_modules
+test
+docs
+*.log
+.DS_Store
+fly.toml
+render.yaml
