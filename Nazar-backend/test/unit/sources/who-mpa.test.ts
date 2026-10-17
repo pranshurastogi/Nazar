@@ -43,11 +43,11 @@ describe('whoCandidates', () => {
 describe('readWhoAlertPage', () => {
   it('finds India in the alert body and picks this alert’s own PDF', () => {
     const html = page('three substandard (contaminated) oral liquid medicines identified in India', [N5_PDF])
-    expect(readWhoAlertPage(html, N5_PAGE, '5/2025')).toEqual({ india: true, pdfUrl: N5_PDF })
+    expect(readWhoAlertPage(html, N5_PAGE, '5/2025')).toMatchObject({ india: true, pdfUrl: N5_PDF })
   })
   it('ignores India in navigation and other alerts’ PDFs', () => {
     const html = page('falsified product detected in Brazil and Mexico')
-    expect(readWhoAlertPage(html, N5_PAGE, '5/2025')).toEqual({ india: false, pdfUrl: null })
+    expect(readWhoAlertPage(html, N5_PAGE, '5/2025')).toMatchObject({ india: false, pdfUrl: null })
   })
   it('matches Indian manufacturers', () => {
     expect(readWhoAlertPage(page('stated manufacturer is an Indian company'), N5_PAGE, null).india).toBe(true)
@@ -74,5 +74,14 @@ describe('whoMpa.discover', () => {
       hints: { template: 'who-annex', alertNo: '5/2025', page: N5_PAGE },
     })
     expect(calls.filter((c) => c.url.startsWith('https://www.who.int/news/item/'))).toHaveLength(6)
+  })
+})
+
+describe('readWhoAlertPage: children', () => {
+  it('flags alerts that say children consumed the products', async () => {
+    const { readWhoAlertPage } = await import('../../../src/sources/who-mpa.ts')
+    const html = '<main><p>Medicines identified in India. CDSCO informed WHO that the contaminated products were reportedly consumed by the affected children.</p></main>'
+    expect(readWhoAlertPage(html, 'https://www.who.int/x', null)).toMatchObject({ india: true, children: true })
+    expect(readWhoAlertPage('<main><p>Falsified vaccine found in India.</p></main>', 'https://www.who.int/x', null).children).toBe(false)
   })
 })

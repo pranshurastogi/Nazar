@@ -56,15 +56,19 @@ export function whoCandidates(list: { value: WhoNewsItem[] }, sinceYm?: number):
 }
 
 const INDIA = /\bIndia(n|'s)?\b/
+/** WHO states it plainly when children were affected ("consumed by the affected children", "child fatalities"). */
+const CHILDREN = /\bchild(ren)?\b[^.]{0,80}\b(consum|fatalit|death|died|affected)|\b(consum|fatalit|death)\w*\b[^.]{0,80}\bchild(ren)?\b/i
 
 /**
  * Reads an alert page: does the alert body mention India, and which PDF is the alert itself?
  * The page sidebar links other alerts' PDFs too, so the PDF must carry this alert's number (n5_2025_…).
  */
-export function readWhoAlertPage(html: string, pageUrl: string, alertNo: string | null): { india: boolean; pdfUrl: string | null } {
+export function readWhoAlertPage(html: string, pageUrl: string, alertNo: string | null): { india: boolean; children: boolean; pdfUrl: string | null } {
   const $ = loadHtml(html)
   const sel = ['.sf-detail-body-wrapper', 'article', 'main', 'body'].find((q) => $(q).length) ?? 'body'
-  const india = INDIA.test(spacedText($, sel)) || INDIA.test(clean($('h1').first().text()))
+  const body = spacedText($, sel)
+  const india = INDIA.test(body) || INDIA.test(clean($('h1').first().text()))
+  const children = CHILDREN.test(body)
   const [n, y] = alertNo?.split('/') ?? []
   const own = n && y ? new RegExp(`(^|[^0-9])n\\s*0?${n}[_-]${y}`, 'i') : null
   const pdfs = $('a[href]')
@@ -72,7 +76,7 @@ export function readWhoAlertPage(html: string, pageUrl: string, alertNo: string 
     .map((a) => absoluteUrl($(a).attr('href'), pageUrl))
     .filter((u): u is string => !!u && /\.pdf($|\?)/i.test(u))
   const pdfUrl = (own ? pdfs.find((u) => own.test(decodeURIComponent(new URL(u).pathname.split('/').pop() ?? ''))) : undefined) ?? null
-  return { india, pdfUrl }
+  return { india, children, pdfUrl }
 }
 
 export const whoMpa: ManagedSource = {
@@ -92,7 +96,7 @@ export const whoMpa: ManagedSource = {
       if (ctx.signal?.aborted || docs.length >= ctx.limit) break
       try {
         const page = await fetchHtml(ctx.http, c.pageUrl)
-        const { india, pdfUrl } = readWhoAlertPage(page.text, page.finalUrl, c.alertNo)
+        const { india, children, pdfUrl } = readWhoAlertPage(page.text, page.finalUrl, c.alertNo)
         if (!india) continue
         docs.push({
           ...docBase(whoMpa),
@@ -101,7 +105,13 @@ export const whoMpa: ManagedSource = {
           publishedAt: c.publishedAt,
           noticeYm: c.noticeYm,
           kind: pdfUrl ? 'pdf' : 'html',
-          hints: { template: 'who-annex', page: c.pageUrl, ...(c.alertNo ? { alertNo: c.alertNo } : {}) },
+          hints: {
+            template: 'who-annex',
+            page: c.pageUrl,
+            ...(c.alertNo ? { alertNo: c.alertNo } : {}),
+            // Every product in the annex was used by children, per the alert text: drives Child Shield.
+            ...(children ? { pedsBatches: '*' } : {}),
+          },
         })
       } catch (err) {
         if (!(err instanceof NazarError)) throw err
