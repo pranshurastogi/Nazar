@@ -4,6 +4,7 @@ import path from 'node:path'
 import { z } from 'zod'
 
 import { parseYm } from '../domain/dates.ts'
+import { matchKey } from '../domain/batch.ts'
 import { Jurisdiction, type DiscoveredDoc, type ExtractedRow } from '../domain/types.ts'
 import { ConfigError, ExtractionError } from '../lib/errors.ts'
 import { stableId } from '../lib/hash.ts'
@@ -40,6 +41,8 @@ export const CuratedSeed = z.object({
         reason: z.string().min(1),
         reportedBy: z.string().nullable(),
         note: z.string().optional(),
+        /** Set only when the cited source says the product was used by children (drives Child Shield). */
+        paediatricUse: z.boolean().optional(),
       }),
     )
     .min(1),
@@ -106,7 +109,12 @@ export const curated: ManagedSource = {
         noticeYm: seed.noticeYm,
         kind: 'html',
         // Local and cheap to re-read; harvest dedupes by content, so an edited seed becomes a new document.
-        hints: { format: 'curated-json', seed: file, refresh: 'always' },
+        hints: {
+          format: 'curated-json',
+          seed: file,
+          refresh: 'always',
+          pedsBatches: seed.rows.filter((r) => r.paediatricUse).map((r) => matchKey(r.batch)).join(','),
+        },
       })
     }
     return newestFirst(docs, ctx)

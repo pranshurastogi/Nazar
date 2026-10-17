@@ -40,7 +40,8 @@ export function resolveRow(doc: RawDoc, row: ExtractedRow, alertYm = noticeYmOf(
   const category: Category = spuriousDoc ? 'spurious' : classifyCategory(reason, failures)
   const drug = splitDrug(row.product, row.rawText)
   const form = detectForm(row.product)
-  const peds = isPaediatric(row.product)
+  // Reviewed seeds can state paediatric use explicitly when the cited source says so.
+  const peds = isPaediatric(row.product) || (doc.hints.pedsBatches ?? '').split(',').includes(batchKey)
   const sev = scoreSeverity({ failures, category, form, peds, product: row.product })
   const mfr = parseManufacturer(row.manufacturer)
   const discriminator = drug.hasBrand ? `b:${slugify(drug.brand)}` : mfr ? `m:${mfr.key}` : `p:${slugify(drug.generic ?? row.product, 40)}`
