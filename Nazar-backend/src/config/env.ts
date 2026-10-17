@@ -80,7 +80,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().default(8787),
   NAZAR_CORS_ORIGINS: z
     .string()
-    .default('http://localhost:3000,http://localhost:3123')
+    .default('http://localhost:3000,http://localhost:3123,http://localhost:3124')
     .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
 
   // Scheduler

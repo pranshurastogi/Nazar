@@ -1,7 +1,11 @@
 // Starts the built app and headless Chrome, runs e2e.mjs in each requested mode, then cleans up.
-// Usage: pnpm build && node e2e/run.mjs [fallback] [mock] [live]
-//   fallback/mock expect a build whose NEXT_PUBLIC_NAZAR_API_URL and NEXT_PUBLIC_ARKIV_RPC_URL are unreachable
-//   (CI builds with http://127.0.0.1:9), so answers are deterministic; live expects the backend on :8787.
+// Usage:
+//   fallback + mock (what CI runs):
+//     NEXT_PUBLIC_NAZAR_API_URL=http://localhost:8787 NEXT_PUBLIC_NAZAR_PUBLISHER=0x000000000000000000000000000000000000dEaD pnpm build && pnpm e2e
+//     Production builds skip the API unless NEXT_PUBLIC_NAZAR_API_URL is set, so it must be set explicitly here.
+//     The browser's requests to it are refused (fallback) or answered from fixtures (mock) over CDP, and the
+//     publisher has no Arkiv entities, so answers are deterministic even if a local API is running.
+//   live: NEXT_PUBLIC_NAZAR_API_URL=http://localhost:8787 pnpm build && node e2e/run.mjs live  (backend on :8787)
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

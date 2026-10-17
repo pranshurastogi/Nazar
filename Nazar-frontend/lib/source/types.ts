@@ -23,7 +23,14 @@ export type Alert = {
   severityRules: string[]
   peds: boolean
   authority: string
+  /** Pipeline source id (cdsco-online, tn-dc, mh-fda, who-mpa, …); 'demo' for sample records. */
+  sourceId: string
+  /** ISO 3166-2:IN code of the manufacturing state when known, e.g. IN-TN. */
+  state: string | null
+  /** Month the alert was published or first seen, YYYYMM. */
+  alertYm: number | null
   notice: string
+  /** Human date line. For sources without per-row dates it says so instead of inventing one. */
   noticeDate: string
   /** Epoch ms used to order the notice timeline; larger is newer. */
   noticeOrder: number

@@ -3,8 +3,8 @@ import type { Alert, CheckResult, SourceKind } from './types'
 // Matching rules. Must stay identical to Nazar-backend/src/domain/batch.ts so a batch
 // typed here and a batch read from a PDF meet at the same key.
 
-/** Shape a person might type: letters, digits and - / . space, 2 to 20 chars. */
-export const BATCH_SHAPE = /^[A-Za-z0-9\-/. ]{2,20}$/
+/** Shape a person might type: letters, digits and - / . ( ) space, 2 to 24 chars. CDSCO prints batches like "(N)25567". */
+export const BATCH_SHAPE = /^[A-Za-z0-9\-/. ()]{2,24}$/
 
 /** Lowercase, separators removed: "SR-13" becomes "sr13". */
 export function matchKey(batch: string) {

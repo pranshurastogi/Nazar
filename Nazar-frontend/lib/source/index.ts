@@ -1,10 +1,15 @@
 import { apiAlerts, apiCheck, apiLikelyDown, apiPipelineStatus, type PipelineStatusResponse } from './api'
+import { API_URL } from './config'
+import type { ArkivFeedPage } from './arkiv'
 import { checkDemo, demoActiveAlerts } from './demo'
 import { validateBatch } from './match'
 import type { Alert, CheckResult, PipelineStatus, SourceKind } from './types'
 
 export * from './types'
 export { matchKey, confusionKey, BATCH_SHAPE } from './match'
+export { formatYm } from './map'
+export { API_URL } from './config'
+export { STATE_NAME, SOURCE_NAME, stateName } from './labels'
 
 // One entry point per question. Each tries the Nazar API, then Arkiv directly, then the
 // built-in demo data, and reports which one answered. Arkiv code is loaded on demand so
@@ -23,6 +28,7 @@ export type Stage = Exclude<SourceKind, 'demo'>
  */
 let probe: { at: number; p: Promise<PipelineStatusResponse | null> } | null = null
 function probeApi() {
+  if (!API_URL) return Promise.resolve(null)
   if (!probe || Date.now() - probe.at > 15_000) {
     probe = { at: Date.now(), p: apiPipelineStatus().catch(() => null) }
   }
@@ -83,6 +89,86 @@ export async function loadAlerts(q: { minSeverity?: number; peds?: boolean; limi
   return { items, total: items.length, source: 'demo' }
 }
 
+export type FeedFilters = { minSeverity?: number; peds?: boolean; state?: string; source?: string }
+
+/** One page of the alert feed. `more` fetches the next page from the same source, or is null at the end. */
+export type FeedPage = {
+  items: Alert[]
+  /** Matching alerts in total, when the source can tell. */
+  total: number | null
+  source: SourceKind
+  more: ((signal?: AbortSignal) => Promise<FeedPage>) | null
+}
+
+export const FEED_PAGE_SIZE = 20
+/** Arkiv has no ordering, so the feed reads a bounded recent window instead of all history. */
+const ARKIV_FEED_MONTHS = 24
+
+const feedMatch = (a: Alert, f: FeedFilters) =>
+  !a.retraction &&
+  (!f.peds || a.peds) &&
+  (!f.minSeverity || a.severity >= f.minSeverity) &&
+  (!f.state || a.state === f.state) &&
+  (!f.source || a.sourceId === f.source)
+
+/**
+ * Reads API pages from `offset`. Filters are applied again here in case the server ignores
+ * one (older servers have no source filter); a filtered page can come back sparse, so up to
+ * five pages are read per call, and the total is no longer known.
+ */
+async function apiFeedPage(f: FeedFilters, offset: number, exact: boolean, signal?: AbortSignal): Promise<FeedPage> {
+  const items: Alert[] = []
+  let off = offset
+  let total: number | null = null
+  let more = true
+  // One read when the server applied every filter; otherwise keep reading until a page's worth matched.
+  for (let i = 0; i < 5 && more && (i === 0 || (!exact && items.length < FEED_PAGE_SIZE)); i++) {
+    const r = await apiAlerts({ ...f, limit: FEED_PAGE_SIZE, offset: off }, { signal })
+    const kept = r.items.filter((a) => feedMatch(a, f))
+    if (kept.length !== r.items.length) exact = false
+    items.push(...kept)
+    off += r.items.length
+    total = r.total
+    more = r.items.length === FEED_PAGE_SIZE && (total === null || off < total)
+  }
+  return {
+    items,
+    total: exact ? total : null,
+    source: 'api',
+    more: more ? (sig) => apiFeedPage(f, off, exact, sig) : null,
+  }
+}
+
+const ymMonthsAgo = (months: number, d = new Date()) => {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - months, 1))
+  return t.getUTCFullYear() * 100 + t.getUTCMonth() + 1
+}
+
+const fromArkivPage = (p: ArkivFeedPage): FeedPage => {
+  const next = p.next
+  return { items: p.items, total: null, source: 'arkiv', more: next ? async (sig) => fromArkivPage(await next(sig)) : null }
+}
+
+/** The alert feed, newest first: Nazar API, else Arkiv (Q3), else demo data. */
+export async function loadFeed(f: FeedFilters = {}, signal?: AbortSignal): Promise<FeedPage> {
+  try {
+    if (!(await probeApi())) throw new Error('API unreachable')
+    return await apiFeedPage(f, 0, true, signal)
+  } catch (err) {
+    if (isAbort(err, signal)) throw err
+  }
+  try {
+    const page = await (await loadArkiv()).arkivFeed({ ...f, sinceYm: ymMonthsAgo(ARKIV_FEED_MONTHS), limit: FEED_PAGE_SIZE }, signal)
+    if (page) return fromArkivPage(page)
+  } catch (err) {
+    if (isAbort(err, signal)) throw err
+  }
+  const items = demoActiveAlerts()
+    .filter((a) => feedMatch(a, f))
+    .sort((a, b) => b.noticeOrder - a.noticeOrder)
+  return { items, total: items.length, source: 'demo', more: null }
+}
+
 /** Pipeline liveness: the API's view of the heartbeat, else the heartbeat entity on Arkiv. */
 export async function loadPipelineStatus(signal?: AbortSignal): Promise<PipelineStatus> {
   const r = await probeApi()
@@ -99,7 +185,8 @@ export async function loadPipelineStatus(signal?: AbortSignal): Promise<Pipeline
     // No heartbeat (pipeline paused), but checks can still be answered from published alerts.
     if (await arkiv.arkivHasData(signal)) return { kind: 'arkiv', lastOkMs: null }
   } catch (err) {
-    if (isAbort(err, signal)) throw err
+    // While Arkiv reads are paused after a 429, the caller keeps showing what it last knew.
+    if (isAbort(err, signal) || (err instanceof Error && err.name === 'ArkivBackoffError')) throw err
   }
   return { kind: 'offline' }
 }

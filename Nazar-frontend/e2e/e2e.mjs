@@ -1,6 +1,6 @@
 // End-to-end check of the Nazar web app over the Chrome DevTools Protocol (no browser-automation dependency).
 // Usage: node e2e.mjs <outDir> [fallback|mock|live]
-//   fallback: Nazar API unreachable; Arkiv has no Nazar data yet, so demo data answers.
+//   fallback: Nazar API requests are refused (CDP Fetch), Arkiv has no data for the build's publisher, so demo data answers.
 //   mock:     API responses are served by CDP Fetch interception (contract from the brief).
 //   live:     the real backend on :8787 answers.
 import fs from 'node:fs'
@@ -39,6 +39,16 @@ const vp = (w, h, dark, reduced = false) => Promise.all([
 const shot = async (name, delay = 400) => { await wait(delay); const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`${OUT}/${name}.png`, Buffer.from(r.result.data, 'base64')) }
 const settle = () => waitFor(`!document.querySelector('[aria-label="High-severity alerts"][aria-busy="true"]') && !document.querySelector('[data-status="checking"]')`)
 const fresh = async (dark = false) => { await send('Page.navigate', { url: URL }); await wait(1500); await js(`localStorage.clear(); localStorage.setItem('theme', '${dark ? 'dark' : 'light'}')`); await send('Page.reload'); await wait(1200); await settle() }
+const feedIdle = async () => { await wait(200); return waitFor(`!!document.querySelector('[data-feed][aria-busy="false"]')`) }
+const feedRows = () => js(`document.querySelectorAll('[data-alert-row]').length`)
+const feedCount = () => js(`document.querySelector('[data-feed-count]')?.innerText || ''`)
+const rowTexts = () => js(`[...document.querySelectorAll('[data-alert-row]')].map(b => b.innerText)`)
+const pick = async (id, v) => { await js(`(() => { const s = document.getElementById(${JSON.stringify(id)}); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new Event('change', { bubbles: true })) })()`); await feedIdle() }
+const press = async label => { await js(`[...document.querySelectorAll('[data-feed], section[aria-label="Filter alerts"] button, button')].find(b => b.textContent.trim() === ${JSON.stringify(label)} && b.offsetParent)?.click()`); await feedIdle() }
+/** Follows a visible nav link and reports whether the page stayed alive (client-side routing, no reload). */
+const navTo = async label => { await js(`window.__spa = 1; [...document.querySelectorAll('nav a')].find(a => a.textContent.trim() === ${JSON.stringify(label)} && a.offsetParent)?.click()`); await wait(900); return js(`window.__spa === 1`) }
+const openFeed = async () => { const spa = await navTo('Feed'); await feedIdle(); return spa }
+const ARKIV_RPC = 'https://rpc.tiramisu.db-chain.testnet.arkiv.network'
 const proofText = () => js(`document.querySelector('[role="dialog"]')?.innerText || ''`)
 const escape = async () => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(700) }
 
@@ -49,18 +59,28 @@ const KEY1 = '0x8b1c2a7e3f9d4c6b5a0e1f2d3c4b5a69788766554433221100ffeeddccbbaa99
 const KEY2 = '0x1f2e3d4c5b6a79881726354453627180a9b8c7d6e5f40312213243546576879a'
 const WALLET = '0xd06d85Eb20f126f796E4a341b711B1a757c66bD2'
 const TX = '0xabc0000000000000000000000000000000000000000000000000000000000def'
-const dto = (o) => ({ rid: 'r-' + o.entityKey.slice(2, 10), caseId: 'c1', batch: 'SR-13', batchKey: 'sr13', brand: 'COLDRIF', product: 'COLDRIF Syrup', generic: 'Paracetamol, Phenylephrine, Chlorpheniramine', form: 'syrup', category: 'adulterated', failures: ['glycol'], reason: 'Diethylene glycol 48.6% w/v', severity: 5, severityRules: ['Toxic glycol: base 5'], ruleVersion: 'sev@1', peds: true, manufacturer: 'Sresan Pharmaceutical, Kancheepuram', manufacturerRole: 'maker', plantId: null, state: 'TN', mfgYm: 202505, expYm: 202704, alertYm: 202510, sourceId: 'x', jurisdiction: 'IN', noticeSha: 'a'.repeat(64), noticeTitle: 'Notice', noticeUrl: 'https://example.org/notice.pdf', noticeDate: '2025-10-13', method: 'text', confidence: 0.97, tier: 'auto', creator: WALLET, txHash: TX, publishedAt: '2025-10-14T00:00:00Z', retracted: false, explorer: { entity: 'https://tiramisu.explorer.arkiv.network/entity/' + o.entityKey, tx: 'https://tiramisu.explorer.arkiv.network/tx/' + TX }, ...o })
+const dto = (o) => ({ rid: 'r-' + o.entityKey.slice(2, 10), caseId: 'c1', batch: 'SR-13', batchKey: 'sr13', brand: 'COLDRIF', product: 'COLDRIF Syrup', generic: 'Paracetamol, Phenylephrine, Chlorpheniramine', form: 'syrup', category: 'adulterated', failures: ['glycol'], reason: 'Diethylene glycol 48.6% w/v', severity: 5, severityRules: ['Toxic glycol: base 5'], ruleVersion: 'sev@1', peds: true, manufacturer: 'Sresan Pharmaceutical, Kancheepuram', manufacturerRole: 'maker', plantId: null, state: 'IN-TN', mfgYm: 202505, expYm: 202704, alertYm: 202510, sourceId: 'x', jurisdiction: 'IN', noticeSha: 'a'.repeat(64), noticeTitle: 'Notice', noticeUrl: 'https://example.org/notice.pdf', noticeDate: '2025-10-13', method: 'text', confidence: 0.97, tier: 'auto', creator: WALLET, txHash: TX, publishedAt: '2025-10-14T00:00:00Z', retracted: false, explorer: { entity: 'https://tiramisu.explorer.arkiv.network/entity/' + o.entityKey, tx: 'https://tiramisu.explorer.arkiv.network/tx/' + TX }, ...o })
 const MOCK_ALERTS = [
   dto({ entityKey: KEY1, authority: 'World Health Organization', noticeTitle: 'Medical Product Alert N°5/2025', noticeDate: '2025-10-13', tier: 'auto' }),
   dto({ entityKey: KEY2, authority: 'Tamil Nadu Drugs Control', noticeTitle: 'NSQ list, October 2025', noticeDate: '2025-10-04', alertYm: 202510, tier: 'machine_read', method: 'ocr', confidence: 0.82 }),
 ]
+const FEED_TOP = [MOCK_ALERTS[0], { ...MOCK_ALERTS[0], rid: 'r-other', batch: 'AX-77', batchKey: 'ax77', brand: 'Example Tabs', peds: false, severity: 4, entityKey: KEY2 }, { ...MOCK_ALERTS[0], rid: 'r-low', batch: 'LW-1', batchKey: 'lw1', brand: 'Low Severity Tabs', peds: false, severity: 2, entityKey: KEY2 }]
+/** 40 lower-severity alerts for paging; every 7th is a Maharashtra FDA row, which has no notice date. */
+const FEED_EXTRA = Array.from({ length: 40 }, (_, i) => {
+  const mh = i % 7 === 3
+  return { ...MOCK_ALERTS[0], rid: 'r-x' + String(i).padStart(3, '0'), caseId: 'cx' + i, batch: 'FX-' + (100 + i), batchKey: 'fx' + (100 + i), brand: (mh ? 'Mahacef 200 ' : 'Feed Item ') + i, product: null, peds: false, severity: 1 + (i % 3), state: mh ? 'IN-MH' : 'IN-GJ', alertYm: i < 20 ? 202509 : 202508, sourceId: mh ? 'mh-fda' : 'cdsco-online', authority: mh ? 'Food and Drug Administration, Maharashtra' : 'CDSCO', noticeDate: mh ? null : '2025-09-01', noticeTitle: mh ? 'NSQ alerts' : 'CDSCO NSQ list', entityKey: KEY2 }
+})
+const MH_ROWS = FEED_EXTRA.filter(a => a.sourceId === 'mh-fda').length
+
 function mockResponse(url) {
   const u = new globalThis.URL(url)
   if (u.pathname === '/v1/pipeline/status') return { heartbeat: { lastOkMs: Date.now() - 4 * 60_000, entityKey: KEY1 }, runs: [], stats: {}, publisher: { address: WALLET, balanceGlm: 0.4 }, mode: 'live' }
   if (u.pathname === '/v1/alerts') {
-    const peds = u.searchParams.get('peds'); const min = Number(u.searchParams.get('minSeverity') || 0)
-    const items = [MOCK_ALERTS[0], { ...MOCK_ALERTS[0], rid: 'r-other', batch: 'AX-77', batchKey: 'ax77', brand: 'Example Tabs', peds: false, severity: 4, entityKey: KEY2 }, { ...MOCK_ALERTS[0], rid: 'r-low', batch: 'LW-1', batchKey: 'lw1', brand: 'Low Severity Tabs', peds: false, severity: 2, entityKey: KEY2 }].filter(a => (!peds || a.peds) && a.severity >= min)
-    return { items, total: items.length }
+    // Honours limit/offset/state/minSeverity/peds like the real server, and ignores `source` like the current one.
+    const q = u.searchParams; const peds = q.get('peds'); const min = Number(q.get('minSeverity') || 0); const state = q.get('state')
+    const limit = Number(q.get('limit') || 50); const offset = Number(q.get('offset') || 0)
+    const all = [...FEED_TOP, ...FEED_EXTRA].filter(a => (!peds || a.peds) && a.severity >= min && (!state || a.state === state))
+    return { items: all.slice(offset, offset + limit), total: all.length }
   }
   if (u.pathname === '/v1/check') {
     const b = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -71,16 +91,30 @@ function mockResponse(url) {
   }
   return null
 }
+const mock = { apiDown: false, arkiv429: false, arkivHits: 0 }
+const CORS = [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: 'content-type' }, { name: 'Access-Control-Allow-Methods', value: 'POST, OPTIONS' }, { name: 'Access-Control-Expose-Headers', value: 'Retry-After' }]
 if (MODE === 'mock') {
-  await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }] })
+  await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }, { urlPattern: ARKIV_RPC + '*' }] })
   handlers.push(async m => {
     if (m.method !== 'Fetch.requestPaused') return
+    const { requestId, request } = m.params
+    if (request.url.startsWith(ARKIV_RPC)) {
+      if (request.method === 'OPTIONS') return send('Fetch.fulfillRequest', { requestId, responseCode: 204, responseHeaders: CORS })
+      mock.arkivHits++
+      if (!mock.arkiv429) return send('Fetch.continueRequest', { requestId })
+      return send('Fetch.fulfillRequest', { requestId, responseCode: 429, responseHeaders: [...CORS, { name: 'Retry-After', value: '120' }, { name: 'Content-Type', value: 'text/plain' }], body: Buffer.from('rate limited').toString('base64') })
+    }
+    if (mock.apiDown) return send('Fetch.failRequest', { requestId, errorReason: 'ConnectionRefused' })
     const data = mockResponse(m.params.request.url)
     await send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: data ? 200 : 404, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: Buffer.from(JSON.stringify(data ?? { error: 'not found' })).toString('base64') })
   })
 }
 
 if (MODE === 'fallback') {
+  // Refuse the Nazar API even if one is running locally, so answers are deterministic.
+  await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }] })
+  handlers.push(m => { if (m.method === 'Fetch.requestPaused') send('Fetch.failRequest', { requestId: m.params.requestId, errorReason: 'ConnectionRefused' }) })
+
   // ---- Mobile, light: onboarding flow
   await vp(390, 844, false); await fresh()
   ok('onboarding opens on first visit', (await body()).includes('An eye on every batch'))
@@ -128,6 +162,7 @@ if (MODE === 'fallback') {
   await typeBatch('demo-rt1'); ok('retracted state', (await body()).includes('An alert on this batch was withdrawn'))
   await typeBatch('!!'); ok("can't tell state for bad input", (await body()).includes("We couldn't read the batch number clearly"))
   ok('bad input is answered on the device', (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'local')
+  await typeBatch('(N)25567'); ok('CDSCO-style batch (N)25567 is readable, not "can\'t tell"', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && !(await body()).includes("We couldn't read the batch number clearly"))
   await typeBatch('5R-13'); ok('look-alike suggests SR-13, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
   await click('SR-13'); await waitIdle(); ok('suggestion click checks SR-13', (await body()).includes('This batch failed a government quality test'))
   await typeBatch('AB1234'); const b = await body()
@@ -155,7 +190,7 @@ if (MODE === 'fallback') {
   await js(`document.querySelector('[aria-label="Toggle dark mode"]').click()`); await wait(400)
   ok('theme toggle switches dark mode', (await js(`document.documentElement.classList.contains('dark')`)) !== before)
   await js(`document.querySelector('[aria-label="Toggle dark mode"]').click()`); await wait(300)
-  await clickHas('Feed'); await wait(500); ok('unbuilt tabs show a toast', (await body()).includes('coming in the next build'))
+  await clickHas('Cabinet'); await wait(500); ok('unbuilt tabs show a toast', (await body()).includes('coming in the next build'))
   await js(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Clear')?.click()`); await wait(300)
   ok('clear recent checks shows empty state', (await body()).includes('No checks yet'))
   await clickHas('Guide') || await js(`document.querySelector('header button:nth-last-child(2)').click()`); await wait(800)
@@ -182,12 +217,58 @@ if (MODE === 'fallback') {
   ok('reduced motion: spinner animation disabled', (await js(`window.__anim`)) === 'none', String(await js(`window.__anim`)))
   await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
 
+  // ---- Arkiv request budget: a page load must not flood the public RPC (it rate-limits with 429).
+  await vp(1440, 1000, false); await fresh()
+  const rpcBefore = requests.filter(u => u.startsWith(ARKIV_RPC)).length
+  await send('Page.reload'); await wait(6000)
+  const rpcLoad = requests.filter(u => u.startsWith(ARKIV_RPC)).length - rpcBefore
+  ok('page load sends at most 4 requests to the Arkiv RPC', rpcLoad >= 1 && rpcLoad <= 4, String(rpcLoad))
+
   // ---- Desktop
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
   ok('status pill desktop text: Offline · demo data', (await js(`document.querySelector('[data-status]')?.innerText`)) === 'Offline · demo data')
   await shot('desktop-home')
   await typeBatch('SR-13'); await js(`window.scrollTo(0, 330)`); await shot('desktop-flagged')
   await vp(1440, 1000, true); await fresh(true); await click('Skip'); await wait(600); await shot('desktop-dark-home')
+
+  // ---- Feed (fallback: demo data)
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  ok('feed: nav link routes client-side (no reload)', await openFeed())
+  ok('feed: URL is /feed and nav marks Feed current', (await js(`location.pathname`)) === '/feed' && (await js(`[...document.querySelectorAll('nav a[aria-current="page"]')].some(a => a.textContent.trim() === 'Feed')`)))
+  ok('feed: loads demo alerts, labelled Demo data', (await feedRows()) === 3 && (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && (await feedCount()).startsWith('3 alerts') && (await body()).includes('Demo data: the Nazar API and Arkiv could not answer'))
+  ok('feed: retracted demo alert is not in the feed', !(await rowTexts()).some(t => t.includes('DEMO-RT1')))
+  ok('feed: no Load more at the end of demo data', (await body()).includes('End of the feed') && !(await body()).includes('Load more alerts'))
+  await shot('feed-desktop')
+  await pick('feed-state', 'IN-TN')
+  ok('feed: Made in Tamil Nadu narrows to COLDRIF', (await feedRows()) === 1 && (await rowTexts())[0].includes('COLDRIF') && (await rowTexts())[0].includes('Made in Tamil Nadu') && (await js(`location.search`)) === '?state=IN-TN')
+  await pick('feed-source', 'mh-fda')
+  ok('feed: no match shows an empty state, not "no alert"', (await feedRows()) === 0 && (await body()).includes('No alerts match these filters'))
+  await press('Reset filters')
+  ok('feed: reset filters restores all alerts', (await feedRows()) === 3 && (await js(`location.search`)) === '')
+  await press('Child Shield only')
+  ok('feed: Child Shield toggle is pressed and keeps the paediatric syrups', (await js(`[...document.querySelectorAll('button[aria-pressed="true"]')].some(b => b.textContent.includes('Child Shield only'))`)) && (await feedRows()) === 3 && (await js(`location.search`)) === '?peds=1')
+  await press('Child Shield only')
+  await js(`document.querySelector('[data-alert-row]').click()`); await wait(700)
+  ok('feed: opening an alert shows the result card inline', (await js(`document.querySelector('[data-alert-row]').getAttribute('aria-expanded')`)) === 'true' && (await js(`document.querySelector('[data-feed] section[data-state="flagged"] [data-source]')?.dataset.source`)) === 'demo')
+  await shot('feed-desktop-open')
+  await js(`[...document.querySelectorAll('[data-feed] button')].find(b => b.textContent.includes('How do we know'))?.click()`); await wait(900)
+  let fp = await proofText()
+  ok('feed: proof sheet opens from a feed alert', fp.includes('Source SHA-256') && fp.includes('World Health Organization') && fp.includes('Medical Product Alert N°5/2025'))
+  await escape()
+  ok('feed: no horizontal overflow at 1440', (await js(`document.documentElement.scrollWidth`)) <= 1440)
+  await vp(1440, 1000, true); await fresh(true); await click('Skip'); await openFeed(); await shot('feed-desktop-dark')
+  await vp(360, 800, false); await js(`localStorage.setItem('theme', 'light')`); await send('Page.navigate', { url: URL + 'feed?state=IN-GJ' }); await wait(1500); await feedIdle()
+  ok('feed: deep link /feed?state=IN-GJ applies the filter', (await feedRows()) === 2 && (await js(`document.getElementById('feed-state').value`)) === 'IN-GJ')
+  ok('feed: no horizontal overflow at 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  const minTarget = await js(`Math.min(...[...document.querySelectorAll('[data-alert-row], section[aria-label="Filter alerts"] button, section[aria-label="Filter alerts"] select')].map(b => Math.round(b.getBoundingClientRect().height)))`)
+  ok('feed: rows and filters are at least 44px tall at 360', minTarget >= 44, String(minTarget))
+  await press('Reset filters'); await shot('feed-360')
+  await js(`document.querySelector('[data-alert-row]').click()`); await wait(700)
+  ok('feed: open alert fits 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await js(`document.querySelector('[data-feed] section[data-state]').scrollIntoView({block:'start'}); window.scrollBy(0,-12)`); await shot('feed-360-open')
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark')`); await send('Page.reload'); await wait(1500); await feedIdle(); await shot('feed-360-dark')
+  const backSpa = await navTo('Check')
+  ok('feed: Check tab link returns to the checker', backSpa && (await js(`location.pathname`)) === '/' && (await js(`!!document.getElementById('batch')`)), `${backSpa} ${await js('location.pathname')}`)
 }
 
 if (MODE === 'mock' || MODE === 'live') {
@@ -218,6 +299,7 @@ if (MODE === 'mock' || MODE === 'live') {
     ok('timeline opens proof for the machine-read notice', p.includes('Tamil Nadu Drugs Control') && p.includes('Machine-read, awaiting pharmacist confirmation') && p.includes('OCR of a scanned page · 82% confidence'))
     await shot('mock-proof-machine-read'); await escape()
     await typeBatch('5R-13'); ok('API look-alike → Did you mean, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
+    await typeBatch('(N)25567'); ok('API: (N)25567 is sent to the API, not rejected as unreadable', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && requests.some(u => u.includes('/v1/check?batch=(N)25567') || u.includes('/v1/check?batch=%28N%2925567')))
     await typeBatch('ZZ-404'); ok('API no-alert labelled + not a safety certificate', (await body()).includes('This is not a safety certificate') && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'api')
     await vp(360, 800, true); await fresh(true); await click('Skip'); await wait(600); await typeBatch('SR-13'); await js(`document.querySelector('section[data-state]').scrollIntoView({block:'start'})`)
     ok('mock: no horizontal overflow at 360 with timeline', (await js(`document.documentElement.scrollWidth`)) <= 360)
@@ -226,6 +308,76 @@ if (MODE === 'mock' || MODE === 'live') {
     ok('mock: proof drawer fits 360', (await js(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.scrollWidth <= d.clientWidth + 1 })()`)))
     await shot('mock-mobile-dark-proof'); await escape()
   }
+}
+
+// ---- Feed against the API (mock contract or the real backend)
+if (MODE === 'mock' || MODE === 'live') {
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  ok('feed: nav link routes client-side (no reload)', await openFeed())
+  ok('feed: answered by the API, labelled Live · Nazar API', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'api' && (await js(`[...document.querySelectorAll('[data-source]')].some(e => e.innerText === 'Live · Nazar API')`)))
+  const allCount = await feedCount(); const firstRows = await feedRows()
+  ok('feed: first page has rows and a count', firstRows > 0 && /^[\d,]+ alerts?/.test(allCount), `${firstRows} rows · ${allCount}`)
+  if (MODE === 'mock') ok('feed: first page is 20 of 43', firstRows === 20 && allCount.startsWith('43 alerts') && (await body()).includes('Showing 20 of 43'))
+  if (await js(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Load more alerts')`)) {
+    await click('Load more alerts'); await waitFor(`![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true')`); await wait(300)
+    ok('feed: Load more appends the next page', (await feedRows()) > firstRows, `${firstRows} → ${await feedRows()}`)
+    if (MODE === 'mock') {
+      await click('Load more alerts'); await waitFor(`(document.querySelectorAll('[data-alert-row]').length) === 43`, 5000)
+      ok('feed: paging reaches the end (43 rows, End of the feed)', (await feedRows()) === 43 && (await body()).includes('End of the feed'))
+    }
+  } else ok('feed: Load more is offered when more alerts exist', MODE === 'live' && firstRows < 20, String(firstRows))
+  await shot(`${MODE}-feed-desktop`)
+  await press('Serious 4–5')
+  const seriousCount = await feedCount()
+  ok('feed: Serious 4–5 filter changes the results', seriousCount !== allCount && (await rowTexts()).every(t => /^[45]\n/.test(t.trim())) && (await js(`location.search`)) === '?sev=4', `${allCount} → ${seriousCount}`)
+  if (MODE === 'mock') ok('feed: Serious shows the 2 API alerts of severity 4+', seriousCount.startsWith('2 alerts') && (await feedRows()) === 2)
+  await press('Reset filters')
+  await pick('feed-state', 'IN-MH')
+  const mhRows = await feedRows()
+  ok('feed: Made in Maharashtra filter goes to the API', (await rowTexts()).every(t => t.includes('Made in Maharashtra')) && (await js(`location.search`)) === '?state=IN-MH', String(mhRows))
+  await press('Reset filters')
+  if (MODE === 'mock') {
+    await pick('feed-source', 'mh-fda')
+    const t = await rowTexts()
+    ok('feed: source filter works even when the server ignores it', t.length === MH_ROWS && t.every(x => x.includes('Food and Drug Administration, Maharashtra')), String(t.length))
+    ok("feed: Maharashtra rows say \"Listed on the regulator's page · first seen\" instead of a date", t.every(x => x.includes("Listed on the regulator's page · first seen Sep 2025") || x.includes("Listed on the regulator's page · first seen Aug 2025")), t[0])
+    await js(`document.querySelector('[data-alert-row]').click()`); await wait(800)
+    await js(`[...document.querySelectorAll('[data-feed] button')].find(b => b.textContent.includes('How do we know'))?.click()`); await wait(900)
+    const p = await proofText()
+    ok('feed: Maharashtra proof shows the honest date line', p.includes("Listed on the regulator's page · first seen"), p.slice(0, 160))
+    await escape(); await press('Reset filters')
+  }
+  await js(`document.querySelector('[data-alert-row]').click()`); await wait(900)
+  ok('feed: opening an alert shows the result card, labelled with the API', (await js(`document.querySelector('[data-feed] section[data-state="flagged"] [data-source]')?.dataset.source`)) === 'api')
+  await js(`[...document.querySelectorAll('[data-feed] button')].find(b => b.textContent.includes('How do we know'))?.click()`); await wait(900)
+  const fp = await proofText()
+  ok('feed: proof sheet opens with publisher and source hash', fp.includes('Published by') && fp.includes('Source SHA-256'), fp.slice(0, 160))
+  if (MODE === 'mock') ok('feed: proof shows the Arkiv entity key', fp.includes('0x8b1c…aa99'))
+  await escape()
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark')`); await send('Page.reload'); await wait(1500); await feedIdle()
+  ok('feed: no horizontal overflow at 360 (API data)', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await shot(`${MODE}-feed-360-dark`)
+}
+
+// ---- Arkiv throttled (mock): API down and every RPC call answered 429 with Retry-After.
+if (MODE === 'mock') {
+  mock.apiDown = true; mock.arkiv429 = true
+  await vp(1440, 1000, false); await send('Page.navigate', { url: URL }); await wait(1200)
+  await js(`localStorage.clear(); localStorage.setItem('theme', 'light'); localStorage.setItem('nazar:onboarded', '1')`)
+  mock.arkivHits = 0
+  await send('Page.reload'); await wait(6000); await settle()
+  // Let any request already in flight on a slow machine land before taking the count.
+  for (let prev = -1, t = Date.now(); prev !== mock.arkivHits && Date.now() - t < 20000;) { prev = mock.arkivHits; await wait(3000) }
+  const hits = mock.arkivHits
+  ok('429: page load sends at most 4 Arkiv requests and does not retry in a loop', hits >= 1 && hits <= 4, String(hits))
+  ok('429: status pill falls back to Offline · demo data', (await js(`document.querySelector('[data-status]')?.dataset.status`)) === 'offline')
+  ok('429: home lists fall back to demo data', (await js(`document.querySelector('[aria-label="High-severity alerts"]')?.parentElement.querySelector('[data-source]')?.dataset.source`)) === 'demo')
+  await typeBatch('SR-13')
+  // On a loaded machine the first call can time out instead (a shorter network backoff), so the bound is on the whole phase.
+  ok('429: checks during the backoff answer from demo data, no retry storm', (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'demo' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
+  await openFeed()
+  ok('429: feed during the backoff uses demo data, no retry storm', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
+  mock.apiDown = false; mock.arkiv429 = false
 }
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))

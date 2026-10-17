@@ -322,7 +322,7 @@ export function ResultCard({ result, onCheck }: { result: CheckResult; onCheck: 
                 ? Check the manufacturer on the pack before trusting a look-alike.
               </p>
             ) : (
-              <p className="text-muted-foreground">Batch numbers use letters, digits and - / . only. Re-read the line after “B.No.” or ask your chemist.</p>
+              <p className="text-muted-foreground">Batch numbers use letters, digits and - / . ( ) only. Re-read the line after “B.No.” or ask your chemist.</p>
             )}
           </div>
         )}

@@ -150,3 +150,4 @@ vite.config.ts.timestamp-*
 
 # e2e screenshots
 Nazar-frontend/e2e/screenshots/
+.DS_Store

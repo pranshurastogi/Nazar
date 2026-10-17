@@ -23,6 +23,21 @@ export function formatDate(iso: string | null | undefined): string | null {
   return m[3] ? `${Number(m[3])} ${month} ${m[1]}` : `${month} ${m[1]}`
 }
 
+/**
+ * Sources that publish a running list with no date per row (Maharashtra FDA). We only
+ * know when Nazar first saw the row, so we say exactly that rather than show a fake date.
+ */
+const UNDATED_SOURCES = new Set(['mh-fda'])
+
+/** The date line for a notice: its own date, else "first seen" for undated lists, else the alert month. */
+export function noticeDateText(date: string | null | undefined, ym: number | null | undefined, sourceId: string | undefined): string {
+  const own = formatDate(date)
+  if (own) return own
+  const month = formatYm(ym)
+  if (sourceId && UNDATED_SOURCES.has(sourceId)) return month ? `Listed on the regulator's page · first seen ${month}` : "Listed on the regulator's page"
+  return month ?? 'Date not listed'
+}
+
 /** Epoch ms for sorting notices: the notice date when parseable, else the alert month. */
 export function noticeOrder(date: string | null | undefined, ym: number | null | undefined): number {
   const t = date ? Date.parse(date) : NaN
@@ -82,6 +97,9 @@ export type AlertDTO = {
   mfgYm?: number | null
   expYm?: number | null
   alertYm?: number
+  state?: string | null
+  sourceId?: string
+  jurisdiction?: string
   authority?: string
   noticeSha?: string
   noticeTitle?: string
@@ -113,8 +131,11 @@ export function fromDto(d: AlertDTO): Alert {
     severityRules: d.severityRules ?? [],
     peds: !!d.peds,
     authority,
+    sourceId: d.sourceId || 'unknown',
+    state: d.state || null,
+    alertYm: d.alertYm ?? null,
     notice: d.noticeTitle || 'Regulator notice',
-    noticeDate: formatDate(d.noticeDate) ?? formatYm(d.alertYm) ?? 'Date not listed',
+    noticeDate: noticeDateText(d.noticeDate, d.alertYm, d.sourceId),
     noticeOrder: noticeOrder(d.noticeDate, d.alertYm),
     noticeUrl: d.noticeUrl || null,
     mfg: formatYm(d.mfgYm),
@@ -152,6 +173,8 @@ export type ArkivAlert = {
   mfgYm: number | null
   expYm: number | null
   alertYm: number | null
+  sourceId: string
+  state: string | null
   confidence: number
   method: string
   tier: string
@@ -194,8 +217,11 @@ export function fromArkiv(a: ArkivAlert): Alert {
     severityRules: p.severityRules ?? [],
     peds: a.peds,
     authority,
+    sourceId: a.sourceId || 'unknown',
+    state: a.state,
+    alertYm: a.alertYm,
     notice: p.noticeTitle || 'Regulator notice',
-    noticeDate: formatDate(p.noticeDate) ?? formatYm(a.alertYm) ?? 'Date not listed',
+    noticeDate: noticeDateText(p.noticeDate, a.alertYm, a.sourceId),
     noticeOrder: noticeOrder(p.noticeDate, a.alertYm),
     noticeUrl: p.noticeUrl || null,
     mfg: formatYm(a.mfgYm),

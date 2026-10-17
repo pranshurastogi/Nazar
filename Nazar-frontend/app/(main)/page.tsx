@@ -1,57 +1,33 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useTheme } from 'next-themes'
+import Link from 'next/link'
 import {
   ArrowRight,
   Baby,
-  BookOpen,
   ChevronRight,
   CircleHelp,
   FileSpreadsheet,
   History,
-  House,
   LoaderCircle,
-  Menu,
-  Moon,
   ScanLine,
   Search,
-  ShieldCheck,
-  Sun,
   TriangleAlert,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { soon, useShell } from '@/components/nazar/app-shell'
 import { CheckingCard } from '@/components/nazar/checking-card'
-import { Logo } from '@/components/nazar/logo'
-import { Onboarding, ONBOARDED_KEY } from '@/components/nazar/onboarding'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
-import { StatusPill } from '@/components/nazar/status-pill'
-import {
-  checkBatch,
-  loadAlerts,
-  loadPipelineStatus,
-  type AlertFeed,
-  type CheckResult,
-  type PipelineStatus,
-  type ResultState,
-  type Stage,
-} from '@/lib/source'
+import { checkBatch, loadAlerts, type AlertFeed, type CheckResult, type ResultState, type Stage } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
 const RECENT_KEY = 'nazar:recent'
 type Recent = { batch: string; name: string; state: ResultState }
-
-const NAV = [
-  { icon: House, label: 'Check' },
-  { icon: History, label: 'Feed' },
-  { icon: BookOpen, label: 'Cabinet' },
-  { icon: Menu, label: 'More' },
-]
 
 const STATE_STYLE: Record<ResultState, { icon: typeof Search; cls: string; label: string }> = {
   flagged: { icon: TriangleAlert, cls: 'bg-flagged-soft text-flagged', label: 'Flagged' },
@@ -60,64 +36,28 @@ const STATE_STYLE: Record<ResultState, { icon: typeof Search; cls: string; label
   unreadable: { icon: CircleHelp, cls: 'bg-caution-soft text-caution', label: "Can't tell" },
 }
 
-const soon = (what: string) => toast(`${what} is coming in the next build.`)
-
 /** Answers faster than this skip the loading card, so quick checks do not flicker. */
 const PENDING_DELAY_MS = 120
-const STATUS_REFRESH_MS = 2 * 60 * 1000
 
 function Skeleton({ className }: { className?: string }) {
   return <span aria-hidden="true" className={cn('block animate-pulse rounded bg-muted motion-reduce:animate-none', className)} />
-}
-
-function NavItem({ icon: Icon, label, active, compact }: { icon: typeof House; label: string; active?: boolean; compact?: boolean }) {
-  return (
-    <button
-      aria-current={active ? 'page' : undefined}
-      onClick={() => !active && soon(label)}
-      className={cn(
-        'flex min-h-12 items-center rounded-xl font-semibold text-muted-foreground transition-colors hover:text-foreground',
-        compact ? 'flex-1 flex-col justify-center gap-1 text-[11px]' : 'gap-3 px-3.5 text-sm',
-        active && 'bg-primary/10 text-primary hover:text-primary',
-      )}
-    >
-      <Icon className="size-5" />
-      {label}
-    </button>
-  )
-}
-
-function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const dark = mounted && resolvedTheme === 'dark'
-  return (
-    <Button variant="outline" size="icon-lg" className="size-11 rounded-full" onClick={() => setTheme(dark ? 'light' : 'dark')} aria-label="Toggle dark mode">
-      {dark ? <Sun /> : <Moon />}
-    </Button>
-  )
 }
 
 export default function Page() {
   const [batch, setBatch] = useState('')
   const [result, setResult] = useState<CheckResult | null>(null)
   const [pending, setPending] = useState<{ batch: string; stage: Stage } | null>(null)
-  const [status, setStatus] = useState<PipelineStatus>({ kind: 'checking' })
   const [feed, setFeed] = useState<AlertFeed | null>(null)
   const [childFeed, setChildFeed] = useState<AlertFeed | null>(null)
   const checkRef = useRef<AbortController | null>(null)
   const [recent, setRecent] = useState<Recent[]>([])
-  const [guideOpen, setGuideOpen] = useState(false)
-  const [today, setToday] = useState('')
+  const shell = useShell()
   const inputRef = useRef<HTMLInputElement>(null)
   const resultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))
     try {
       setRecent(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'))
-      if (!localStorage.getItem(ONBOARDED_KEY)) setGuideOpen(true)
     } catch {}
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
@@ -135,16 +75,10 @@ export default function Page() {
     const quiet = (err: unknown) => {
       if (!ctrl.signal.aborted) console.info('Nazar source unavailable', err)
     }
-    const refreshStatus = () => loadPipelineStatus(ctrl.signal).then((s) => !ctrl.signal.aborted && setStatus(s), quiet)
-    refreshStatus()
     // Lead with the most dangerous: severity 4-5 (spurious, toxic glycol, sterility, injectables).
     loadAlerts({ minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
     loadAlerts({ peds: true, minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setChildFeed(f), quiet)
-    const t = setInterval(refreshStatus, STATUS_REFRESH_MS)
-    return () => {
-      ctrl.abort()
-      clearInterval(t)
-    }
+    return () => ctrl.abort()
   }, [])
 
   const runCheck = async (value = batch) => {
@@ -198,6 +132,16 @@ export default function Page() {
     }
   }
 
+  // The guide and other tabs ask for checks through the shell; always run the latest closure.
+  const runRef = useRef(runCheck)
+  runRef.current = runCheck
+  useEffect(() => {
+    shell.registerCheck((b) => runRef.current(b))
+    const waiting = shell.takePendingCheck()
+    if (waiting) runRef.current(waiting)
+    return () => shell.registerCheck(null)
+  }, [shell])
+
   const clearRecent = () => {
     setRecent([])
     try {
@@ -206,36 +150,7 @@ export default function Page() {
   }
 
   return (
-    <main className="min-h-dvh bg-background text-foreground">
-      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r bg-background px-5 py-7 lg:flex">
-        <Logo />
-        <nav className="mt-12 flex flex-col gap-1.5" aria-label="Main navigation">
-          {NAV.map((n, i) => <NavItem key={n.label} {...n} active={i === 0} />)}
-        </nav>
-        <div className="mt-auto rounded-2xl border bg-card p-4">
-          <ShieldCheck className="size-5 text-primary" />
-          <p className="mt-2.5 text-sm font-semibold">Private by design</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">Your checks stay on this device.</p>
-        </div>
-        <p className="mt-4 text-xs text-muted-foreground">Built by Pranshu Rastogi</p>
-      </aside>
-
-      <div className="mx-auto max-w-6xl px-4 pb-32 sm:px-6 lg:pb-12 lg:pl-[17rem] lg:pr-10">
-        <header className="flex items-center justify-between gap-3 py-5 lg:py-7">
-          <Logo className="lg:hidden" />
-          <div className="hidden lg:block">
-            <p className="text-sm text-muted-foreground" suppressHydrationWarning>{today || ' '}</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">Check a medicine batch</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusPill status={status} />
-            <Button variant="outline" className="h-11 rounded-full px-3.5" onClick={() => setGuideOpen(true)}>
-              <CircleHelp /> <span className="hidden sm:inline">Guide</span>
-            </Button>
-            <ThemeToggle />
-          </div>
-        </header>
-
+    <>
         <section className="grid grid-cols-1 items-center gap-8 pt-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:pt-14">
           <div className="max-w-lg">
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Har batch par nazar</p>
@@ -367,7 +282,12 @@ export default function Page() {
                 </li>
               ))}
             </ul>
-            <div className="mt-3 h-4">{feed && <SourceTag source={feed.source} />}</div>
+            <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
+              {feed ? <SourceTag source={feed.source} /> : <span />}
+              <Link href="/feed?sev=4" className={cn(buttonVariants({ variant: 'ghost' }), 'h-11 px-3 text-primary')}>
+                See all alerts <ArrowRight data-icon="inline-end" />
+              </Link>
+            </div>
           </div>
 
           <div className="flex flex-col rounded-2xl border bg-card p-5 sm:p-6">
@@ -446,20 +366,6 @@ export default function Page() {
           </Button>
         </section>
 
-        <footer className="mt-12 flex flex-col gap-1 border-t pt-6 text-xs text-muted-foreground sm:flex-row sm:justify-between">
-          <p>Nazar reports what regulators publish. It never certifies a medicine as safe.</p>
-          <p>© {new Date().getFullYear()} Nazar · Built by Pranshu Rastogi</p>
-        </footer>
-      </div>
-
-      <nav
-        aria-label="Mobile navigation"
-        className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-10 flex gap-1 rounded-2xl border bg-card/90 p-1.5 shadow-lg backdrop-blur-lg lg:hidden"
-      >
-        {NAV.map((n, i) => <NavItem key={n.label} {...n} active={i === 0} compact />)}
-      </nav>
-
-      <Onboarding open={guideOpen} onOpenChange={setGuideOpen} onTry={(b) => runCheck(b)} />
-    </main>
+    </>
   )
 }

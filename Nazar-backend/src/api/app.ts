@@ -85,6 +85,7 @@ const AlertsQuery = z.object({
   minSeverity: intParam(1, 5).optional(),
   peds: boolParam.optional(),
   sinceYm: ymParam.optional(),
+  source: z.string().regex(/^[a-z][a-z0-9-]{1,31}$/, 'must be a source id like cdsco-online').optional(),
 })
 const CheckQuery = z.object({ batch: z.string().max(200) })
 const SearchQuery = z.object({ q: z.string().trim().min(1).max(100), limit: intParam(1, 100).default(25) })
@@ -123,6 +124,7 @@ function listAlerts(ledger: Ledger, q: z.infer<typeof AlertsQuery>) {
   if (q.minSeverity) (where.push('severity >= ?'), args.push(q.minSeverity))
   if (q.peds !== undefined) (where.push('peds = ?'), args.push(q.peds ? 1 : 0))
   if (q.sinceYm) (where.push('alert_ym >= ?'), args.push(q.sinceYm))
+  if (q.source) (where.push('source_id = ?'), args.push(q.source))
   const w = where.join(' AND ')
   const total = (ledger.db.prepare(`SELECT COUNT(*) n FROM alerts WHERE ${w}`).get(...args) as { n: number }).n
   const rows = (

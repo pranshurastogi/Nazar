@@ -104,6 +104,13 @@ describe('API', () => {
     expect((await get('/v1/alerts?limit=1&offset=1')).body.items).toHaveLength(1)
     expect((await get('/v1/alerts?limit=999')).res.status).toBe(400)
     expect((await get('/v1/alerts?state=Tamil')).res.status).toBe(400)
+    const srcs = new Set(((await get('/v1/alerts')).body.items as { sourceId: string }[]).map((a) => a.sourceId))
+    for (const src of srcs) {
+      const only = await get(`/v1/alerts?source=${src}`)
+      expect(only.body.items.every((a: { sourceId: string }) => a.sourceId === src)).toBe(true)
+    }
+    expect((await get('/v1/alerts?source=no-such-source')).body.total).toBe(0)
+    expect((await get('/v1/alerts?source=Bad%20Id')).res.status).toBe(400)
   })
 
   it('alert, case, search, notices, sources', async () => {

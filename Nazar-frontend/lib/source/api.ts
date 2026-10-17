@@ -17,7 +17,8 @@ export class ApiError extends Error {
 const COOL_OFF_MS = 20_000
 let downUntil = 0
 
-export const apiLikelyDown = () => Date.now() < downUntil
+/** True when no API is configured for this build, or it recently failed to connect. */
+export const apiLikelyDown = () => !API_URL || Date.now() < downUntil
 
 /** Combines an outer signal with a timeout, without relying on AbortSignal.any. */
 function withTimeout(outer: AbortSignal | undefined, ms: number) {
@@ -32,6 +33,7 @@ function withTimeout(outer: AbortSignal | undefined, ms: number) {
 type Opts = { signal?: AbortSignal; timeoutMs?: number }
 
 async function getJson<T>(path: string, { signal, timeoutMs = 4000 }: Opts = {}): Promise<T> {
+  if (!API_URL) throw new ApiError('No Nazar API configured for this build')
   const t = withTimeout(signal, timeoutMs)
   try {
     const res = await fetch(`${API_URL}${path}`, { signal: t.signal, headers: { Accept: 'application/json' } })
@@ -73,7 +75,17 @@ export async function apiCheck(batch: string, opts?: Opts): Promise<CheckResult>
   return { ...base, state: 'no_alert' }
 }
 
-export type AlertQuery = { limit?: number; offset?: number; minSeverity?: number; peds?: boolean; sinceYm?: number }
+export type AlertQuery = {
+  limit?: number
+  offset?: number
+  minSeverity?: number
+  peds?: boolean
+  sinceYm?: number
+  /** Manufacturing state, ISO 3166-2:IN (IN-TN). */
+  state?: string
+  /** Pipeline source id. Older servers ignore it, so callers filter again. */
+  source?: string
+}
 
 export async function apiAlerts(q: AlertQuery = {}, opts?: Opts): Promise<{ items: Alert[]; total: number | null }> {
   const params = new URLSearchParams()
@@ -82,6 +94,8 @@ export async function apiAlerts(q: AlertQuery = {}, opts?: Opts): Promise<{ item
   if (q.minSeverity) params.set('minSeverity', String(q.minSeverity))
   if (q.peds !== undefined) params.set('peds', q.peds ? '1' : '0')
   if (q.sinceYm) params.set('sinceYm', String(q.sinceYm))
+  if (q.state) params.set('state', q.state)
+  if (q.source) params.set('source', q.source)
   const r = await getJson<{ items: AlertDTO[]; total?: number }>(`/v1/alerts?${params}`, opts)
   if (!r || !Array.isArray(r.items)) throw new ApiError('Unexpected /v1/alerts response')
   return { items: r.items.map(fromDto), total: typeof r.total === 'number' ? r.total : null }

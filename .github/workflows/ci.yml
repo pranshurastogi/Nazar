@@ -66,8 +66,10 @@ jobs:
       run:
         working-directory: Nazar-frontend
     env:
-      # Real Arkiv RPC, but a publisher with no entities and no API: answers are deterministic (demo fallback / mocked API).
+      # Real Arkiv RPC, but a publisher with no entities: answers are deterministic (demo fallback / mocked API).
       NEXT_PUBLIC_NAZAR_PUBLISHER: '0x000000000000000000000000000000000000dEaD'
+      # Production builds skip the API unless this is set; the suites refuse (fallback) or mock (mock) it over CDP.
+      NEXT_PUBLIC_NAZAR_API_URL: 'http://localhost:8787'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
