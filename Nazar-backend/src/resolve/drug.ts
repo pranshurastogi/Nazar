@@ -54,6 +54,9 @@ export function splitDrug(product: string, rawText = ''): DrugName {
   }
   const bb = bracketBrand(clean)
   if (bb) return { brand: bb.brand, generic: bb.rest, hasBrand: true }
+  // WHO annexes write "COLDRIF (paracetamol, chlorpheniramine …)": the bracket holds the ingredients.
+  const ing = /^(.{2,40}?)\s*\(([^()]{4,})\)$/.exec(clean)
+  if (ing && (looksGeneric(ing[2]!) || /^[a-z]/.test(ing[2]!) || ing[2]!.includes(',')) && !looksGeneric(ing[1]!)) return { brand: tidy(ing[1]!), generic: tidy(ing[2]!), hasBrand: true }
   // Brand-only lines lead with a SHOUTED name ("COLDRIF Syrup", "RESPIFRESH TR"); anything else is
   // treated as a generic description, because inventing a brand is worse than showing the product.
   const tokens = clean.split(/\s+/)

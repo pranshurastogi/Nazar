@@ -128,3 +128,12 @@ describe('resolveRows', () => {
     expect(resolveRows(doc, rows)).toEqual(resolveRows(doc, rows))
   })
 })
+
+describe('splitDrug: brand before an ingredient bracket', () => {
+  it('reads WHO annex products', async () => {
+    const { splitDrug } = await import('../../src/resolve/drug.ts')
+    const d = splitDrug('COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate)')
+    expect(d).toMatchObject({ brand: 'COLDRIF', hasBrand: true })
+    expect(d.generic).toMatch(/paracetamol/)
+  })
+})
