@@ -1,0 +1,52 @@
+{
+  "fixture": "cdsco-2025-05-nsq.pdf",
+  "parser": "cdsco-modern@1",
+  "rows": 55,
+  "rejected": [
+    42,
+    47,
+    48
+  ],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "GTL1317",
+      "product": "Calcium Carbonate 500 mg + VIT. D3 250 IU Tablets IP (CALXIA-500)",
+      "mfgYm": 202412,
+      "expYm": 202611,
+      "manufacturer": "M/s. Gidsha Pharmaceuticals, Plot No. 611, 612, Mega GIDC, Kharedi, Dahod - 389151, Gujarat.",
+      "reason": "Dissolution (for Calcium)",
+      "reportedBy": "CDL, Kolkata"
+    },
+    {
+      "rowNo": 19,
+      "batch": "18242021A",
+      "product": "Tranexamic Acid Tablets IP (Trenaxa 500)",
+      "mfgYm": 202408,
+      "expYm": 202707,
+      "manufacturerContains": "Macleods Pharmaceuticals",
+      "reason": "Spurious Identification and Assay of Tranexamic Acid",
+      "reportedBy": "CDL, Kolkata"
+    },
+    {
+      "rowNo": 44,
+      "batch": "RUM2411002",
+      "product": "Amoxycillin and Potassium Clavulanate Tablets IP (Rumentin-625 Tablets)",
+      "mfgYm": 202411,
+      "expYm": 202610,
+      "manufacturerContains": "Rextuse Pharmaceuticals",
+      "reportedBy": "RDTL, Chandigarh"
+    },
+    {
+      "rowNo": 57,
+      "batch": "CT24250284A",
+      "product": "Betahistine Dihydrochloride Tablet I.P (CGHEST-8)",
+      "mfgYm": 202405,
+      "expYm": 202604,
+      "manufacturerContains": "CMG Biotech",
+      "reason": "Description",
+      "reportedBy": "CDTL- Indore"
+    }
+  ]
+}

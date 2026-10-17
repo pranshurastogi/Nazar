@@ -1,0 +1,34 @@
+{
+  "fixture": "tn-2026-06-nsq-recall.pdf",
+  "parser": "tn-recall@1",
+  "rows": 5,
+  "rejected": [],
+  "minHighShare": 0.9,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "MMPT9348",
+      "product": "Panfill-40 (Pantoprazole Gastro-Resistant Tablets IP 40 mg)",
+      "mfgYm": 202601,
+      "expYm": 202712,
+      "manufacturerContains": "Middle Mist Pharmaceuticals",
+      "reportedBy": "Drugs Control Department, Tamil Nadu (KANCHEEPURAM zone)"
+    },
+    {
+      "rowNo": 2,
+      "batch": "683511",
+      "product": "Gentamicin Injection IP 40mg/ml",
+      "mfgYm": 202511,
+      "expYm": 202710,
+      "manufacturerContains": "Zazen Pharma"
+    },
+    {
+      "rowNo": 3,
+      "batch": "2510306",
+      "product": "Carbimazole Tablets IP",
+      "mfgYm": 202510,
+      "expYm": 202710,
+      "manufacturerContains": "Biodeal Pharmaceuticals"
+    }
+  ]
+}

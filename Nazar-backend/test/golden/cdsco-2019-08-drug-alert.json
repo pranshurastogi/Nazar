@@ -1,0 +1,35 @@
+{
+  "fixture": "cdsco-2019-08-drug-alert.pdf",
+  "parser": "cdsco-legacy@1",
+  "rows": 28,
+  "rejected": [],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "MCS-17039",
+      "product": "Cefixime Oral Suspension I.P.",
+      "mfgYm": 201709,
+      "expYm": 201908,
+      "manufacturerContains": "Maxmed Lifesciences",
+      "reason": "Assay",
+      "reportedBy": "Drug Control Department, Arunachal Pradesh"
+    },
+    {
+      "rowNo": 27,
+      "batch": "G2AD219010",
+      "product": "Lactic Acid Bacillus Capsules (VIZYLAC CAPSULES)",
+      "mfgYm": 201902,
+      "expYm": 202007,
+      "reason": "Uniformity of filled weight"
+    },
+    {
+      "rowNo": 28,
+      "batch": "DNT1099D",
+      "mfgYm": 201904,
+      "expYm": 202101,
+      "manufacturerContains": "Pulse Pharmaceuticals",
+      "reason": "Assay of Nortriptyline"
+    }
+  ]
+}

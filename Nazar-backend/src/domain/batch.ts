@@ -1,3 +1,5 @@
+import { parseYm } from './dates.ts'
+
 /**
  * Batch-number normalisation. Must stay identical to Nazar-frontend/lib so a
  * batch typed in the app and a batch read from a PDF meet at the same key.
@@ -36,7 +38,8 @@ export function isPlausibleBatch(batch: string): boolean {
   const key = matchKey(batch)
   if (key.length < 2 || key.length > 18) return false
   if (!/\d/.test(key)) return false
-  if (/^\d{1,2}[/.-]\d{2,4}$/.test(batch.trim())) return false // looks like a date (05/2025)
+  // A month-year like 05/2025 is a date, not a batch; "1-3098" only looks like one.
+  if (/^\d{1,2}[/.-]\d{2,4}$/.test(batch.trim()) && parseYm(batch) !== null) return false
   return true
 }
 

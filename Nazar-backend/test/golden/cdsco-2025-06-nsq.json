@@ -1,0 +1,42 @@
+{
+  "fixture": "cdsco-2025-06-nsq.pdf",
+  "parser": "cdsco-modern@1",
+  "rows": 57,
+  "rejected": [],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "1-3098",
+      "product": "Dextrose Injection I.P. 5%w/v (D5)",
+      "mfgYm": 202501,
+      "expYm": 202712,
+      "manufacturerContains": "Tam-Bran Pharmaceuticals",
+      "reason": "Assay of Dextrose (Anhydrous)",
+      "reportedBy": "CDL, Kolkata"
+    },
+    {
+      "rowNo": 25,
+      "batch": "IEW1480C",
+      "mfgYm": 202409,
+      "expYm": 202608,
+      "manufacturerContains": "E.G.Pharmaceuticals",
+      "reason": "Particulate Matter and Description"
+    },
+    {
+      "rowNo": 25,
+      "batch": "IEW-1480B",
+      "mfgYm": 202409,
+      "expYm": 202608
+    },
+    {
+      "rowNo": 52,
+      "batch": "SC27/048M/24",
+      "product": "Sodium Polystyrene Sulfonate BP",
+      "mfgYm": 202407,
+      "expYm": 202907,
+      "reason": "Loss on drying",
+      "reportedBy": "CDTL-Mumbai"
+    }
+  ]
+}

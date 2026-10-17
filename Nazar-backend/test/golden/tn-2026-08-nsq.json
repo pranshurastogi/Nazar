@@ -1,0 +1,42 @@
+{
+  "fixture": "tn-2026-08-nsq.pdf",
+  "parser": "tn-nsq@1",
+  "rows": 38,
+  "rejected": [],
+  "minHighShare": 0.9,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "SST25006",
+      "product": "Salbutamol Sulphate Tablets IP 4mg",
+      "mfgYm": 202509,
+      "expYm": 202708,
+      "manufacturerContains": "Danish Health care",
+      "reason": "Content (30.50%)",
+      "reportedBy": "Drug Testing Laboratory, Madurai-19"
+    },
+    {
+      "rowNo": 2,
+      "batch": "585",
+      "product": "Co-Trimoxazole oral Suspension IP (Sustrim)",
+      "mfgYm": 202508,
+      "expYm": 202705,
+      "manufacturerContains": "Pharmssan"
+    },
+    {
+      "rowNo": 4,
+      "batch": "568",
+      "mfgYm": 202602,
+      "expYm": 202901,
+      "manufacturerContains": "United Cotton"
+    },
+    {
+      "rowNo": 38,
+      "batch": "T26B106",
+      "product": "Clopidogrel Tablets IP 75mg (Corel-75)",
+      "mfgYm": 202602,
+      "expYm": 202801,
+      "reason": "content & Dissolution"
+    }
+  ]
+}

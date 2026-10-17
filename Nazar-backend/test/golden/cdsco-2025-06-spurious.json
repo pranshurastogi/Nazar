@@ -1,0 +1,33 @@
+{
+  "fixture": "cdsco-2025-06-spurious.pdf",
+  "parser": "cdsco-modern@1",
+  "rows": 4,
+  "rejected": [],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "24460967",
+      "product": "Cefixime Tablets IP (TAXIM-O 200 TABLETS)",
+      "mfgYm": 202407,
+      "expYm": 202606,
+      "reason": "Declared spurious: Identification and Assay of Cefixime Trihydrate",
+      "reportedBy": "Drugs Inspector, Bihar"
+    },
+    {
+      "rowNo": 3,
+      "batch": "SIF2676A",
+      "product": "Rosuvas F 10 Tablets Rosuvastatin and Fenofibrate Tablets IP",
+      "mfgYm": 202412,
+      "expYm": 202705,
+      "reportedBy": "Drugs Inspector, Telangana"
+    },
+    {
+      "rowNo": 4,
+      "batch": "SIF2736A",
+      "mfgYm": 202412,
+      "expYm": 202705,
+      "reason": "Declared spurious: Assay of Fenofibrate"
+    }
+  ]
+}

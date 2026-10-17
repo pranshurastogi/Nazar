@@ -35,7 +35,7 @@ describe('cleanBatch', () => {
 })
 
 describe('isPlausibleBatch', () => {
-  it.each(['SR-13', 'GTL1317', '585', 'LC26A044H', 'T/2301'])('accepts %s', (b) => expect(isPlausibleBatch(b)).toBe(true))
+  it.each(['SR-13', 'GTL1317', '585', 'LC26A044H', 'T/2301', '1-3098'])('accepts %s', (b) => expect(isPlausibleBatch(b)).toBe(true))
   it.each(['AB', '05/2025', 'CAPSULES', 'X'.repeat(30), '12/26'])('rejects %s', (b) => expect(isPlausibleBatch(b)).toBe(false))
 })
 

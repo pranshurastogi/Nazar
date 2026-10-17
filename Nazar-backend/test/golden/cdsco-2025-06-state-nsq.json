@@ -1,0 +1,36 @@
+{
+  "fixture": "cdsco-2025-06-state-nsq.pdf",
+  "parser": "cdsco-modern@1",
+  "rows": 130,
+  "rejected": [],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "3305",
+      "product": "Lorazepam Tablets I.P (1 mg)",
+      "mfgYm": 202404,
+      "expYm": 202803,
+      "manufacturerContains": "Reliance Formulation",
+      "reportedBy": "Karnataka"
+    },
+    {
+      "rowNo": 59,
+      "batch": "HTD-24109",
+      "product": "Pulmonex-AS (Ambroxol Salbutamol Guaiphenesin Syrup)",
+      "mfgYm": 202408,
+      "expYm": 202607,
+      "reportedBy": "Drugs Testing Laboratory, Chennai-06"
+    },
+    {
+      "rowNo": 129,
+      "batch": "825220",
+      "product": "EBD ORS(Oral Rehydration Salts IP)",
+      "mfgYm": 202502,
+      "expYm": 202701,
+      "manufacturerContains": "Syndicate Pharma",
+      "reason": "Uniformity of weight",
+      "reportedBy": "State Drug Testing Laboratory, Jharkhand"
+    }
+  ]
+}

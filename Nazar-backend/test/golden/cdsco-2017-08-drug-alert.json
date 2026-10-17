@@ -1,0 +1,43 @@
+{
+  "fixture": "cdsco-2017-08-drug-alert.pdf",
+  "parser": "cdsco-legacy@1",
+  "rows": 32,
+  "rejected": [],
+  "minHighShare": 0.95,
+  "expect": [
+    {
+      "rowNo": 1,
+      "batch": "T-12701",
+      "product": "Carbimazole Tablets IP 5 mg",
+      "mfgYm": 201611,
+      "expYm": 201810,
+      "manufacturer": "M/s. Jackson Laboratories Pvt. Ltd., 22-24, Majitha Road, Bye Pass, Amritsar 143 001",
+      "reason": "Assay & Identification",
+      "reportedBy": "CDSCO, South-Zone, Chennai"
+    },
+    {
+      "rowNo": 6,
+      "batch": "A016002A",
+      "mfgYm": 201601,
+      "expYm": 201712,
+      "manufacturerContains": "ANG Lifesciences",
+      "reason": "Particulate Matter"
+    },
+    {
+      "rowNo": 6,
+      "batch": "SIB-004",
+      "mfgYm": 201601,
+      "expYm": 201812,
+      "manufacturerContains": "Omar Healthcare"
+    },
+    {
+      "rowNo": 31,
+      "batch": "1605105",
+      "product": "Etoricoxib and Thiocolchicoside Tablets (MOBIBET-MR TABLETS)",
+      "mfgYm": 201605,
+      "expYm": 201804,
+      "reason": "Assay of Thiocolchicoside",
+      "reportedBy": "CDSCO, Sub-Zone, Baddi"
+    }
+  ]
+}
