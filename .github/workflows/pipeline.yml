@@ -1,0 +1,70 @@
+name: Pipeline
+
+# Harvests regulator alerts on a schedule, extracts and resolves them, and
+# publishes to Arkiv. Runs in dry-run unless the repository variable
+# NAZAR_PUBLISH_MODE is "live" and the NAZAR_PUBLISHER_PRIVATE_KEY secret is set.
+on:
+  schedule:
+    - cron: '17 */6 * * *' # every 6 hours (UTC)
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Source id to run (blank = all enabled)'
+        required: false
+      since:
+        description: 'Only documents from this YYYYMM onwards'
+        required: false
+        default: '202601'
+      limit:
+        description: 'Max documents per source'
+        required: false
+        default: '6'
+
+concurrency:
+  group: nazar-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: Nazar-backend
+    env:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      NAZAR_PUBLISH_MODE: ${{ vars.NAZAR_PUBLISH_MODE || 'dry-run' }}
+      NAZAR_PUBLISHER_PRIVATE_KEY: ${{ secrets.NAZAR_PUBLISHER_PRIVATE_KEY }}
+      ARKIV_API_KEY: ${{ secrets.ARKIV_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NAZAR_HOST_DELAY_MS: '5000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: Nazar-backend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # The ledger and raw store are caches; restoring them avoids refetching documents we already hold.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            Nazar-backend/data/raw
+            Nazar-backend/data/nazar.sqlite
+            Nazar-backend/data/tessdata
+          key: nazar-data-${{ github.run_id }}
+          restore-keys: nazar-data-
+      - name: Run pipeline
+        run: |
+          ARGS="--since ${{ inputs.since || '202601' }} --limit ${{ inputs.limit || '6' }}"
+          if [ -n "${{ inputs.source }}" ]; then ARGS="$ARGS --source ${{ inputs.source }}"; fi
+          if [ "$NAZAR_PUBLISH_MODE" = "live" ]; then ARGS="$ARGS --publish"; fi
+          pnpm cli run $ARGS
+      - name: Status
+        if: always()
+        run: pnpm cli status
