@@ -9,7 +9,11 @@ import './globals.css'
 const notoSans = Noto_Sans({ subsets: ['latin'], variable: '--font-noto-sans', display: 'swap' })
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono', display: 'swap' })
 
+// Absolute URLs for social cards: the production domain unless a deploy says otherwise.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://nazar-nu.vercel.app'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Nazar · Har batch par nazar',
   description: 'Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof.',
   applicationName: 'Nazar',

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Nazar-frontend/app/icon.svg" width="72" alt="Nazar logo: a blue nazar eye drawn as a capsule" />
+<img src="Nazar-frontend/public/brand/nazar-mark.png" width="120" alt="Nazar logo: an eye looking out of a medicine capsule" />
 
 # Nazar
 

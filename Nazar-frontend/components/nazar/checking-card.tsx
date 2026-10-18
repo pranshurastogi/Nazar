@@ -1,5 +1,4 @@
-import { Search } from 'lucide-react'
-
+import { NazarMark } from '@/components/nazar/logo'
 import type { Stage } from '@/lib/source'
 
 const STAGE_TEXT: Record<Stage, string> = {
@@ -22,7 +21,7 @@ export function CheckingCard({ batch, stage }: { batch: string; stage: Stage }) 
               strokeDasharray="24 140" className="origin-center animate-spin [animation-duration:1.4s] motion-reduce:animate-none"
             />
           </svg>
-          <Search className="relative size-5 text-primary" />
+          <NazarMark className="relative size-8 motion-safe:animate-[nazar-rock_1.6s_ease-in-out_infinite]" />
         </div>
         <div className="min-w-0 flex-1">
           <span className="block h-6 w-24 animate-pulse motion-reduce:animate-none rounded-full bg-muted" />

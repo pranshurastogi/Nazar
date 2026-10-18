@@ -52,7 +52,7 @@ export function WatchArt() {
           animate={{ scaleY: [1, 1, 0.12, 1, 1] }}
           transition={{ duration: 4.5, repeat: Infinity, times: [0, 0.9, 0.93, 0.96, 1] }}
         >
-          <NazarMark className="h-10 w-[4.3rem]" />
+          <NazarMark className="size-16" />
         </motion.div>
       </motion.div>
       {SOURCES.map((s) => (
@@ -235,5 +235,5 @@ export function ProofArt() {
 }
 
 function NazarIcon({ className }: { className?: string }) {
-  return <NazarMark className={cn('h-3.5 w-6', className)} />
+  return <NazarMark className={cn('size-6', className)} />
 }
