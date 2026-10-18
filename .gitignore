@@ -151,3 +151,7 @@ vite.config.ts.timestamp-*
 # e2e screenshots
 Nazar-frontend/e2e/screenshots/
 .DS_Store
+
+# Raw logo drafts (artwork lives in public/brand)
+Nazar-frontend/app/narar-logo-med.png
+Nazar-frontend/app/nazar-logo.png
