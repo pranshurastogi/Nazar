@@ -1,0 +1,19 @@
+/* TEAM */
+Built by: Pranshu Rastogi
+Site: https://pranshurastogi.com
+X: @pranshurastogii (https://x.com/pranshurastogii)
+GitHub: https://github.com/pranshurastogi
+LinkedIn: https://www.linkedin.com/in/rastogipranshu/
+From: India
+
+/* THANKS */
+Arkiv, for a public database anyone can verify.
+India's drug regulators (CDSCO and the state drug controllers) and WHO, for publishing the alerts.
+Particle hero by guglielmogiannattasio.it.
+
+/* SITE */
+Built for: Arkiv Global Tour, Best Indian Use Case track
+Stack: Next.js, React, Tailwind CSS, Hono, Node.js, SQLite, Tesseract, Arkiv SDK
+Languages: English, Hindi
+Source: https://github.com/pranshurastogi/Nazar (MIT)
+For machines: /llms.txt, /llms-full.txt, /.well-known/mcp.json, /sitemap.xml

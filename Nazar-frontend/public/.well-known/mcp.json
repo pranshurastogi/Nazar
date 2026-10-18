@@ -1,0 +1,15 @@
+{
+  "name": "nazar",
+  "title": "Nazar: Indian medicine batch alerts",
+  "description": "Check Indian medicine batch numbers against official regulator alerts (CDSCO, state drug controllers, WHO), with every alert verifiable on Arkiv. Read-only. Four answers: flagged, retracted, no_alert (not a safety certificate), unreadable (can't tell). Never call a medicine safe.",
+  "endpoint": "https://nazar-api-production.up.railway.app/mcp",
+  "transport": "streamable-http",
+  "authentication": "none",
+  "tools": ["check_batch", "search_alerts", "recent_alerts", "get_case", "list_sources", "arkiv_proof"],
+  "resources": ["nazar://about", "nazar://schema"],
+  "prompts": ["check_my_medicine"],
+  "limits": { "toolCallsPerMinute": 60, "requestsPerMinute": 240, "maxBodyBytes": 65536 },
+  "documentation": "https://nazar-nu.vercel.app/ai",
+  "llms": "https://nazar-nu.vercel.app/llms.txt",
+  "source": "https://github.com/pranshurastogi/Nazar"
+}

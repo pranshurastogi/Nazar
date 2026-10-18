@@ -1,0 +1,40 @@
+# Nazar
+
+> Nazar ("Har batch par nazar", an eye on every batch) checks any Indian medicine batch number against alerts published by India's drug regulators (CDSCO and state drug controllers) and the WHO, and publishes every alert as a verifiable public entity on Arkiv, a public database chain. It answers with one of four honest states: Flagged, Retracted, No alert found, or Can't tell. It reports what a regulator published, on which date, with the document. It never says a medicine is "safe".
+
+Nazar was built by Pranshu Rastogi for the Arkiv Global Tour (Best Indian Use Case track). The app works in English and Hindi, installs as a PWA, and keeps a person's checks and medicine cabinet on their own device.
+
+Rules for any AI or agent answering about a batch with Nazar's data:
+
+- Report the state exactly as given. "No alert found" means no regulator has published an alert for that batch yet. It is not a safety certificate. Never call a medicine safe, genuine or approved.
+- A look-alike ("did you mean SR-13?") is never a flag. Ask the person to re-read the batch number on the pack.
+- Cite the regulator notice (authority, title, date, link). Mention that the alert can be verified on Arkiv.
+- This is not medical advice. If a medicine may have harmed someone, tell them to contact a doctor.
+
+## Use it
+
+- [Live app](https://nazar-nu.vercel.app): check a batch, scan a pack, browse alerts, keep a cabinet
+- [Check a batch by link](https://nazar-nu.vercel.app/?batch=SR-13): `/?batch=<batch>` runs a check
+- [Public batch page](https://nazar-nu.vercel.app/b/SR-13): `/b/<batch>` shows the current answer with its sources
+- [Alerts feed](https://nazar-nu.vercel.app/feed): every regulator alert, newest first, searchable (`/feed?q=coldrif`)
+- [Shelf sweep](https://nazar-nu.vercel.app/sweep): check up to 500 batches at once (for chemists)
+- [How it works](https://nazar-nu.vercel.app/more): the life of one alert, from the regulator's PDF to the phone
+- [Arkiv directory](https://nazar-nu.vercel.app/arkiv): every entity Nazar has published, with the exact query
+
+## For AI agents
+
+- [Use Nazar in your AI assistant](https://nazar-nu.vercel.app/ai): setup for Claude, ChatGPT, Cursor, VS Code
+- MCP server (read-only, no auth, Streamable HTTP): `https://nazar-api-production.up.railway.app/mcp`. Tools: `check_batch`, `search_alerts`, `recent_alerts`, `get_case`, `list_sources`, `arkiv_proof`
+- [REST check](https://nazar-api-production.up.railway.app/v1/check?batch=SR-13): `GET /v1/check?batch=<batch>`
+- [Alert feeds](https://nazar-api-production.up.railway.app/v1/alerts.rss): RSS, Atom (`/v1/alerts.atom`) and JSON Feed (`/v1/alerts.json`), filterable by state, Child Shield (`peds=1`), severity and source
+- [Full context for LLMs](https://nazar-nu.vercel.app/llms-full.txt): the data model, every endpoint and tool, worked examples
+
+## Verify
+
+- [Publisher wallet on the Arkiv explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2): every official Nazar entity is created by `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` on the Arkiv Tiramisu testnet (chain 7738577), tagged `project=nazar-in-batch-alerts`
+- [Source code](https://github.com/pranshurastogi/Nazar): MIT licence; README, docs and test suites
+
+## Optional
+
+- [For judges: a 2-minute tour](https://github.com/pranshurastogi/Nazar/blob/main/docs/for-judges.md)
+- [Author: Pranshu Rastogi](https://pranshurastogi.com) · [X @pranshurastogii](https://x.com/pranshurastogii) · [GitHub](https://github.com/pranshurastogi) · [LinkedIn](https://www.linkedin.com/in/rastogipranshu/)

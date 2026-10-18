@@ -1,0 +1,131 @@
+# Nazar: full context for LLMs and agents
+
+> Nazar checks Indian medicine batch numbers against official regulator alerts (CDSCO, state drug controllers, WHO) and publishes every alert as a verifiable, read-only public entity on Arkiv. It gives one of four honest answers and never certifies a medicine as safe. Built by Pranshu Rastogi for the Arkiv Global Tour, Best Indian Use Case track.
+
+Live app: https://nazar-nu.vercel.app
+API: https://nazar-api-production.up.railway.app
+MCP: https://nazar-api-production.up.railway.app/mcp
+Source: https://github.com/pranshurastogi/Nazar (MIT)
+Short version of this file: https://nazar-nu.vercel.app/llms.txt
+
+## Why it exists
+
+India's drug regulators publish failed medicine batches as PDFs, web tables and press notes, days apart, in formats no pharmacy software reads. In October 2025, batch SR-13 of COLDRIF cough syrup was found adulterated with 48.6% w/v diethylene glycol after child deaths. Tamil Nadu declared it adulterated and WHO issued Medical Product Alert N°5/2025, yet each state re-typed the alert by hand while the batch's printed expiry ran to April 2027. Nazar turns those scattered notices into one live, checkable record that a chemist, a parent at 11 PM, or an AI agent can query in seconds, with proof anyone can verify without trusting Nazar.
+
+## The four answers (exact meanings)
+
+| State | Meaning | Colour in the app |
+|---|---|---|
+| Flagged | A named regulator published an alert naming this exact batch. Shown with the notice, the date, the failure and the severity. | red |
+| Retracted | An alert on this batch was later withdrawn. The original stays on record. | amber |
+| No alert found | No regulator alert Nazar reads names this batch yet. NOT a safety certificate. | slate (never green) |
+| Can't tell | The batch could not be read, or it only looks like a flagged batch (look-alike characters 0/O, 1/I/L, 5/S, 8/B). Shown as "Did you mean …?", never as a flag. | amber |
+
+How to answer users (the same instructions the MCP server sends):
+
+1. Report the state as given; never upgrade or soften it.
+2. Never say a medicine or batch is "safe", "genuine", "fine" or "approved". "No alert found" is not a safety certificate; say so.
+3. Cite the regulator (authority, notice title, date, link) and offer the Arkiv proof link.
+4. A "did you mean" suggestion is never a flag; ask the person to re-read the pack.
+5. It is not medical advice. If a medicine may have harmed someone, tell them to contact a doctor. For a Flagged children's medicine (Child Shield), say to contact a doctor now if a child has taken it.
+6. Typed labels are fine: "B.No. SR-13", "Batch No: SR-13" and "Lot SR-13" are all read as SR-13.
+
+## Try these batches
+
+- SR-13: Flagged (COLDRIF syrup, Sresan Pharmaceutical, diethylene glycol, WHO and CDSCO, Child Shield, severity 5)
+- TG25-2281A: Flagged (Levcon-M, reported spurious by CDSCO, August 2026)
+- R01GL2523 (Respifresh TR) and LSL25160 (ReLife): Flagged by WHO (glycol-contaminated syrups)
+- 5R-13: Can't tell; did you mean SR-13 (a look-alike, never a flag)
+- AB1234: No alert found (not a safety certificate)
+
+## Website pages
+
+- `/`: Check a batch (type it, or scan the pack with the camera, or upload a photo). Instant answer from an on-device copy of all alerts, then confirmed live. A watching "eye" mirrors the state.
+- `/?batch=<batch>`: deep link that runs a check.
+- `/b/<batch>`: public, shareable page for one batch, with its own preview card, the regulator notice and the Arkiv proof.
+- `/feed`: Alerts. Every regulator alert, newest first; search by medicine, brand or maker (`?q=`); filters for severity, Child Shield, state of manufacture and source; "India pulse" map and timeline; "new since your last visit"; RSS/Atom subscribe.
+- `/cabinet`: "Your shelf, watched". Save the medicines you keep; they are re-checked on every visit. Add by photo (read on the device; an optional AI guess sends only the label text, never the image). Stored only in the browser.
+- `/sweep`: Shelf sweep. Paste or upload up to 500 batches; flagged first; CSV export and a printable counter sheet.
+- `/arkiv`: the on-chain directory. Live counts, filters that become Arkiv predicates, the exact query string and SDK snippet, entity details. Can read Arkiv straight from the browser.
+- `/ai`: how to connect AI assistants over MCP, with a demo replaying real answers.
+- `/more`: How it works ("the life of one alert"), sources, proof, privacy, settings, about.
+- Languages: English and Hindi (EN | हिं switch). Regulator text is shown as published.
+
+## MCP server (for AI agents)
+
+Endpoint: `https://nazar-api-production.up.railway.app/mcp`. Stateless Streamable HTTP, JSON responses, read-only, no authentication. Limits: 60 tool calls and 240 requests per minute per client (salted IP hash), 64 KB bodies. GET returns 405 by design.
+
+Setup:
+
+- Claude Code: `claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp`
+- `.mcp.json`: `{"mcpServers":{"nazar":{"type":"http","url":"https://nazar-api-production.up.railway.app/mcp"}}}`
+- Cursor: `{"mcpServers":{"nazar":{"url":"https://nazar-api-production.up.railway.app/mcp"}}}`
+- VS Code: `{"servers":{"nazar":{"type":"http","url":"https://nazar-api-production.up.railway.app/mcp"}}}`
+- Claude Desktop, claude.ai, ChatGPT: add a custom connector with the URL (no auth).
+
+Tools:
+
+| Tool | Inputs | Answers |
+|---|---|---|
+| `check_batch` | `batch` (string, as printed) | State plus every matching alert with notice and Arkiv links, or a look-alike suggestion |
+| `search_alerts` | `query` (2–100 chars), `limit` (1–50, default 10) | Alerts whose brand, product, maker or reason match |
+| `recent_alerts` | `minSeverity` 1–5, `childShield`, `state` (e.g. IN-TN), `source`, `limit` | Newest alerts, filtered |
+| `get_case` | `caseId` | Every alert in one case (the same batch across notices) |
+| `list_sources` | none | Regulator sources, whether each is on, last run |
+| `arkiv_proof` | `entityKey` (0x + 64 hex) | Reads the entity live from Arkiv and says whether Nazar's publisher created it, its flags and expiry |
+
+Resources: `nazar://about`, `nazar://schema`. Prompt: `check_my_medicine` (optional `medicine`).
+
+Worked example. User: "Is batch SR-13 of Coldrif safe for my child?" The agent calls `check_batch {"batch":"SR-13"}` and receives "FLAGGED: batch SR-13 is named in 2 official regulator alert(s)…". It answers: "Flagged. Batch SR-13 of COLDRIF is named in WHO Medical Product Alert N°5/2025 (13 Oct 2025) as adulterated with diethylene glycol (48.6% w/v); maker on the alert: Sresan Pharmaceutical; severity 5/5, Child Shield. Check the brand and maker on your pack; if they match, stop giving it, keep the pack, return it to the chemist, and see a doctor if your child has taken it. This is not medical advice." Then it links the notice and the Arkiv entity.
+
+## REST API
+
+Base: `https://nazar-api-production.up.railway.app`. JSON. Errors: `{ "error": { "code", "message", "retryAfterSec"? } }`.
+
+- `GET /v1/check?batch=SR-13`: `{ state, batch, asOf, alerts[], suggestion?, source }`
+- `GET /v1/alerts`: newest first; filters `minSeverity`, `peds`, `state`, `source`, `productClass` (medicine | cosmetic | hygiene), `sinceYm`, `limit`, `offset`
+- `GET /v1/alerts.rss`, `/v1/alerts.atom`, `/v1/alerts.json` (JSON Feed 1.1): the same filters; each item links to `/b/<batch>`; open to any origin
+- `GET /v1/search?q=coldrif&limit=50`
+- `GET /v1/cases/:caseId`, `GET /v1/alerts/:rid`, `GET /v1/notices`, `GET /v1/sources`
+- `GET /v1/snapshot`: compact copy of every publishable alert (the site also serves one at `https://nazar-nu.vercel.app/data/snapshot.json`, refreshed daily)
+- `GET /v1/pipeline/status`, `GET /v1/arkiv/summary`, `GET /v1/arkiv/entities`, `GET /health`
+- `POST /v1/medicine/explain`: opt-in AI general information about a medicine (labelled AI-generated, not regulator data; no doses; never "safe")
+- `POST /v1/medicine/identify`: guesses a medicine from label TEXT (never an image); a batch is only returned if printed
+
+## Data on Arkiv (the source of truth)
+
+- Network: Arkiv Tiramisu testnet, chain 7738577.
+- Publisher (creator of every official entity): `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2`. Explorer: https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2
+- Every entity has the attribute `project = nazar-in-batch-alerts`, a type `t` and a schema version `v`.
+- Entity types:
+  - `notice`: one regulator document. Attributes `src`, `juris`, `notice_ym`, `sha` (SHA-256 of the document), `rows`, `parser`. Payload: title, authority, url, publication date. Read-only.
+  - `alert`: one batch named in a notice. Attributes `batch` (normalised key), `batch_raw`, `case`, `rid`, `brand`, `form`, `cat`, `fail`, `sev` (1–5), `peds`, `mfr`, `alert_ym`, `src`, `juris`, `conf`, `method`, `tier`, plus a link to its notice. Payload: product, generic, manufacturer, reason, failures, authority. Read-only, and anyone can extend its lifetime.
+  - `retraction`: a later withdrawal (the original alert is never edited).
+  - `heartbeat`: the pipeline's liveness, renewed every 5 minutes.
+- Entities are read-only, so a correction is a new entity, never an edit. Alerts expire after the batch's shelf life plus a margin.
+- To verify a check yourself: query alerts with `project = nazar-in-batch-alerts`, `t = alert`, `batch = <normalised key>`, and `$creator` = the publisher, with the `@arkiv-network/sdk`. When paging, pin `.atBlock()` and `.cursor()`.
+- At the time of writing (18 Oct 2026): 1,404 alert entities and 21 notice entities on chain; 1,397 publishable alerts in the app (merged duplicates stay on chain as read-only entities).
+
+## How it works
+
+1. Harvest: the worker fetches regulator listings and documents: CDSCO (NSQ portal and monthly PDFs), Tamil Nadu, Maharashtra, WHO Medical Product Alerts, plus a small curated set. Telangana, Karnataka and Kerala sites block foreign servers or have expired certificates, so they are paused.
+2. Extract: tables from HTML and PDF text; OCR fallback for scanned pages; a grounded LLM fallback only for rejected rows, where any value not found in the row text is dropped.
+3. Resolve: normalise batches, fold look-alikes, merge repeat listings, classify the product (medicine, cosmetic or hygiene), score severity with a versioned rule table (e.g. toxic glycol: base 5; paediatric formulation: +1, capped at 5).
+4. Publish: write notices and alerts to Arkiv in batches from one publisher wallet; renew the heartbeat.
+5. Serve: REST API, MCP server, RSS/Atom/JSON feeds, and a snapshot for instant, offline checks.
+
+Automation: the Railway worker (Singapore, so Indian sites answer) checks CDSCO every 6 hours and the state regulators every 3 hours. GitHub Actions run CI on every push, a backup pipeline every 6 hours, an hourly monitor (API up, CDSCO reachable, heartbeat fresh, SR-13 still flagged), and a daily refresh of the site's saved snapshot.
+
+Fallback chain in the app: Nazar API → Arkiv read directly from the browser → Nazar's saved copy (on the device and on the site) → built-in demo data (only offline on a first visit). Every answer says which source answered.
+
+Privacy: checks, history, the cabinet and the "seen" state stay on the device. Photos are read on the device and never uploaded. Only a batch number (or, if the person asks, label text for the AI guess) is sent.
+
+## Quality
+
+- Backend: about 430 tests (sources from real fixtures, extraction golden files for every real PDF, resolve, publisher, MCP, feeds, AI grounding).
+- Scanner parsers: 39 tests. Browser end-to-end: about 750 checks across a no-API mode and a mocked-API mode, in English and Hindi, at 360–1440px, light and dark, with reduced motion.
+- Accessibility: 44px targets, contrast at least 4.5:1, a skip link, focus management, reduced motion respected; the WebGL hero falls back to a still image on slow GPUs.
+
+## Author
+
+Pranshu Rastogi: https://pranshurastogi.com · X https://x.com/pranshurastogii · GitHub https://github.com/pranshurastogi · LinkedIn https://www.linkedin.com/in/rastogipranshu/
