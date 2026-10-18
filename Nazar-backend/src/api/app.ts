@@ -4,6 +4,7 @@ import { etag } from 'hono/etag'
 import type { Hex } from 'viem'
 import { z } from 'zod'
 
+import { DirectoryError, EntitiesQuery, type ArkivDirectory } from '../arkiv/directory.ts'
 import type { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
 import { BATCH_SHAPE, confusionKey, matchKey } from '../domain/batch.ts'
@@ -53,6 +54,8 @@ export interface AppDeps {
   now?: () => Date
   /** Startup egress check (region + CDSCO reachability); see src/pipeline/egress.ts. */
   egress?: () => EgressStatus | null
+  /** Arkiv directory (/v1/arkiv/*): live counts and filtered entity pages read from Arkiv; null disables it. */
+  directory?: Pick<ArkivDirectory, 'summary' | 'entities'> | null
 }
 
 export type CheckState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
@@ -67,7 +70,7 @@ export interface CheckResponse {
 
 class HttpError extends Error {
   constructor(
-    readonly status: 400 | 404 | 500 | 503,
+    readonly status: 400 | 404 | 410 | 500 | 503,
     readonly code: string,
     message: string,
     readonly details?: unknown,
@@ -197,6 +200,11 @@ export function createApp(deps: AppDeps) {
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: { code: err.code, message: err.message, details: err.details } }, err.status)
+    if (err instanceof DirectoryError) {
+      if (err.retryAfterSec) c.header('Retry-After', String(err.retryAfterSec))
+      c.header('Cache-Control', 'no-store')
+      return c.json({ error: { code: err.code, message: err.message } }, err.code === 'CURSOR_EXPIRED' ? 410 : 503)
+    }
     log.error({ err: errorMessage(err), path: c.req.path }, 'unhandled error')
     const code = err instanceof NazarError ? err.code : 'INTERNAL'
     return c.json({ error: { code, message: 'internal error' } }, 500)
@@ -298,6 +306,26 @@ export function createApp(deps: AppDeps) {
     if (!deps.status) throw new HttpError(503, 'UNAVAILABLE', 'pipeline status is not wired in this process')
     c.header('Cache-Control', 'no-store')
     return c.json({ ...(await deps.status()), egress: deps.egress?.() ?? null })
+  })
+
+  // ---- Arkiv directory: read straight from Arkiv, never from the ledger.
+  const directory = () => {
+    if (!deps.directory) throw new HttpError(503, 'UNAVAILABLE', 'the Arkiv directory is not wired in this process (no publisher configured)')
+    return deps.directory
+  }
+
+  app.get('/v1/arkiv/summary', async (c) => {
+    const body = await directory().summary()
+    c.header('Cache-Control', body.stale ? 'public, max-age=15' : 'public, max-age=60, stale-while-revalidate=240')
+    return c.json(body)
+  })
+
+  app.get('/v1/arkiv/entities', async (c) => {
+    const q = parse(EntitiesQuery, c.req.query())
+    const body = await directory().entities(q)
+    // Pages read at a pinned block never change; first pages follow the chain head.
+    c.header('Cache-Control', q.cursor ? 'public, max-age=300' : 'public, max-age=30')
+    return c.json(body)
   })
 
   return Object.assign(app, { check })

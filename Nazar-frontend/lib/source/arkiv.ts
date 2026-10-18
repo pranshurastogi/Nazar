@@ -1,10 +1,11 @@
 import { createPublicClient, type PublicArkivClient } from '@arkiv-network/sdk'
-import { i32, str } from '@arkiv-network/sdk/attr'
+import { i32, key, str } from '@arkiv-network/sdk/attr'
 import { tiramisu } from '@arkiv-network/sdk/chains'
-import { eq, gte, or, type Expression } from '@arkiv-network/sdk/query'
+import { eq, gte, lte, or, type Expression } from '@arkiv-network/sdk/query'
 import { http, type Hex } from 'viem'
 
 import { ARKIV_RPC_URL, PROJECT, PUBLISHER } from './config'
+import type { DirectoryEntity, DirectoryPage, Pred } from './directory'
 import { fromArkiv, type ArkivAlert } from './map'
 import { confusionVariants, matchKey, resolveResult } from './match'
 import type { Alert, CheckResult } from './types'
@@ -323,4 +324,63 @@ export type BlockTiming = { currentBlock: bigint; currentBlockTime: number; bloc
 /** Current block and block time, to turn an entity's expiry block into a date. Cached, and only read when a proof is opened. */
 export function arkivBlockTiming(signal?: AbortSignal): Promise<BlockTiming> {
   return abortable(gated('block-timing', TTL.status, () => arkiv().getBlockTiming()), signal)
+}
+
+// ---- Arkiv directory: any filtered query, run from the browser
+
+type FullEntity = RawEntity & { owner?: Hex; createdAt?: bigint }
+const BLOCK_MS = 2000
+
+const toExpression = (p: Pred): Expression => {
+  const v = p.type === 'str' ? str(String(p.value)) : p.type === 'i32' ? i32(Number(p.value)) : key(String(p.value) as Hex)
+  return p.op === '>=' ? gte(p.name, v) : p.op === '<=' ? lte(p.name, v) : eq(p.name, v)
+}
+
+/** Mirrors toDirectoryEntity in Nazar-backend/src/arkiv/directory.ts. */
+function toDirectoryEntity(e: FullEntity, block: bigint, now: number): DirectoryEntity {
+  const a = (e.attributes ?? {}) as Record<string, Attr>
+  const exp = typeof e.expiresAt === 'bigint' ? e.expiresAt : null
+  return {
+    key: e.key ?? '',
+    type: s(a.t) ?? '',
+    creator: e.creator ?? null,
+    owner: e.owner ?? null,
+    createdAtBlock: typeof e.createdAt === 'bigint' ? e.createdAt.toString() : null,
+    expiresAtBlock: exp !== null ? exp.toString() : null,
+    expiresAtEstimate: exp !== null ? new Date(now + Number(exp - block) * BLOCK_MS).toISOString() : null,
+    flags: e.creationFlags ? { readonly: !!e.creationFlags.readonly, permissionlessExtension: !!e.creationFlags.permissionlessExtension } : null,
+    attributes: Object.entries(a)
+      .filter((x): x is [string, { type?: string; value?: unknown }] => !!x[1])
+      .map(([name, t]) => ({ name, type: t.type ?? '', value: typeof t.value === 'number' ? t.value : String(t.value) }))
+      .sort((x, y) => x.name.localeCompare(y.name)),
+    payload: payloadOf(e),
+  }
+}
+
+/**
+ * One page of any directory query, straight from Arkiv. First pages are cached for a minute;
+ * later pages are pinned to the first page's block (a cursor is bound to it), so they never
+ * change and are cached longer. Every read goes through the shared rate-limit gate.
+ */
+export function arkivDirectoryPage(
+  t: string,
+  preds: Pred[],
+  limit: number,
+  page?: { cursor: string; block: string },
+  signal?: AbortSignal,
+): Promise<DirectoryPage> {
+  const filters = [...mine(t), ...preds.map(toExpression)]
+  const name = `dir:${t}:${JSON.stringify(preds)}:${limit}:${page ? `${page.block}:${page.cursor}` : ''}`
+  const run = async () => {
+    let q = arkiv().select().where(filters).createdBy(PUBLISHER).limit(limit)
+    if (page) q = q.atBlock(BigInt(page.block)).cursor(page.cursor)
+    const res = (await q.fetch()) as unknown as Page
+    const now = Date.now()
+    return {
+      items: (res.entities as readonly FullEntity[]).map((e) => toDirectoryEntity(e, res.blockNumber, now)),
+      cursor: res.cursor ?? null,
+      block: res.blockNumber.toString(),
+    }
+  }
+  return abortable(gated(name, page ? TTL.list : TTL.check, run), signal)
 }

@@ -41,6 +41,15 @@ export class FakeArkiv {
   queries: string[] = []
   batches: ExecuteBatchParameters[] = []
   balance = 10n ** 18n
+  /** Chain head returned with every page; `advance` moves it on after each fetch, like a live node. */
+  head = 42n
+  advance = false
+  /** Like the real node: a cursor read at a block other than its first page's is rejected. */
+  strictCursor = false
+  /** Every fetch, with its filters (as query text), page size, cursor and pinned block. */
+  fetchLog: { query: string; limit: number; cursor: string | undefined; atBlock: bigint | undefined; select: unknown }[] = []
+  /** Make the next fetch fail with this error (e.g. a 429). */
+  failNextFetch: Error | null = null
   /** Make the next executeBatch throw after (optionally) landing on chain. */
   failNext: { error: Error; land: boolean } | null = null
 
@@ -105,19 +114,21 @@ export class FakeArkiv {
   }
 
   /** The `select()` builder surface the reader and publisher use. */
-  select(_sel?: unknown) {
+  select(sel?: unknown) {
     const filters: Node[] = []
     let limit = 50
     let cursor: string | undefined
+    let atBlock: bigint | undefined
     const self = this
-    const result = (offset: number): unknown => {
+    const result = (offset: number, block: bigint): unknown => {
       const { page, next } = self.run(filters, limit, offset)
+      const cur = next ? `c:${offset + limit}@${block}` : undefined
       return {
         entities: page as unknown as Entity[],
-        cursor: next,
-        blockNumber: 42n,
+        cursor: cur,
+        blockNumber: block,
         hasNextPage: () => next !== undefined,
-        next: async () => result(Number(next!.slice(2))),
+        next: async () => result(offset + limit, self.head),
       }
     }
     const builder = {
@@ -137,9 +148,25 @@ export class FakeArkiv {
         cursor = c
         return builder
       },
+      atBlock(b: bigint) {
+        atBlock = b
+        return builder
+      },
       async fetch() {
-        self.queries.push(filters.map((f) => String(f.kind === 'comparison' ? `${f.name}${f.operator}${String(f.value.value)}` : f.kind)).join(' & '))
-        return result(cursor ? Number(cursor.slice(2)) : 0)
+        const query = filters.map((f) => String(f.kind === 'comparison' ? `${f.name}${f.operator}${String(f.value.value)}` : f.kind)).join(' & ')
+        self.queries.push(query)
+        self.fetchLog.push({ query, limit, cursor, atBlock, select: sel })
+        if (self.failNextFetch) {
+          const err = self.failNextFetch
+          self.failNextFetch = null
+          throw err
+        }
+        const block = atBlock ?? self.head
+        if (self.advance) self.head++
+        if (!cursor) return result(0, block)
+        const [, offset, from] = /^c:(\d+)(?:@(\d+))?$/.exec(cursor) ?? []
+        if (self.strictCursor && from !== undefined && BigInt(from) !== block) throw new Error('cursor belongs to a different query, block or select')
+        return result(Number(offset), block)
       },
     }
     return builder

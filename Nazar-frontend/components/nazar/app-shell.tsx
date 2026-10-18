@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { BookOpen, CircleHelp, History, House, Menu, Moon, ShieldCheck, Sun } from 'lucide-react'
+import { BookOpen, CircleHelp, Database, History, House, Menu, Moon, ShieldCheck, Sun } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -22,12 +22,14 @@ const STATUS_REFRESH_MS = 2 * 60 * 1000
 
 export const soon = (what: string) => toast(`${what} is coming in the next build.`)
 
-type NavEntry = { icon: typeof House; label: string; href: string }
+type NavEntry = { icon: typeof House; label: string; href: string; desktopOnly?: boolean }
 
+// The mobile bottom bar keeps four items; desktop-only entries are reached from More on phones.
 const NAV: NavEntry[] = [
   { icon: House, label: 'Check', href: '/' },
   { icon: History, label: 'Feed', href: '/feed' },
   { icon: BookOpen, label: 'Cabinet', href: '/cabinet' },
+  { icon: Database, label: 'Arkiv', href: '/arkiv', desktopOnly: true },
   { icon: Menu, label: 'More', href: '/more' },
 ]
 
@@ -36,6 +38,7 @@ const TITLES: Record<string, string> = {
   '/feed': 'Alert feed',
   '/cabinet': 'My medicine cabinet',
   '/more': 'More about Nazar',
+  '/arkiv': 'Arkiv directory',
 }
 
 /** A tab is current on its own path and below it (/more#proof, /cabinet/…). */
@@ -60,7 +63,7 @@ export function useShell() {
   return ctx
 }
 
-function NavItem({ icon: Icon, label, href, active, compact }: NavEntry & { active: boolean; compact?: boolean }) {
+function NavItem({ icon: Icon, label, href, active, compact }: Omit<NavEntry, 'desktopOnly'> & { active: boolean; compact?: boolean }) {
   const cls = cn(
     'flex min-h-12 items-center rounded-xl font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
     compact ? 'flex-1 flex-col justify-center gap-1 text-[11px]' : 'gap-3 px-3.5 text-sm',
@@ -161,7 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Logo />
           </Link>
           <nav className="mt-12 flex flex-col gap-1.5" aria-label="Main navigation">
-            {NAV.map((n) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} />)}
+            {NAV.map(({ desktopOnly: _, ...n }) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} />)}
           </nav>
           <div className="mt-auto rounded-2xl border bg-card p-4">
             <ShieldCheck className="size-5 text-primary" />
@@ -201,7 +204,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Mobile navigation"
           className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-10 flex gap-1 rounded-2xl border bg-card/90 p-1.5 shadow-lg backdrop-blur-lg lg:hidden"
         >
-          {NAV.map((n) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} compact />)}
+          {NAV.filter((n) => !n.desktopOnly).map(({ desktopOnly: _, ...n }) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} compact />)}
         </nav>
 
         <Onboarding open={guideOpen} onOpenChange={setGuideOpen} onTry={requestCheck} />

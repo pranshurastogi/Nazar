@@ -75,7 +75,7 @@ const FEED_EXTRA = Array.from({ length: 40 }, (_, i) => {
 })
 const MH_ROWS = FEED_EXTRA.filter(a => a.sourceId === 'mh-fda').length
 
-function mockResponse(url) {
+let mockResponse = function mockResponse(url) {
   const u = new globalThis.URL(url)
   if (u.pathname === '/v1/pipeline/status') return { heartbeat: { lastOkMs: Date.now() - 4 * 60_000, entityKey: KEY1 }, runs: [], stats: {}, publisher: { address: WALLET, balanceGlm: 0.4 }, mode: 'live' }
   if (u.pathname === '/v1/alerts') {
@@ -219,7 +219,7 @@ if (MODE === 'fallback') {
   // ---- Reduced motion: loading card animations are off
   await vp(390, 844, false, true); await send('Page.reload'); await wait(1500); await settle()
   await send('Network.emulateNetworkConditions', { offline: false, latency: 600, downloadThroughput: -1, uploadThroughput: -1 })
-  await js(`window.__anim = null; new MutationObserver(() => { const s = document.querySelector('section[aria-busy="true"] svg circle:last-child'); if (s && window.__anim === null) window.__anim = getComputedStyle(s).animationName }).observe(document.body, { subtree: true, childList: true })`)
+  await js(`window.__anim = null; new MutationObserver(() => { const s = document.querySelector('section[aria-busy="true"] [data-spinner]'); const m = document.querySelector('section[aria-busy="true"] [data-loader-mark]'); if (s && window.__anim === null) window.__anim = [getComputedStyle(s).animationName, m ? getComputedStyle(m).animationName : 'none'].every((a) => a === 'none') ? 'none' : 'running' }).observe(document.body, { subtree: true, childList: true })`)
   await js(`(() => { const i = document.getElementById('batch'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'XY-9'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })()`)
   await waitIdle()
   ok('reduced motion: spinner animation disabled', (await js(`window.__anim`)) === 'none', String(await js(`window.__anim`)))
@@ -698,6 +698,169 @@ if (MODE === 'fallback') {
   ok('scan: Escape closes on desktop', !(await scanPhase()))
 }
 // ======== end Strip Scan ========
+
+// ======== Arkiv directory (/arkiv). Self-contained block; uses only the shared helpers above. ========
+const ARKIV_BLOCK = '727733'
+const ARKIV_SHOTS = process.env.ARKIV_SHOTS || ''
+const hexOf = (s, n = 64) => '0x' + [...s].map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('').padEnd(n, '0').slice(0, n)
+const NOTICE_KEYS = ['tn-aug', 'cdsco-aug', 'mh-oct'].map(s => hexOf('notice:' + s))
+const tAttr = (name, type, value) => ({ name, type, value })
+const ARKIV_ALERTS = Array.from({ length: 30 }, (_, i) => {
+  const src = i % 3 === 0 ? 'tn-dc' : 'cdsco-online'
+  const sev = 1 + (i % 5)
+  const batch = 'AK' + String(1000 + i)
+  return {
+    key: hexOf('alert:' + i), type: 'alert', creator: BUILD_PUBLISHER, owner: BUILD_PUBLISHER,
+    createdAtBlock: '727143', expiresAtBlock: '4615143', expiresAtEstimate: '2027-01-16T06:14:13.493Z',
+    flags: { readonly: true, permissionlessExtension: true },
+    attributes: [
+      tAttr('alert_ym', 'i32', 202608), tAttr('batch', 'str', batch.toLowerCase()), tAttr('batch_raw', 'str', batch), tAttr('brand', 'str', 'paracip-' + i),
+      tAttr('cat', 'str', i === 4 ? 'spurious' : 'nsq'), tAttr('exp_ym', 'i32', 202712), tAttr('fail', 'str', 'assay'), tAttr('form', 'str', 'tablet'),
+      tAttr('notice', 'key', NOTICE_KEYS[i % 3 === 0 ? 0 : 1]), tAttr('peds', 'i32', i % 7 === 0 ? 1 : 0), tAttr('project', 'str', 'nazar-in-batch-alerts'),
+      tAttr('sev', 'i32', sev), tAttr('src', 'str', src), tAttr('state', 'str', i % 2 ? 'IN-HP' : 'IN-GJ'), tAttr('t', 'str', 'alert'), tAttr('v', 'i32', 1),
+    ],
+    payload: { product: `Paracip ${i} Tablets IP 500 mg`, manufacturer: 'Example Pharma Pvt Ltd, Baddi 173205', reason: 'Assay of paracetamol 82%', failures: ['assay'], severityRules: ['Assay failure: base 3'], noticeTitle: src === 'tn-dc' ? 'TN NSQ list, August 2026' : 'CDSCO NSQ, August 2026' },
+  }
+})
+const ARKIV_NOTICES = NOTICE_KEYS.map((key, i) => ({
+  key, type: 'notice', creator: BUILD_PUBLISHER, owner: BUILD_PUBLISHER, createdAtBlock: '727100', expiresAtBlock: '79565418', expiresAtEstimate: '2031-10-17T00:00:00.000Z',
+  flags: { readonly: true, permissionlessExtension: false },
+  attributes: [tAttr('notice_ym', 'i32', [202608, 202608, 202610][i]), tAttr('project', 'str', 'nazar-in-batch-alerts'), tAttr('rows', 'i32', [10, 20, 193][i]), tAttr('sha', 'str', 'ab'.repeat(32)), tAttr('src', 'str', ['tn-dc', 'cdsco-online', 'mh-fda'][i]), tAttr('t', 'str', 'notice'), tAttr('v', 'i32', 1)],
+  payload: { title: ['TN NSQ list, August 2026', 'CDSCO Not of Standard Quality drugs reported in Aug 2026', 'Maharashtra FDA NSQ alerts (as of 2026-10-17)'][i], authority: 'Regulator', url: 'https://example.gov.in/notice.pdf', sha256: 'ab'.repeat(32) },
+}))
+const ARKIV_BEAT = { key: hexOf('beat'), type: 'heartbeat', creator: BUILD_PUBLISHER, owner: BUILD_PUBLISHER, createdAtBlock: '726146', expiresAtBlock: '728221', expiresAtEstimate: new Date(Date.now() + 15 * 60_000).toISOString(), flags: { readonly: false, permissionlessExtension: false }, attributes: [tAttr('last_ok', 'u64', String(Date.now() - 4 * 60_000)), tAttr('project', 'str', 'nazar-in-batch-alerts'), tAttr('t', 'str', 'heartbeat'), tAttr('v', 'i32', 1), tAttr('worker', 'str', 'nazar')], payload: { worker: 'nazar', alerts: 1404 } }
+const ARKIV_SUMMARY = {
+  publisher: BUILD_PUBLISHER, project: 'nazar-in-batch-alerts', generatedAt: new Date(Date.now() - 2 * 60_000).toISOString(), generatedAtBlock: ARKIV_BLOCK, latestBlock: ARKIV_BLOCK, stale: false, error: null,
+  entities: { alert: 1404, notice: 21, retraction: 0, heartbeat: 1, snapshot: 0 },
+  alerts: { total: 1404, bySrc: { 'cdsco-online': 813, 'cdsco-pdf': 321, 'mh-fda': 162, 'tn-dc': 102, curated: 3, 'who-mpa': 3 }, byState: { 'IN-HP': 387, 'IN-UK': 179, unknown: 158, 'IN-GJ': 134, 'IN-MP': 90, 'IN-MH': 67, 'IN-HR': 59, 'IN-TN': 51 }, byCat: { nsq: 1337, misbranded: 36, spurious: 25, adulterated: 6 }, bySev: { 1: 154, 2: 593, 3: 427, 4: 111, 5: 119 }, byForm: { tablet: 679, other: 176, injection: 138, syrup: 87, capsule: 87, suspension: 79 }, byFail: { assay: 415 }, peds: 19, inDate: 1149 },
+  notices: [], heartbeat: { key: ARKIV_BEAT.key, lastOkMs: Date.now() - 4 * 60_000, expiresAtBlock: '728221', expiresAtEstimate: null },
+}
+const arkivCalls = []
+const aval = (e, n) => e.attributes.find(a => a.name === n)?.value
+function arkivMock(u) {
+  arkivCalls.push(u.pathname + u.search)
+  if (u.pathname === '/v1/arkiv/summary') return ARKIV_SUMMARY
+  if (u.pathname !== '/v1/arkiv/entities') return null
+  const q = u.searchParams
+  const type = q.get('type') || 'alert'
+  let all = type === 'notice' ? ARKIV_NOTICES : type === 'heartbeat' ? [ARKIV_BEAT] : ARKIV_ALERTS
+  for (const k of ['src', 'state', 'cat', 'form', 'fail', 'notice']) if (q.get(k)) all = all.filter(e => String(aval(e, k)) === q.get(k))
+  if (q.get('sevMin')) all = all.filter(e => aval(e, 'sev') >= Number(q.get('sevMin')))
+  if (q.get('sevMax')) all = all.filter(e => aval(e, 'sev') <= Number(q.get('sevMax')))
+  if (q.get('peds')) all = all.filter(e => aval(e, 'peds') === Number(q.get('peds')))
+  if (q.get('noticeYm')) all = all.filter(e => aval(e, 'notice_ym') === Number(q.get('noticeYm')))
+  const limit = Number(q.get('limit') || 25)
+  const cursor = q.get('cursor'); const offset = cursor ? Number(cursor.slice(2)) : 0
+  if (cursor && q.get('block') !== ARKIV_BLOCK) return { items: [], cursor: null, block: 'UNPINNED' }
+  return { items: all.slice(offset, offset + limit), cursor: offset + limit < all.length ? 'c:' + (offset + limit) : null, block: ARKIV_BLOCK, query: { string: '', sdk: '' } }
+}
+
+const ARKIV_URL = new globalThis.URL('/arkiv', URL).href
+const arkivShot = async name => { await shot('arkiv-' + name); if (ARKIV_SHOTS) { fs.mkdirSync(ARKIV_SHOTS, { recursive: true }); fs.copyFileSync(`${OUT}/arkiv-${name}.png`, `${ARKIV_SHOTS}/${MODE}-${name}.png`) } }
+const openArkiv = async (dark = false, search = '') => {
+  await send('Page.navigate', { url: URL }); await wait(1000)
+  await js(`localStorage.clear(); localStorage.setItem('theme', '${dark ? 'dark' : 'light'}'); localStorage.setItem('nazar:onboarded', '1')`)
+  await send('Page.navigate', { url: ARKIV_URL + search }); await wait(800)
+}
+const resultsKind = () => js(`document.querySelector('[data-results]')?.dataset.results || null`)
+const arkivIdle = async () => { await wait(450); return waitFor(`['ok','error'].includes(document.querySelector('[data-results]')?.dataset.results)`, 25000) }
+const arkivRows = () => js(`document.querySelectorAll('[data-entity-row]').length`)
+const arkivQuery = () => js(`document.querySelector('[data-query-panel]')?.dataset.query || ''`)
+const setField = async (id, v, proto = 'HTMLSelectElement', ev = 'change') => { await js(`(() => { const s = document.getElementById(${JSON.stringify(id)}); const set = Object.getOwnPropertyDescriptor(${proto}.prototype, 'value').set; set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new Event(${JSON.stringify(ev)}, { bubbles: true })) })()`); await arkivIdle() }
+const noHScroll = () => js(`document.documentElement.scrollWidth <= window.innerWidth + 1`)
+
+if (MODE === 'mock') {
+  const base = mockResponse
+  // Route /v1/arkiv/* through the directory fixtures; everything else keeps the existing mock contract.
+  mockResponse = url => { const u = new globalThis.URL(url); return u.pathname.startsWith('/v1/arkiv/') ? arkivMock(u) : base(url) }
+
+  await vp(1440, 1000, false); await openArkiv()
+  await waitFor(`document.querySelector('[data-overview]')?.dataset.overview === 'ready'`, 20000); await arkivIdle()
+  ok('arkiv: overview renders live counts from GET /v1/arkiv/summary', (await js(`document.querySelector('[data-count="alert"]')?.innerText`)) === '1,404' && (await js(`document.querySelector('[data-count="notice"]')?.innerText`)) === '21' && (await js(`document.querySelector('[data-count="peds"]')?.innerText`)) === '19')
+  ok('arkiv: header shows publisher, project tag, latest block and Live', (await js(`document.querySelector('[data-arkiv-header] [data-publisher]')?.innerText`)) === BUILD_PUBLISHER && (await js(`document.querySelector('[data-latest-block]')?.innerText`)) === '#727733' && (await js(`document.querySelector('[data-live]')?.dataset.live`)) === 'live')
+  ok('arkiv: nav rail has Arkiv marked current', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.textContent.trim()).join()`)) === 'Arkiv')
+  ok('arkiv: first page of alerts via the API (25 rows)', (await arkivRows()) === 25 && (await resultsKind()) === 'ok')
+  const q0 = await arkivQuery()
+  ok('arkiv: query string pins project, type and publisher', q0 === `project = str('nazar-in-batch-alerts') AND t = str('alert') AND $creator = addr(${BUILD_PUBLISHER})`, q0)
+  await arkivShot('desktop-overview')
+
+  await setField('f-src', 'tn-dc')
+  const q1 = await arkivQuery()
+  ok('arkiv: source filter updates the query string, the URL and the API call', q1.includes("t = str('alert') AND src = str('tn-dc') AND $creator") && (await js('location.search')) === '?src=tn-dc' && arkivCalls.at(-1).includes('src=tn-dc') && (await arkivRows()) === 10, `${q1} | ${arkivCalls.at(-1)}`)
+  await js(`[...document.querySelectorAll('[data-overview] button')].find(b => b.getAttribute('aria-label')?.startsWith('Severity 4'))?.click()`); await arkivIdle()
+  ok('arkiv: clicking a severity tile applies sev = i32(4)', (await arkivQuery()).includes('sev = i32(4)') && (await js('location.search')).includes('sevMin=4&sevMax=4') && (await js(`[...document.querySelectorAll('[data-entity-row]')].every(r => r.innerText.trim().startsWith('4'))`)))
+  await js(`document.getElementById('f-in-date').click()`); await arkivIdle()
+  ok('arkiv: "still in date" adds exp_ym >= this month', /exp_ym >= i32\(\d{6}\)/.test(await arkivQuery()) && (await js('location.search')).includes('inDate=1') && /expFrom=\d{6}/.test(arkivCalls.at(-1)))
+  await js(`document.querySelector('[data-query-panel] [role="tab"]#qtab-sdk').click()`); await wait(200)
+  ok('arkiv: SDK snippet mirrors the filters', (await js(`document.querySelector('[data-sdk-snippet]')?.innerText || ''`)).includes("eq('src', str('tn-dc')),") && (await js(`document.querySelector('[data-sdk-snippet]').innerText`)).includes('.atBlock(page.blockNumber).cursor(page.cursor)'))
+  await js(`document.getElementById('arkiv-results').scrollIntoView()`); await wait(300)
+  await arkivShot('desktop-filtered')
+  await js(`document.querySelector('#qtab-query').click()`)
+
+  await clickHas('Reset'); await arkivIdle()
+  ok('arkiv: Reset clears filters and the URL', (await js('location.search')) === '' && (await arkivRows()) === 25)
+  await js(`document.querySelector('[data-load-more]').click()`); await waitFor(`document.querySelectorAll('[data-entity-row]').length === 30`, 10000)
+  ok('arkiv: Load more fetches the next cursor page pinned to its block', (await arkivRows()) === 30 && arkivCalls.at(-1).includes('cursor=c%3A25') && arkivCalls.at(-1).includes('block=' + ARKIV_BLOCK) && !(await js(`!!document.querySelector('[data-load-more]')`)))
+
+  await js(`document.querySelector('[data-entity-row] button').click()`); await waitFor(`!!document.querySelector('[data-entity-drawer]')`); await wait(700)
+  const attrsText = await js(`document.querySelector('[data-entity-attributes]')?.innerText || ''`)
+  const payloadText = await js(`document.querySelector('[data-entity-payload]')?.innerText || ''`)
+  ok('arkiv: drawer shows typed attributes vs JSON payload', /batch\s+str\s+ak1000/.test(attrsText) && /sev\s+i32\s+1/.test(attrsText) && /notice\s+key\s+0x/.test(attrsText) && payloadText.includes('"product": "Paracip 0 Tablets IP 500 mg"') && !attrsText.includes('Paracip 0 Tablets'), attrsText.slice(0, 120))
+  ok('arkiv: drawer shows flags and the creator check', (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Official Nazar publisher') && (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Read-only') && (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Anyone can keep alive'))
+  ok('arkiv: drawer links the entity to the explorer', (await js(`document.querySelector('[data-entity-drawer] a[href*="/entity/"]')?.href || ''`)) === `https://tiramisu.explorer.arkiv.network/entity/${ARKIV_ALERTS[0].key}`)
+  await arkivShot('desktop-drawer')
+  await escape()
+  ok('arkiv: Escape closes the drawer', !(await js(`!!document.querySelector('[data-entity-drawer]')`)))
+
+  await js(`document.querySelector('[data-type-tab="notice"]').click()`); await arkivIdle()
+  ok('arkiv: Notices tab lists notices with t = notice', (await arkivRows()) === 3 && (await arkivQuery()).includes("t = str('notice')") && (await js('location.search')) === '?type=notice')
+  await js(`document.querySelector('[data-entity-row] button').click()`); await waitFor(`!!document.querySelector('[data-notice-alerts]')`); await wait(500)
+  await js(`document.querySelector('[data-notice-alerts]').click()`); await wait(600); await arkivIdle()
+  ok("arkiv: a notice's alerts are one click away (notice = key(...))", (await arkivQuery()).includes(`notice = key(${NOTICE_KEYS[0]})`) && (await js('location.search')).includes('notice=' + NOTICE_KEYS[0]) && (await arkivRows()) === 10)
+  await js(`document.querySelector('[data-type-tab="heartbeat"]').click()`); await arkivIdle()
+  ok('arkiv: Heartbeat tab shows the lease', (await arkivRows()) === 1 && (await js(`document.querySelector('[data-entity-row]').innerText`)).includes('last ok 4 min ago'))
+
+  // Browser mode against a throttled RPC: a clear rate-limit state, not a crash or a loop.
+  mock.arkiv429 = true; mock.arkivHits = 0
+  await js(`document.querySelector('[data-type-tab="alert"]').click()`); await arkivIdle()
+  await js(`document.querySelector('[data-mode="browser"]').click()`); await arkivIdle()
+  ok('arkiv: browser mode sends the query to Arkiv itself (URL via=browser)', (await js('location.search')).includes('via=browser') && (await js(`document.querySelector('[data-mode-note]').innerText`)).includes('public Arkiv RPC'))
+  ok('arkiv: a 429 from Arkiv shows the rate-limit state', (await resultsKind()) === 'error' && (await js(`document.querySelector('[data-results-error]')?.dataset.resultsError`)) === 'throttled' && mock.arkivHits <= 2, String(mock.arkivHits))
+  mock.arkiv429 = false
+  await js(`document.querySelector('[data-mode="api"]').click()`); await arkivIdle()
+  ok('arkiv: back to the API mode', (await arkivRows()) === 25 && !(await js('location.search')).includes('via='))
+
+  // Phone, dark: four-item bottom nav, Arkiv reachable from More, no sideways scroll.
+  await vp(360, 780, true); await openArkiv(true, '?sevMin=5&sevMax=5')
+  await waitFor(`document.querySelector('[data-overview]')?.dataset.overview === 'ready'`, 20000); await arkivIdle()
+  ok('arkiv 360: filters restored from the URL', (await arkivQuery()).includes('sev = i32(5)') && (await js(`document.getElementById('f-sev-min').value`)) === '5')
+  ok('arkiv 360: no horizontal scroll', await noHScroll(), String(await js('document.documentElement.scrollWidth')))
+  ok('arkiv 360: bottom nav keeps four items', (await js(`document.querySelectorAll('nav[aria-label="Mobile navigation"] a').length`)) === 4)
+  await arkivShot('360-dark-overview')
+  await js(`document.getElementById('arkiv-results').scrollIntoView()`); await wait(300)
+  await arkivShot('360-dark-results')
+  await js(`window.scrollTo(0, document.querySelector('[data-results]').getBoundingClientRect().top + scrollY - 80)`); await wait(300)
+  await arkivShot('360-dark-rows')
+  await js(`document.querySelector('[data-entity-row] button').click()`); await waitFor(`!!document.querySelector('[data-entity-drawer]')`); await wait(700)
+  ok('arkiv 360: drawer fits the screen', await js(`(() => { const r = document.querySelector('[data-entity-drawer]').getBoundingClientRect(); return r.width <= 361 && r.left >= -1 })()`))
+  await arkivShot('360-dark-drawer')
+  await escape()
+  await send('Page.navigate', { url: new globalThis.URL('/more', URL).href }); await wait(1500)
+  ok('arkiv 360: More links to the Arkiv directory', (await js(`document.querySelector('[data-arkiv-link]')?.getAttribute('href')`)) === '/arkiv')
+}
+
+if (MODE === 'fallback') {
+  // No API, and the build's publisher has nothing on Arkiv: the directory degrades gracefully.
+  await vp(1440, 1000, false); await openArkiv()
+  await waitFor(`!!document.querySelector('[data-summary-error]')`, 25000); await arkivIdle(); await wait(500); await arkivIdle()
+  ok('arkiv fallback: header explains counts are unavailable', (await js(`document.querySelector('[data-summary-error]')?.innerText || ''`)).length > 20)
+  ok('arkiv fallback: reads Arkiv from the browser when the API is down', (await js(`document.querySelector('[data-mode="browser"]')?.getAttribute('aria-checked')`)) === 'true' && (await js(`!!document.querySelector('[data-auto-browser]')`)))
+  const kind = await resultsKind()
+  ok('arkiv fallback: results settle into an empty or rate-limit state, never a spinner', kind === 'error' || (kind === 'ok' && (await js(`!!document.querySelector('[data-results-empty]')`))), String(kind))
+  ok('arkiv fallback: query panel still shows the query', (await arkivQuery()).startsWith("project = str('nazar-in-batch-alerts') AND t = str('alert')"))
+  await arkivShot('fallback-desktop')
+}
+// ======== end Arkiv directory ========
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))

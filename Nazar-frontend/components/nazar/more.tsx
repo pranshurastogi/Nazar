@@ -319,9 +319,14 @@ function Proof() {
         </pre>
       </div>
 
-      <a href={SCHEMA} target="_blank" rel="noreferrer noopener" className={cn(buttonVariants({ variant: 'outline' }), 'mt-5 h-12 w-full px-4 sm:w-auto')}>
-        <BookOpen /> Read the full Arkiv schema <ExternalLink data-icon="inline-end" />
-      </a>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <Link href="/arkiv" className={cn(buttonVariants(), 'h-12 w-full px-4 sm:w-auto')} data-arkiv-link>
+          <Database /> Explore everything on Arkiv <ArrowRight data-icon="inline-end" />
+        </Link>
+        <a href={SCHEMA} target="_blank" rel="noreferrer noopener" className={cn(buttonVariants({ variant: 'outline' }), 'h-12 w-full px-4 sm:w-auto')}>
+          <BookOpen /> Read the full Arkiv schema <ExternalLink data-icon="inline-end" />
+        </a>
+      </div>
     </Section>
   )
 }

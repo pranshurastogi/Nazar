@@ -2,7 +2,10 @@ import { pathToFileURL } from 'node:url'
 
 import { serve } from '@hono/node-server'
 
+import type { Hex } from 'viem'
+
 import { publicClient, publisherAddress } from '../arkiv/client.ts'
+import { ArkivDirectory } from '../arkiv/directory.ts'
 import { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
 import { errorMessage } from '../lib/errors.ts'
@@ -20,6 +23,11 @@ export function buildProductionApp() {
   const ledger = sharedLedger()
   const publisher = publisherAddress()
   const reader = publisher ? new ArkivReader({ publisher }) : null
+  // The directory only reads, so a read-only API can name the publisher without holding its key.
+  const listed = publisher ?? (/^0x[0-9a-fA-F]{40}$/.test(process.env.NAZAR_PUBLISHER_ADDRESS ?? '') ? (process.env.NAZAR_PUBLISHER_ADDRESS as Hex) : null)
+  const directory = listed ? new ArkivDirectory({ publisher: listed, client: publicClient }) : null
+  // Warm the summary shortly after boot so the first visitor does not pay for the full Arkiv walk.
+  if (directory) setTimeout(() => void directory.refresh().catch(() => {}), 3000).unref()
   return createApp({
     ledger,
     reader,
@@ -27,6 +35,7 @@ export function buildProductionApp() {
     mode: e.NAZAR_PUBLISH_MODE,
     chainId: e.ARKIV_CHAIN_ID,
     egress: egressStatus,
+    directory,
     status: () =>
       pipelineStatus({
         ledger,

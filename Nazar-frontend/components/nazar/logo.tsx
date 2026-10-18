@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 
 /** The Nazar mark: an eye looking out of a medicine capsule. Square artwork; boxes keep its ratio. */
-export function NazarMark({ className, priority }: { className?: string; priority?: boolean }) {
+export function NazarMark({ className, priority, ...rest }: { className?: string; priority?: boolean } & Record<`data-${string}`, unknown>) {
   return (
     // A plain <img>: the 256 px PNG is already optimised and must work in every shell, including static export.
     // eslint-disable-next-line @next/next/no-img-element
@@ -15,6 +15,7 @@ export function NazarMark({ className, priority }: { className?: string; priorit
       fetchPriority={priority ? 'high' : 'auto'}
       draggable={false}
       className={cn('size-8 select-none object-contain', className)}
+      {...rest}
     />
   )
 }
