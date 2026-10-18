@@ -25,9 +25,16 @@ export function confusionKey(batch: string): string {
 const NOT_A_BATCH = /^(n\.?\s*a\.?|nil|none|not\s+(mentioned|mention|available|given|stated|known)|unknown|--?|—|batch|b\.?\s*no\.?)$/i
 
 /** Cleans a raw cell into a display batch number, or null if it is not one. */
+/**
+ * Drops a label printed or typed in front of a batch: "B.No. SR-13", "B.No.SR-13", "Batch No: SR-13",
+ * "BNo SR-13", "Lot SR-13". A prefix without a dot must be followed by a separator, so a real batch
+ * that starts with those letters ("BNO123", "LOT7A") is left alone.
+ */
+export const BATCH_LABEL = /^(?:b\.\s*no\.?|b\s*no\.?(?=[\s:.#-])|batch(?:\s*(?:no\.?|number|#))?(?=[\s:.#-])|lot(?:\s*(?:no\.?|#))?(?=[\s:.#-]))\s*[:.#-]?\s*/i
+export const stripBatchLabel = (raw: string) => raw.trim().replace(BATCH_LABEL, '')
+
 export function cleanBatch(raw: string): string | null {
-  const s = raw
-    .replace(/^(b\.?\s*no\.?|batch\s*(no\.?|number)?|lot\s*(no\.?)?)\s*[:.\-]?\s*/i, '')
+  const s = stripBatchLabel(raw)
     .replace(/[‐-―]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()

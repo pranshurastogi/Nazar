@@ -9,7 +9,7 @@ import { publicClient } from '../arkiv/client.ts'
 import { DirectoryError, EntitiesQuery, type ArkivDirectory } from '../arkiv/directory.ts'
 import type { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
-import { BATCH_SHAPE, confusionKey, matchKey } from '../domain/batch.ts'
+import { BATCH_SHAPE, confusionKey, matchKey, stripBatchLabel } from '../domain/batch.ts'
 import { PRODUCT_CLASSES } from '../domain/vocab.ts'
 import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
@@ -274,7 +274,7 @@ export function createApp(deps: AppDeps) {
 
   /** The cached check shared by /v1/check and the MCP check_batch tool. */
   const cachedCheck = async (raw: string): Promise<CheckResponse> => {
-    const key = raw.trim().replace(/\s+/g, ' ').toUpperCase()
+    const key = stripBatchLabel(raw).replace(/\s+/g, ' ').toUpperCase()
     return { ...(await checkCache.get(key, () => check(raw))), asOf: now().toISOString() }
   }
 
@@ -286,7 +286,8 @@ export function createApp(deps: AppDeps) {
   })
 
   async function check(raw: string): Promise<CheckResponse> {
-    const batch = raw.trim().replace(/\s+/g, ' ').toUpperCase()
+    // People type what the pack says, label included ("B.No. SR-13"); match the batch alone.
+    const batch = stripBatchLabel(raw).replace(/\s+/g, ' ').toUpperCase()
     const asOf = now().toISOString()
     const base = { batch, asOf, alerts: [] as AlertDTO[], source: 'ledger' as const }
     if (!BATCH_SHAPE.test(batch) || matchKey(batch).length < 2) return { ...base, state: 'unreadable' }

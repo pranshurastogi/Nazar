@@ -68,6 +68,13 @@ describe('API', () => {
     expect(body.alerts[0]).toMatchObject({ peds: true, severity: 5, category: 'adulterated', state: 'IN-TN', entityKey: null, retracted: false, explorer: { entity: null, tx: null } })
   })
 
+  it('the label printed on the pack is ignored: "B.No. SR-13" is flagged, not "no alert"', async () => {
+    for (const typed of ['B.No. SR-13', 'B.No.SR-13', 'Batch No: SR-13', 'Batch SR-13', 'BNo SR-13', 'LOT SR-13']) {
+      const { body } = await get(`/v1/check?batch=${encodeURIComponent(typed)}`)
+      expect(body, typed).toMatchObject({ state: 'flagged', batch: 'SR-13' })
+    }
+  })
+
   it('5R-13 is a look-alike: unreadable with a suggestion, never flagged', async () => {
     const { body } = await get('/v1/check?batch=5R-13')
     expect(body).toMatchObject({ state: 'unreadable', suggestion: 'SR-13', alerts: [] })

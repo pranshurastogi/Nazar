@@ -36,8 +36,16 @@ export function confusionVariants(batch: string, cap = 48): string[] {
 
 export type Validated = { ok: true; batch: string } | { ok: false; batch: string }
 
+/**
+ * The label printed in front of a batch, which people type too: "B.No. SR-13", "B.No.SR-13",
+ * "Batch No: SR-13", "BNo SR-13", "Lot SR-13". Same rule as the API (Nazar-backend/src/domain/batch.ts):
+ * a prefix without a dot must be followed by a separator, so "BNO123" or "LOT7A" stay as typed.
+ */
+const BATCH_LABEL = /^(?:b\.\s*no\.?|b\s*no\.?(?=[\s:.#-])|batch(?:\s*(?:no\.?|number|#))?(?=[\s:.#-])|lot(?:\s*(?:no\.?|#))?(?=[\s:.#-]))\s*[:.#-]?\s*/i
+export const stripBatchLabel = (raw: string) => raw.trim().replace(BATCH_LABEL, '')
+
 export function validateBatch(input: string): Validated {
-  const batch = input.trim().toUpperCase()
+  const batch = stripBatchLabel(input).toUpperCase()
   return BATCH_SHAPE.test(batch) && matchKey(batch).length >= 2 ? { ok: true, batch } : { ok: false, batch }
 }
 

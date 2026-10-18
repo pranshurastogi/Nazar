@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { cleanBatch, confusionKey, isPlausibleBatch, matchKey, splitBatches } from '../../src/domain/batch.ts'
+import { cleanBatch, confusionKey, isPlausibleBatch, matchKey, splitBatches, stripBatchLabel } from '../../src/domain/batch.ts'
 
 describe('matchKey', () => {
   it('lowercases and strips separators', () => {
@@ -53,3 +53,15 @@ describe('splitBatches', () => {
     expect(splitBatches('SR-13, SR13')).toEqual(['SR-13'])
   })
 })
+
+describe('stripBatchLabel', () => {
+  it('drops the label people copy from the pack', () => {
+    for (const [typed, batch] of <[string, string][]>[['B.No. SR-13', 'SR-13'], ['B.No.SR-13', 'SR-13'], ['b.no sr-13', 'sr-13'], ['Batch No: SR-13', 'SR-13'], ['Batch Number: X-1', 'X-1'], ['BNo SR-13', 'SR-13'], ['LOT SR-13', 'SR-13'], ['Lot No. AB1234', 'AB1234'], ['B. No.: TG25-2281A', 'TG25-2281A']]) {
+      expect(stripBatchLabel(typed), typed).toBe(batch)
+    }
+  })
+  it('leaves real batches that start with the same letters alone', () => {
+    for (const b of ['BNO123', 'LOT7A', 'BATCH12', 'SR-13', 'B12']) expect(stripBatchLabel(b)).toBe(b)
+  })
+})
+
