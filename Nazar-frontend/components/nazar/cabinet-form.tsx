@@ -39,6 +39,7 @@ import { readPackPhoto, type PhotoStage } from '@/lib/scan/photo'
 import { validateBatch } from '@/lib/source'
 import { apiIdentifyMedicine } from '@/lib/source/api'
 import { API_URL } from '@/lib/source/config'
+import { tNow, useT, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // Add / edit form for the cabinet, shared by the Cabinet tab and the "Save to cabinet" action on
@@ -54,10 +55,10 @@ type Step = 'choose' | 'reading' | 'form'
 type Draft = { name: string; batch: string; expiry: string | null; note: string; composition: string; maker: string }
 
 const EMPTY: Draft = { name: '', batch: '', expiry: null, note: '', composition: '', maker: '' }
-const LABEL: Record<FieldKey, string> = { name: 'Medicine name', batch: 'Batch number', expiry: 'Expiry month', composition: 'Composition', maker: 'Made by' }
+const LABEL: Record<FieldKey, MessageKey> = { name: 'cabinet.form.name', batch: 'cabinet.form.batch', expiry: 'cabinet.form.expiry', composition: 'cabinet.composition', maker: 'cabinet.madeBy' }
 
-/** Once the server says AI guessing is off, stay quiet about it for the rest of the visit. */
-let aiOff: string | null = API_URL ? null : 'AI guessing isn’t available in this version.'
+/** Once the server says AI guessing is off, stay quiet about it for the rest of the visit (a key, shown in the page's language). */
+let aiOff: MessageKey | null = API_URL ? null : 'cabinet.form.aiOffVersion'
 
 function Field({ id, label, hint, error, below, children }: { id: string; label: string; hint?: string; error?: string; below?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -80,7 +81,7 @@ function Field({ id, label, hint, error, below, children }: { id: string; label:
 const toDraft = (v: Partial<Values>): Draft => ({ ...EMPTY, name: v.name ?? '', batch: v.batch ?? '', expiry: v.expiry || null, composition: v.composition ?? '', maker: v.maker ?? '' })
 const toValues = (d: Draft): Values => ({ name: d.name, batch: d.batch, expiry: d.expiry ?? '', composition: d.composition, maker: d.maker })
 const normName = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
-const idleAi = (): AiState => (aiOff ? { kind: 'disabled', message: aiOff } : { kind: 'idle' })
+const idleAi = (): AiState => (aiOff ? { kind: 'disabled', message: tNow(aiOff) } : { kind: 'idle' })
 
 export function CabinetFormDialog({
   open,
@@ -97,6 +98,7 @@ export function CabinetFormDialog({
   editing?: CabinetItem | null
   onSaved?: (item: CabinetItem, isNew: boolean) => void
 }) {
+  const { t, tr, locale } = useT()
   const uid = useId()
   const items = useCabinet()
   const [step, setStep] = useState<Step>('form')
@@ -248,9 +250,9 @@ export function CabinetFormDialog({
     if (mine !== gen.current) return
     if (!r.ok) {
       if (r.kind === 'disabled') {
-        aiOff = 'AI guessing isn’t available right now.'
-        setAi({ kind: 'disabled', message: aiOff })
-        setDetails({ kind: 'disabled', message: aiOff })
+        aiOff = 'cabinet.form.aiOffNow'
+        setAi({ kind: 'disabled', message: tNow(aiOff) })
+        setDetails({ kind: 'disabled', message: tNow(aiOff) })
       } else if (r.kind === 'limited') setState({ kind: 'limited', message: r.message, minutes: r.retryAfterSec ? Math.max(1, Math.ceil(r.retryAfterSec / 60)) : null })
       else setState({ kind: 'error', message: r.message })
       return
@@ -293,12 +295,12 @@ export function CabinetFormDialog({
     const next: Errors = {}
     const name = draft.name.trim()
     const v = validateBatch(draft.batch)
-    if (!name) next.name = 'Give it a name you will recognise, like "Crocin" or "Dad’s BP tablets".'
-    if (!draft.batch.trim()) next.batch = 'Enter the batch number printed after “B.No.”.'
-    else if (!v.ok) next.batch = 'Batch numbers use letters, digits and - / . ( ) only, 2 to 24 characters.'
+    if (!name) next.name = t('cabinet.form.errName')
+    if (!draft.batch.trim()) next.batch = t('cabinet.form.errBatchEmpty')
+    else if (!v.ok) next.batch = t('cabinet.form.errBatchInvalid')
     else {
       const dup = findByBatch(items, v.batch, editing?.id)
-      if (dup) next.batch = `Batch ${dup.batch} is already in your cabinet as “${dup.name}”.`
+      if (dup) next.batch = t('cabinet.form.errDup', { batch: dup.batch, name: dup.name })
     }
     setErrors(next)
     if (Object.keys(next).length) {
@@ -316,12 +318,12 @@ export function CabinetFormDialog({
     }
     if (editing) {
       updateItem(editing.id, clean)
-      toast.success('Cabinet updated')
+      toast.success(t('cabinet.form.updated'))
       const { composition, maker, ...rest } = clean
       onSaved?.({ ...editing, ...rest, ...(composition?.length ? { composition } : {}), ...(maker ? { maker } : {}) }, false)
     } else {
       const item = addItem(clean)
-      toast.success(`${item.name} saved to your cabinet`)
+      toast.success(t('cabinet.form.saved', { name: item.name }))
       onSaved?.(item, true)
     }
     onOpenChange(false)
@@ -341,18 +343,18 @@ export function CabinetFormDialog({
       <>
         {genericLine && (
           <p className="text-sm leading-5 text-muted-foreground" data-name-generic>
-            <span className="text-xs font-semibold tracking-wide uppercase">Generic</span> <span className="text-foreground">{genericLine}</span>
+            <span className="text-xs font-semibold tracking-wide uppercase">{t('cabinet.form.generic')}</span> <span className="text-foreground">{genericLine}</span>
           </p>
         )}
         {src && (
           <div className="flex flex-wrap gap-1.5">
-            <FieldSource source={src} field={LABEL[k]} />
+            <FieldSource source={src} field={t(LABEL[k])} />
           </div>
         )}
         {sug && (
           <SuggestionRow
             s={sug}
-            display={k === 'expiry' ? (formatExpiry(sug.value) ?? sug.value) : sug.value}
+            display={k === 'expiry' ? (formatExpiry(sug.value, locale) ?? sug.value) : sug.value}
             onUse={() => useSuggestion(sug)}
             onDismiss={() => setSuggestions((list) => list.filter((x) => x !== sug))}
           />
@@ -363,24 +365,24 @@ export function CabinetFormDialog({
 
   const weakReason =
     !photo?.values.name && !photo?.values.batch
-      ? 'No name or batch number was read'
+      ? t('cabinet.form.weakBoth')
       : !photo?.values.name
-        ? 'No medicine name was read'
+        ? t('cabinet.form.weakName')
         : !photo?.values.batch
-          ? 'No batch number was read'
-          : 'The label was hard to read'
+          ? t('cabinet.form.weakBatch')
+          : t('cabinet.form.weakHard')
   const showAi = !!photo && photo.weak && !photo.empty
   // A name but no salts: offer the small "Get salts and details" (the full guess covers it on a weak read).
   const showDetails =
     !!photo && details.kind !== 'disabled' && (details.kind !== 'idle' || (!showAi && wantsDetails(toValues(draft), photo.text)))
   const head =
     step === 'choose'
-      ? { eyebrow: 'My medicine cabinet', title: 'Add a medicine', desc: 'Saved only on this device. Nazar re-checks the batch each time you open your cabinet.' }
+      ? { eyebrow: t('cabinet.form.eyebrow'), title: t('cabinet.add'), desc: t('cabinet.form.desc') }
       : step === 'reading'
-        ? { eyebrow: 'Reading on this phone', title: 'Reading the label…', desc: 'Looking for a code, then reading the printed text. Nothing is uploaded.' }
+        ? { eyebrow: t('cabinet.form.readingEyebrow'), title: t('cabinet.form.readingTitle'), desc: t('cabinet.form.readingDesc') }
         : fromPhotoForm
-          ? { eyebrow: 'From your photo', title: 'Check what we read', desc: 'Compare each detail with the pack and fix anything that differs. Nothing is saved until you tap Add to cabinet.' }
-          : { eyebrow: 'My medicine cabinet', title: editing ? 'Edit medicine' : 'Add a medicine', desc: 'Saved only on this device. Nazar re-checks the batch each time you open your cabinet.' }
+          ? { eyebrow: t('cabinet.form.photoEyebrow'), title: t('cabinet.form.photoTitle'), desc: t('cabinet.form.photoDesc') }
+          : { eyebrow: t('cabinet.form.eyebrow'), title: editing ? t('cabinet.form.editTitle') : t('cabinet.add'), desc: t('cabinet.form.desc') }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -412,15 +414,15 @@ export function CabinetFormDialog({
                 <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-2" data-photo-strip>
                   {thumb ? (
                     // A local blob: URL, so a plain <img>: the photo is never uploaded.
-                    <img src={thumb} alt="Your photo of the pack" className="size-14 shrink-0 rounded-lg border object-cover" />
+                    <img src={thumb} alt={t('cabinet.form.photoAlt')} className="size-14 shrink-0 rounded-lg border object-cover" />
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <p className="text-xs leading-5 text-muted-foreground">
                       {photoFailed
-                        ? 'We couldn’t read this photo.'
+                        ? t('cabinet.form.photoFailed')
                         : photo?.empty
-                          ? 'We couldn’t read any details from this photo.'
-                          : 'Read on this phone. The photo is not saved or sent.'}
+                          ? t('cabinet.form.photoEmpty')
+                          : t('cabinet.form.photoLocal')}
                     </p>
                     <button
                       type="button"
@@ -428,14 +430,14 @@ export function CabinetFormDialog({
                       onClick={() => (resetPhoto(), setStep('choose'), focusHeading())}
                       data-photo-retake
                     >
-                      <ImagePlus className="size-4" aria-hidden="true" /> Use another photo
+                      <ImagePlus className="size-4" aria-hidden="true" /> {t('cabinet.form.retake')}
                     </button>
                   </div>
                 </div>
               )}
               {fromPhotoForm && (photoFailed || photo?.empty) && (
                 <p className="rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3 text-sm leading-6 text-caution" role="status" data-photo-unread>
-                  Try a closer, sharper photo of the label in good light, with the B.No. line in view, or type the details below.
+                  {t('cabinet.form.unread')}
                 </p>
               )}
 
@@ -443,18 +445,20 @@ export function CabinetFormDialog({
                 <div className="rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3" role="alert" data-photo-mismatch>
                   <p className="flex items-start gap-2 text-sm leading-6 font-semibold text-caution">
                     <TriangleAlert className="mt-1 size-4 shrink-0" aria-hidden="true" />
-                    Label details don&apos;t match. Show this pack to your chemist.
+                    {t('cabinet.form.mismatchTitle')}
                   </p>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    The code says batch <span className="font-mono font-semibold text-foreground">{photo.mismatch.code}</span>, the printed label says{' '}
-                    <span className="font-mono font-semibold text-foreground">{photo.mismatch.printed}</span>. They should be the same. Choose the one printed after B.No.
+                    {tr('cabinet.form.mismatchBody', {
+                      code: <span className="font-mono font-semibold text-foreground">{photo.mismatch.code}</span>,
+                      printed: <span className="font-mono font-semibold text-foreground">{photo.mismatch.printed}</span>,
+                    })}
                   </p>
                   <div className="mt-2 grid gap-2 min-[400px]:grid-cols-2">
                     <Button type="button" variant="outline" className="h-11 rounded-lg bg-card" aria-pressed={draft.batch === photo.mismatch.code} onClick={() => chooseBatch(photo.mismatch!.code, 'code')}>
-                      Code: <span className="font-mono">{photo.mismatch.code}</span>
+                      {tr('cabinet.form.codeBtn', { v: <span className="font-mono">{photo.mismatch.code}</span> })}
                     </Button>
                     <Button type="button" variant="outline" className="h-11 rounded-lg bg-card" aria-pressed={draft.batch === photo.mismatch.printed} onClick={() => chooseBatch(photo.mismatch!.printed, 'printed')}>
-                      Printed: <span className="font-mono">{photo.mismatch.printed}</span>
+                      {tr('cabinet.form.printedBtn', { v: <span className="font-mono">{photo.mismatch.printed}</span> })}
                     </Button>
                   </div>
                 </div>
@@ -472,13 +476,13 @@ export function CabinetFormDialog({
                 />
               )}
 
-              <Field id={ids.name} label="Medicine name" error={errors.name} below={below('name')}>
+              <Field id={ids.name} label={t('cabinet.form.name')} error={errors.name} below={below('name')}>
                 <input
                   id={ids.name}
                   value={draft.name}
                   onChange={(e) => set({ name: e.target.value })}
                   maxLength={NAME_MAX}
-                  placeholder="e.g. Crocin 650"
+                  placeholder={t('cabinet.form.namePh')}
                   autoComplete="off"
                   aria-invalid={!!errors.name}
                   aria-describedby={describe('name')}
@@ -486,13 +490,13 @@ export function CabinetFormDialog({
                 />
               </Field>
               {showDetails && <AiDetails state={details} onRun={getDetails} name={draft.name.trim()} />}
-              <Field id={ids.batch} label="Batch number" hint="After “B.No.” on the pack" error={errors.batch} below={below('batch')}>
+              <Field id={ids.batch} label={t('cabinet.form.batch')} hint={t('cabinet.form.batchHint')} error={errors.batch} below={below('batch')}>
                 <input
                   id={ids.batch}
                   value={draft.batch}
                   onChange={(e) => set({ batch: e.target.value.toUpperCase() })}
                   maxLength={24}
-                  placeholder="e.g. SR-13"
+                  placeholder={t('cabinet.form.batchPh')}
                   autoComplete="off"
                   autoCapitalize="characters"
                   spellCheck={false}
@@ -502,7 +506,7 @@ export function CabinetFormDialog({
                 />
               </Field>
               <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-                <Field id={ids.expiry} label="Expiry month" hint="Optional" below={below('expiry')}>
+                <Field id={ids.expiry} label={t('cabinet.form.expiry')} hint={t('cabinet.form.optional')} below={below('expiry')}>
                   <input
                     id={ids.expiry}
                     type="month"
@@ -511,13 +515,13 @@ export function CabinetFormDialog({
                     className={cn(fieldCls, 'scheme-light dark:scheme-dark')}
                   />
                 </Field>
-                <Field id={ids.note} label="Note" hint="Optional">
+                <Field id={ids.note} label={t('cabinet.form.note')} hint={t('cabinet.form.optional')}>
                   <input
                     id={ids.note}
                     value={draft.note}
                     onChange={(e) => set({ note: e.target.value })}
                     maxLength={NOTE_MAX}
-                    placeholder="For Dad, kids’ syrup…"
+                    placeholder={t('cabinet.form.notePh')}
                     autoComplete="off"
                     className={fieldCls}
                   />
@@ -526,24 +530,24 @@ export function CabinetFormDialog({
 
               {extra ? (
                 <div className="grid gap-4" data-cabinet-extra>
-                  <Field id={ids.composition} label="Composition" hint="Optional" below={below('composition')}>
+                  <Field id={ids.composition} label={t('cabinet.composition')} hint={t('cabinet.form.optional')} below={below('composition')}>
                     <input
                       id={ids.composition}
                       value={draft.composition}
                       onChange={(e) => set({ composition: e.target.value })}
                       maxLength={400}
-                      placeholder="e.g. Paracetamol IP 650 mg"
+                      placeholder={t('cabinet.form.compositionPh')}
                       autoComplete="off"
                       className={fieldCls}
                     />
                   </Field>
-                  <Field id={ids.maker} label="Made by" hint="Optional" below={below('maker')}>
+                  <Field id={ids.maker} label={t('cabinet.madeBy')} hint={t('cabinet.form.optional')} below={below('maker')}>
                     <input
                       id={ids.maker}
                       value={draft.maker}
                       onChange={(e) => set({ maker: e.target.value })}
                       maxLength={MAKER_MAX}
-                      placeholder="Manufacturer on the pack"
+                      placeholder={t('cabinet.form.makerPh')}
                       autoComplete="off"
                       className={fieldCls}
                     />
@@ -560,16 +564,16 @@ export function CabinetFormDialog({
                   }}
                   data-cabinet-extra-toggle
                 >
-                  <ChevronDown className="size-4" aria-hidden="true" /> Add ingredients and maker
+                  <ChevronDown className="size-4" aria-hidden="true" /> {t('cabinet.form.addExtra')}
                 </button>
               )}
             </div>
             <div className="flex flex-col-reverse gap-2 border-t bg-muted/40 px-5 py-4 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" className="h-12 sm:h-11" onClick={() => onOpenChange(false)}>
-                Cancel
+                {t('cabinet.form.cancel')}
               </Button>
               <Button type="submit" className="h-12 font-semibold sm:h-11">
-                {editing ? 'Save changes' : 'Add to cabinet'}
+                {editing ? t('cabinet.form.saveChanges') : t('cabinet.form.addToCabinet')}
               </Button>
             </div>
           </form>

@@ -5,63 +5,68 @@ import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { currentSnapshot, onSnapshot, type PipelineStatus } from '@/lib/source'
+import { translate, useT, type Locale, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /** The worker renews its heartbeat every 5 minutes; after 20 it is considered stopped. */
 const LIVE_WINDOW_MS = 20 * 60 * 1000
 
-export function timeAgo(ms: number, now = Date.now()) {
+/** "4 min ago" / "4 मिनट पहले". English unless a locale is passed (callers outside the translated surfaces stay English). */
+export function timeAgo(ms: number, now = Date.now(), locale: Locale = 'en') {
   const s = Math.max(0, Math.round((now - ms) / 1000))
-  if (s < 60) return 'just now'
+  if (s < 60) return translate(locale, 'time.justNow')
   const m = Math.round(s / 60)
-  if (m < 60) return `${m} min ago`
+  if (m < 60) return translate(locale, 'time.minAgo', { n: m })
   const h = Math.round(m / 60)
-  if (h < 48) return `${h} h ago`
-  return `${Math.round(h / 24)} d ago`
+  if (h < 48) return translate(locale, 'time.hAgo', { n: h })
+  return translate(locale, 'time.dAgo', { n: Math.round(h / 24) })
 }
 
-function describe(status: PipelineStatus, now: number, savedAt: Date | null) {
+function describe(status: PipelineStatus, now: number, savedAt: Date | null, locale: Locale) {
+  const t = (key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars)
+  const ago = (ms: number) => timeAgo(ms, now, locale)
   switch (status.kind) {
     case 'checking':
-      return { live: false, short: 'Connecting', long: 'Connecting…', tip: 'Looking for the Nazar API and Arkiv.' }
+      return { live: false, short: t('status.connecting.short'), long: t('status.connecting.long'), tip: t('status.connecting.tip') }
     case 'api':
     case 'arkiv': {
       const via = status.kind === 'api' ? 'Nazar API' : 'Arkiv'
       if (status.lastOkMs === null) {
         return {
           live: false,
-          short: 'Idle',
-          long: status.kind === 'api' ? 'API live · no pipeline run yet' : 'Arkiv · pipeline paused',
-          tip: `Answers come from ${via}. The pipeline has not reported in recently.`,
+          short: t('status.idle'),
+          long: status.kind === 'api' ? t('status.apiNoRun') : t('status.arkivPaused'),
+          tip: t('status.noReportTip', { via }),
         }
       }
       const fresh = now - status.lastOkMs < LIVE_WINDOW_MS
       return {
         live: fresh,
-        short: fresh ? 'Live' : 'Idle',
-        long: fresh ? `Pipeline live · checked ${timeAgo(status.lastOkMs, now)}` : `Pipeline idle · last run ${timeAgo(status.lastOkMs, now)}`,
-        tip: `Heartbeat read from ${via}. Regulator sites are re-checked every few minutes.`,
+        short: fresh ? t('status.live') : t('status.idle'),
+        long: fresh ? t('status.liveLong', { ago: ago(status.lastOkMs) }) : t('status.idleLong', { ago: ago(status.lastOkMs) }),
+        tip: t('status.heartbeatTip', { via }),
       }
     }
     case 'offline':
       if (savedAt) {
         return {
           live: false,
-          short: 'Saved copy',
-          long: 'Live sources down · saved copy',
-          tip: `Neither the Nazar API nor Arkiv answered. Checks use Nazar's saved copy of every published alert, from ${timeAgo(savedAt.getTime(), now)}.`,
+          short: t('status.saved.short'),
+          long: t('status.saved.long'),
+          tip: t('status.saved.tip', { ago: ago(savedAt.getTime()) }),
         }
       }
       return {
         live: false,
-        short: 'Offline',
-        long: 'Offline · demo data',
-        tip: 'Neither the Nazar API nor Arkiv answered. Checks use built-in sample alerts.',
+        short: t('status.offline.short'),
+        long: t('status.offline.long'),
+        tip: t('status.offline.tip'),
       }
   }
 }
 
 export function StatusPill({ status }: { status: PipelineStatus }) {
+  const { t, locale } = useT()
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -74,7 +79,7 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
     setSavedAt(currentSnapshot()?.generatedAt ?? null)
     return onSnapshot((s) => setSavedAt(s.generatedAt))
   }, [])
-  const d = describe(status, now, savedAt)
+  const d = describe(status, now, savedAt, locale)
   return (
     <Tooltip>
       <TooltipTrigger
@@ -82,7 +87,7 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
           <Badge
             variant="outline"
             data-status={status.kind}
-            aria-label={`Status: ${d.long}`}
+            aria-label={t('status.aria', { text: d.long })}
             className="h-11 min-w-0 shrink gap-2 rounded-full border-0 bg-card px-3.5 text-xs font-semibold text-muted-foreground shadow-xs ring-1 ring-border ring-inset"
           />
         }

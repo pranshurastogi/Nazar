@@ -4,6 +4,7 @@ import { useRef } from 'react'
 import { Camera, ChevronRight, ImageUp, Keyboard, Lock } from 'lucide-react'
 
 import { warmPhotoReader } from '@/lib/scan/photo'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The first step of "Add a medicine": three ways in. A photo of the pack is the quick one, so it
@@ -13,6 +14,7 @@ const tile =
   'group flex min-h-[4.5rem] w-full items-center gap-3 rounded-2xl border bg-card px-3.5 py-3 text-left transition-colors outline-none hover:bg-muted/60 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 active:translate-y-px'
 
 export function AddChooser({ onPhoto, onType }: { onPhoto: (file: File) => void; onType: () => void }) {
+  const { t } = useT()
   const cameraRef = useRef<HTMLInputElement>(null)
   const uploadRef = useRef<HTMLInputElement>(null)
 
@@ -38,8 +40,8 @@ export function AddChooser({ onPhoto, onType }: { onPhoto: (file: File) => void;
           <Camera className="size-6" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-base leading-snug font-semibold">Take a photo of the pack</span>
-          <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-primary-foreground/80">Nazar reads the name, batch and expiry for you</span>
+          <span className="block text-base leading-snug font-semibold">{t('cabinet.choose.photo')}</span>
+          <span className="mt-0.5 block text-[13px] leading-5 text-pretty text-primary-foreground/80">{t('cabinet.choose.photoHint')}</span>
         </span>
         <ChevronRight className="size-5 shrink-0 opacity-70 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
       </button>
@@ -49,19 +51,19 @@ export function AddChooser({ onPhoto, onType }: { onPhoto: (file: File) => void;
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
             <ImageUp className="size-5" aria-hidden="true" />
           </span>
-          <span className="min-w-0 text-sm leading-snug font-semibold">Upload a photo</span>
+          <span className="min-w-0 text-sm leading-snug font-semibold">{t('cabinet.choose.upload')}</span>
         </button>
         <button type="button" className={tile} onClick={onType} data-add-type>
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
             <Keyboard className="size-5" aria-hidden="true" />
           </span>
-          <span className="min-w-0 text-sm leading-snug font-semibold">Type it in</span>
+          <span className="min-w-0 text-sm leading-snug font-semibold">{t('cabinet.choose.type')}</span>
         </button>
       </div>
 
       <p className="mt-1 flex items-start justify-center gap-1.5 text-center text-xs leading-5 text-muted-foreground" data-add-privacy>
         <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        <span>Photos are read on this device and never uploaded.</span>
+        <span>{t('cabinet.choose.privacy')}</span>
       </p>
 
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden="true" data-add-camera onChange={take} />

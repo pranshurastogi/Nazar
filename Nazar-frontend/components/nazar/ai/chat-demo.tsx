@@ -5,8 +5,9 @@ import { useReducedMotion } from 'motion/react'
 import { ArrowUp, ArrowUpRight, Check, ChevronDown, Loader2, RotateCcw, Sparkles, Wrench } from 'lucide-react'
 
 import { SentinelEye, type SentinelState } from '@/components/ui/sentinel-core'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-import { FETCHED_ON, SCENARIOS, STATE_TONE, STATE_WORD, type ReplyPara, type Scenario } from './data'
+import { FETCHED_ON, SCENARIOS, STATE_TONE, type ReplyPara, type Scenario } from './data'
 
 // The page's signature graphic: a person asks an assistant about a batch, the assistant calls
 // Nazar's check_batch tool, the sentinel eye scans and lands on the answer, and the reply streams
@@ -36,11 +37,7 @@ function planFor(s: Scenario) {
   return { type, sent, think, call, result, reply, words, done }
 }
 
-const STEP4: Record<Scenario['id'], string> = {
-  flagged: 'The reply cites the notice and Arkiv',
-  unreadable: 'The reply asks you to re-read the pack',
-  no_alert: 'The reply says it is not a certificate',
-}
+// The transcript (question, tool result, reply) is the server's real English; only the frame around it is translated.
 
 function Reply({ paras, shown }: { paras: ReplyPara[]; shown: number }) {
   let i = 0
@@ -74,11 +71,12 @@ function Reply({ paras, shown }: { paras: ReplyPara[]; shown: number }) {
 }
 
 function ToolResult({ text, on }: { text: string; on: boolean }) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const long = text.length > 260
   return (
     <div className={cn('ai-reveal border-t border-dashed px-3 pt-2.5 pb-3', on && 'is-on')}>
-      <p className="text-[10.5px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">Result from Nazar</p>
+      <p className="text-[10.5px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{t('ai.demo.result')}</p>
       <pre
         id="ai-tool-result"
         className={cn(
@@ -98,7 +96,7 @@ function ToolResult({ text, on }: { text: string; on: boolean }) {
           tabIndex={on ? 0 : -1}
           className="-mx-1 -mb-2 mt-0.5 inline-flex min-h-11 items-center gap-1 rounded-md px-1 text-xs font-medium text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
-          {open ? 'Show less' : 'Show the full result'}
+          {open ? t('ai.demo.showLess') : t('ai.demo.showFull')}
           <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} aria-hidden="true" />
         </button>
       )}
@@ -107,6 +105,7 @@ function ToolResult({ text, on }: { text: string; on: boolean }) {
 }
 
 export function ChatDemo() {
+  const { t: tx, tr } = useT()
   const reduce = useReducedMotion()
   const rootRef = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(0)
@@ -167,16 +166,16 @@ export function ChatDemo() {
   }
 
   const steps = [
-    { label: 'You ask in plain words', on: sent },
-    { label: 'The assistant calls check_batch', on: calling },
-    { label: 'Nazar answers from regulator alerts', on: resulted },
-    { label: STEP4[s.id], on: done },
+    { label: tx('ai.demo.step1'), on: sent },
+    { label: tx('ai.demo.step2', { code: 'check_batch' }), on: calling },
+    { label: tx('ai.demo.step3'), on: resulted },
+    { label: tx(`ai.demo.step4.${s.id}`), on: done },
   ]
-  const caption = !calling ? 'Watching' : !resulted ? `Checking ${s.batch}…` : STATE_WORD[s.id]
+  const caption = !calling ? tx('ai.demo.watching') : !resulted ? tx('ai.demo.checking', { batch: s.batch }) : tx(`ai.demo.word.${s.id}`)
 
   return (
     <div ref={rootRef} className="overflow-hidden rounded-3xl border bg-card shadow-[0_1px_0_0_rgb(0_0_0/0.02),0_24px_48px_-32px_rgb(15_23_42/0.25)]" data-chat-demo data-scenario={s.id} data-phase={phase}>
-      <div role="tablist" aria-label="Example questions" className="grid grid-cols-3 border-b bg-muted/30">
+      <div role="tablist" aria-label={tx('ai.demo.tabsAria')} className="grid grid-cols-3 border-b bg-muted/30">
         {SCENARIOS.map((sc, i) => {
           const on = i === active
           return (
@@ -198,7 +197,7 @@ export function ChatDemo() {
             >
               <span className="flex items-center gap-1.5 text-[13px] font-semibold">
                 <span className={cn('size-2 shrink-0 rounded-full', STATE_TONE[sc.id].dot)} aria-hidden="true" />
-                {sc.tab}
+                {tx(`ai.demo.tab.${sc.id}`)}
               </span>
               <span className="font-mono text-[11.5px] text-muted-foreground">{sc.batch}</span>
               {on && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary" aria-hidden="true" />}
@@ -209,7 +208,7 @@ export function ChatDemo() {
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_15.5rem]">
         {/* The watcher: a compact strip on phones, a side panel on wide screens. */}
-        <aside className="flex items-center gap-4 border-b px-4 py-3 sm:px-5 lg:sticky lg:top-4 lg:order-2 lg:flex-col lg:items-stretch lg:gap-0 lg:self-start lg:border-b-0 lg:px-6 lg:py-7" aria-label="What Nazar is doing" data-demo-eye>
+        <aside className="flex items-center gap-4 border-b px-4 py-3 sm:px-5 lg:sticky lg:top-4 lg:order-2 lg:flex-col lg:items-stretch lg:gap-0 lg:self-start lg:border-b-0 lg:px-6 lg:py-7" aria-label={tx('ai.demo.eyeAria')} data-demo-eye>
           <div className="flex shrink-0 justify-center">
             <SentinelEye state={eye} className="w-20 lg:w-44" />
           </div>
@@ -221,7 +220,7 @@ export function ChatDemo() {
               {steps.filter((x) => x.on).length}/4 · {(steps.findLast((x) => x.on) ?? steps[0]).label}
             </p>
           </div>
-          <ol className="mt-6 hidden gap-3 border-t pt-5 lg:grid" aria-label="Steps">
+          <ol className="mt-6 hidden gap-3 border-t pt-5 lg:grid" aria-label={tx('ai.demo.stepsAria')}>
             {steps.map((st, i) => (
               <li key={i} className={cn('flex items-start gap-2.5 text-[12.5px] leading-5 transition-colors', st.on ? 'text-foreground' : 'text-muted-foreground/70')}>
                 <span
@@ -233,17 +232,11 @@ export function ChatDemo() {
                 >
                   {st.on ? <Check className="size-3" strokeWidth={3} /> : i + 1}
                 </span>
-                {st.label.includes('check_batch') ? (
-                  <span>
-                    The assistant calls <code className="font-mono text-[11.5px] font-semibold">check_batch</code>
-                  </span>
-                ) : (
-                  st.label
-                )}
+                {i === 1 ? <span>{tr('ai.demo.step2', { code: <code className="font-mono text-[11.5px] font-semibold">check_batch</code> })}</span> : st.label}
               </li>
             ))}
           </ol>
-          <p className="hidden pt-6 text-[11px] leading-4 text-muted-foreground lg:block">Real responses from the live server, recorded {FETCHED_ON}.</p>
+          <p className="hidden pt-6 text-[11px] leading-4 text-muted-foreground lg:block">{tx('ai.demo.recorded', { date: FETCHED_ON })}</p>
         </aside>
 
         <div className="flex min-w-0 flex-col lg:order-1 lg:border-r">
@@ -251,7 +244,8 @@ export function ChatDemo() {
             <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
               <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
               <span className="truncate">
-                Your assistant · <span className="font-medium text-foreground">connected to nazar</span>
+                {tx('ai.demo.yourAssistant')}
+                <span className="font-medium text-foreground">{tx('ai.demo.connected')}</span>
               </span>
             </p>
             <button
@@ -260,7 +254,7 @@ export function ChatDemo() {
               className="-mr-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
               data-demo-replay
             >
-              <RotateCcw className="size-3.5" aria-hidden="true" /> Replay
+              <RotateCcw className="size-3.5" aria-hidden="true" /> {tx('ai.demo.replay')}
             </button>
           </div>
 
@@ -300,7 +294,7 @@ export function ChatDemo() {
                             {s.id}
                           </span>
                         ) : (
-                          <Loader2 className="size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" aria-label="Waiting for Nazar" />
+                          <Loader2 className="size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none" aria-label={tx('ai.demo.waiting')} />
                         )}
                       </span>
                     </div>
@@ -344,7 +338,7 @@ export function ChatDemo() {
                     <span className="ai-caret" />
                   </>
                 ) : (
-                  'Ask about a batch number…'
+                  tx('ai.demo.composer')
                 )}
               </p>
               <span className={cn('grid size-8 shrink-0 place-items-center rounded-full transition-colors', typed && !sent ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
@@ -354,7 +348,7 @@ export function ChatDemo() {
           </div>
         </div>
       </div>
-      <p className="border-t px-4 py-2.5 text-[11px] leading-4 text-muted-foreground lg:hidden">Real responses from the live server, recorded {FETCHED_ON}.</p>
+      <p className="border-t px-4 py-2.5 text-[11px] leading-4 text-muted-foreground lg:hidden">{tx('ai.demo.recorded', { date: FETCHED_ON })}</p>
     </div>
   )
 }

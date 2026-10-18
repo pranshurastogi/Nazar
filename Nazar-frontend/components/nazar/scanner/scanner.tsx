@@ -24,8 +24,9 @@ import { confidenceOf, prepareForOcr, recognize, recognizeLabel, releaseOcrSoon,
 import { packSummary, type PackLabel } from '@/lib/scan/pack'
 import { bestCodeRead as bestRead } from '@/lib/scan/photo'
 import { interpretOcr, readPack, readsDisagree, Vote, withCodeName, type ScanRead } from '@/lib/scan/read'
+import { useT, type MessageKey, type Vars } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
-import { ScanResult, type Found } from './scan-result'
+import { moreIn, ScanResult, type Found } from './scan-result'
 import { ViewfinderOverlay, cropFor } from './viewfinder'
 
 type Blocked = 'denied' | 'nocamera' | 'busy' | 'insecure' | 'unsupported'
@@ -36,7 +37,7 @@ type Phase =
   | { kind: 'live' }
   | { kind: 'blocked'; reason: Blocked }
   | { kind: 'photo' }
-  | { kind: 'empty'; note: string; pack?: PackLabel | null }
+  | { kind: 'empty'; note: MessageKey; pack?: PackLabel | null }
   | { kind: 'result'; found: Found }
 
 /** Codes are error-corrected, so two identical frames settle it; printed text needs 3 of the last 5. */
@@ -48,7 +49,14 @@ const FRAME_GAP_MS = 160
 const FRAME_MAX_W = 1280
 const CROSS_CHECK_MS = 12_000
 
-const SOURCE_TEXT = { qr: 'QR code', datamatrix: 'Data Matrix code', barcode: 'barcode', text: 'printed text' } as const
+const SOURCE_TEXT = { qr: 'scan.src.qr', datamatrix: 'scan.src.datamatrix', barcode: 'scan.src.barcode', text: 'scan.src.text' } as const satisfies Record<string, MessageKey>
+
+/**
+ * A message kept as a key, not as text, so the status line and the screen-reader announcement follow
+ * a language switch mid-scan. `keys` are placeholders that are themselves translated (a source, a note).
+ */
+type Msg = { key: MessageKey; vars?: Vars; keys?: Record<string, MessageKey> } | null
+const msg = (key: MessageKey, vars?: Vars, keys?: Record<string, MessageKey>): Msg => ({ key, vars, keys })
 
 function drawFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
   const scale = Math.min(1, FRAME_MAX_W / video.videoWidth)
@@ -80,8 +88,14 @@ export function Scanner({
   typeTarget?: React.RefObject<HTMLElement | null>
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
-  const [status, setStatus] = useState('')
-  const [announce, setAnnounce] = useState('')
+  const { t, tr } = useT()
+  const [status, setStatus] = useState<Msg>(null)
+  const [announce, setAnnounce] = useState<Msg>(null)
+  const say = (m: Msg) => {
+    if (!m) return ''
+    const keyed = Object.fromEntries(Object.entries(m.keys ?? {}).map(([k, v]) => [k, t(v)]))
+    return t(m.key, { ...m.vars, ...keyed })
+  }
   const [torch, setTorch] = useState<{ available: boolean; on: boolean }>({ available: false, on: false })
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
 
@@ -110,10 +124,10 @@ export function Scanner({
       setPhase({ kind: 'result', found })
       setAnnounce(
         found.mismatch
-          ? "Label details don't match. Show this pack to your chemist."
+          ? msg('scan.mismatch')
           : found.batch
-            ? `Read batch ${found.batch} from the ${SOURCE_TEXT[found.source]}. Check it?`
-            : 'Read the pack, but no batch number was found.',
+            ? msg('scan.announce.read', { batch: found.batch }, { source: SOURCE_TEXT[found.source] })
+            : msg('scan.announce.noBatch'),
       )
     },
     [stopCamera],
@@ -133,7 +147,7 @@ export function Scanner({
           if (p.kind !== 'result') return p
           const printed = read?.printed
           const mismatch = codeBatch && printed?.batch && readsDisagree(codeBatch, printed.batch) ? { code: codeBatch, printed: printed.batch } : undefined
-          if (mismatch) setAnnounce("Label details don't match. Show this pack to your chemist.")
+          if (mismatch) setAnnounce(msg('scan.mismatch'))
           const pack = withCodeName(read?.pack ?? p.found.pack, p.found.codeName) ?? undefined
           return { kind: 'result', found: { ...p.found, crossCheck: codeBatch ? 'done' : p.found.crossCheck, mismatch, pack, packPending: false } }
         })
@@ -151,7 +165,7 @@ export function Scanner({
       let codeMeta: ScanRead | null = null
       let ocrBusy = false
       const started = performance.now()
-      setStatus('Looking for a QR code or barcode')
+      setStatus(msg('scan.status.looking'))
 
       const tick = async () => {
         if (gen !== genRef.current) return
@@ -181,16 +195,16 @@ export function Scanner({
                 crossCheck(snapshot, lead.batch, gen)
                 return
               }
-              setStatus(`Seen ${lead.batch} · hold steady`)
+              setStatus(msg('scan.status.seen', { batch: lead.batch }))
             } else if (read && !read.batch) {
               codeMeta = read
-              setStatus('This code names the product, not the batch. Show the B.No. line too.')
+              setStatus(msg('scan.status.productCode'))
             }
           } catch {}
 
           if (!ocrBusy && performance.now() - started > OCR_AFTER_MS) {
             ocrBusy = true
-            if (!codeMeta) setStatus('No code found. Reading the printed B.No. line')
+            if (!codeMeta) setStatus(msg('scan.status.noCode'))
             const crop = prepareForOcr(video, video.videoWidth, video.videoHeight, cropFor(video))
             recognize(crop, 'block')
               .then((r) => {
@@ -216,9 +230,9 @@ export function Scanner({
                     packPending: true,
                   })
                   crossCheck(still, null, gen)
-                } else setStatus(`Reading ${lead.batch} · ${lead.votes} of ${TEXT_VOTES} reads`)
+                } else setStatus(msg('scan.status.reading', { batch: lead.batch, n: lead.votes, total: TEXT_VOTES }))
               })
-              .catch(() => gen === genRef.current && setStatus('Printed text reader unavailable. Try a photo or type it.'))
+              .catch(() => gen === genRef.current && setStatus(msg('scan.status.ocrDown')))
               .finally(() => (ocrBusy = false))
           }
         }
@@ -279,7 +293,7 @@ export function Scanner({
     if (!open) return
     let cancelled = false
     typingRef.current = false
-    setAnnounce('')
+    setAnnounce(null)
     ;(async () => {
       if (!window.isSecureContext) return setPhase({ kind: 'blocked', reason: 'insecure' })
       if (!navigator.mediaDevices?.getUserMedia) return setPhase({ kind: 'blocked', reason: 'unsupported' })
@@ -297,7 +311,7 @@ export function Scanner({
       genRef.current++
       stopCamera()
       setPhase({ kind: 'idle' })
-      setStatus('')
+      setStatus(null)
       releaseOcrSoon()
     }
   }, [open, startCamera, stopCamera])
@@ -343,7 +357,7 @@ export function Scanner({
     stopCamera()
     const gen = ++genRef.current
     setPhase({ kind: 'photo' })
-    setAnnounce('Reading the photo on this device')
+    setAnnounce(msg('scan.announce.photo'))
     try {
       const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
       const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height))
@@ -360,7 +374,7 @@ export function Scanner({
         crossCheck(ocrInput, code.batch, gen)
         return
       }
-      setAnnounce('No batch in a code. Reading the printed text on this device')
+      setAnnounce(msg('scan.announce.photoText'))
       const r = await recognizeLabel(ocrInput, { tryHarder: true })
       if (gen !== genRef.current) return
       const text = interpretOcr(r.text)
@@ -380,16 +394,14 @@ export function Scanner({
         })
         return
       }
-      const note = code?.gtin
-        ? 'The code on this pack names the product, not the batch, and no B.No. line was readable.'
-        : "We couldn't find a batch number in this photo."
+      const note: MessageKey = code?.gtin ? 'scan.note.productCode' : 'scan.note.noBatch'
       const named = packSummary(pack).name
       setPhase({ kind: 'empty', note, pack })
-      setAnnounce(named ? `Read ${named}, but no batch number. ${note}` : note)
+      setAnnounce(named ? msg('scan.announce.named', { name: named }, { note }) : msg(note))
     } catch {
       if (gen !== genRef.current) return
-      setPhase({ kind: 'empty', note: "We couldn't read this photo." })
-      setAnnounce("We couldn't read this photo.")
+      setPhase({ kind: 'empty', note: 'scan.note.unreadable' })
+      setAnnounce(msg('scan.note.unreadable'))
     } finally {
       if (fileRef.current) fileRef.current.value = ''
     }
@@ -418,12 +430,12 @@ export function Scanner({
         >
           <header className="flex items-start gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:px-5 sm:pt-5">
             <div className="min-w-0 flex-1">
-              <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">Scan the pack</DialogPrimitive.Title>
+              <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">{t('scan.title')}</DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-0.5 text-sm text-muted-foreground">
-                Point at the QR code, or the line that says <span className="font-mono">B.No.</span>
+                {tr('scan.desc', { code: <span className="font-mono">B.No.</span> })}
               </DialogPrimitive.Description>
             </div>
-            <DialogPrimitive.Close render={<Button variant="ghost" className="-mr-2 size-12 rounded-full" aria-label="Close scanner" />}>
+            <DialogPrimitive.Close render={<Button variant="ghost" className="-mr-2 size-12 rounded-full" aria-label={t('scan.close')} />}>
               <X className="size-5" />
             </DialogPrimitive.Close>
           </header>
@@ -436,7 +448,7 @@ export function Scanner({
                 {phase.kind === 'live' && (
                   <span className="absolute top-3 left-3 inline-flex h-12 items-center gap-2 rounded-full bg-black/55 pr-3.5 pl-2 text-xs font-semibold text-white backdrop-blur-sm" data-scan-eye>
                     <SentinelEye state="scanning" follow={false} className="w-11" />
-                    Looking
+                    {t('scan.looking')}
                   </span>
                 )}
                 <div className="absolute top-3 right-3 flex gap-2">
@@ -445,14 +457,14 @@ export function Scanner({
                       variant="ghost"
                       onClick={toggleTorch}
                       aria-pressed={torch.on}
-                      aria-label={torch.on ? 'Turn torch off' : 'Turn torch on'}
+                      aria-label={torch.on ? t('scan.torchOff') : t('scan.torchOn')}
                       className="size-12 rounded-full bg-black/55 text-white hover:bg-black/70 hover:text-white"
                     >
                       {torch.on ? <ZapOff className="size-5" /> : <Zap className="size-5" />}
                     </Button>
                   )}
                   {cameras.length > 1 && (
-                    <Button variant="ghost" onClick={switchCamera} aria-label="Switch camera" className="size-12 rounded-full bg-black/55 text-white hover:bg-black/70 hover:text-white">
+                    <Button variant="ghost" onClick={switchCamera} aria-label={t('scan.switchCamera')} className="size-12 rounded-full bg-black/55 text-white hover:bg-black/70 hover:text-white">
                       <SwitchCamera className="size-5" />
                     </Button>
                   )}
@@ -460,20 +472,20 @@ export function Scanner({
                 <p className="absolute inset-x-3 bottom-3 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-black/60 px-3 py-2 text-center text-sm font-medium text-white backdrop-blur-sm" role="status">
                   {phase.kind === 'starting' ? (
                     <>
-                      <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> Starting the camera…
+                      <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" /> {t('scan.starting')}
                     </>
                   ) : (
-                    status
+                    say(status)
                   )}
                 </p>
               </div>
             )}
 
             {phase.kind === 'prompt' && (
-              <StatePanel art={<SentinelEye className="w-40" />} title="Read the pack with your camera">
-                <p>Nazar reads the QR code or the printed batch number. The picture is read on this phone and never uploaded.</p>
+              <StatePanel art={<SentinelEye className="w-40" />} title={t('scan.promptTitle')}>
+                <p>{t('scan.promptBody')}</p>
                 <Button className="mt-5 h-12 w-full rounded-xl text-base font-semibold sm:w-auto sm:px-6" onClick={() => startCamera()}>
-                  <Camera data-icon="inline-start" /> Use camera
+                  <Camera data-icon="inline-start" /> {t('scan.useCamera')}
                 </Button>
               </StatePanel>
             )}
@@ -481,17 +493,17 @@ export function Scanner({
             {phase.kind === 'blocked' && <BlockedPanel reason={phase.reason} onRetry={() => startCamera()} />}
 
             {phase.kind === 'photo' && (
-              <StatePanel art={<SentinelEye state="scanning" follow={false} className="w-40" />} title="Reading the photo…" busy>
-                <p>Looking for a code, then for the printed B.No. line. This happens on your phone.</p>
+              <StatePanel art={<SentinelEye state="scanning" follow={false} className="w-40" />} title={t('scan.photoTitle')} busy>
+                <p>{t('scan.photoBody')}</p>
               </StatePanel>
             )}
 
             {phase.kind === 'empty' && (
-              <StatePanel icon={<ShieldAlert />} title="No batch number found" tone="caution">
+              <StatePanel icon={<ShieldAlert />} title={t('scan.emptyTitle')} tone="caution">
                 <EmptyName pack={phase.pack} />
-                <p>{phase.note} Try a closer, sharper photo of the B.No. line in good light, or type it in.</p>
+                <p>{t('scan.emptyBody', { note: t(phase.note) })}</p>
                 <Button variant="outline" className="mt-5 h-12 rounded-xl px-5" onClick={() => startCamera()}>
-                  <Camera data-icon="inline-start" /> Try the camera again
+                  <Camera data-icon="inline-start" /> {t('scan.tryCameraAgain')}
                 </Button>
               </StatePanel>
             )}
@@ -510,10 +522,10 @@ export function Scanner({
           <footer className="mt-auto grid gap-2 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
             <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2">
               <Button variant="outline" className="h-12 rounded-xl text-sm font-semibold" onClick={() => fileRef.current?.click()}>
-                <ImageUp data-icon="inline-start" /> Upload a photo of the pack
+                <ImageUp data-icon="inline-start" /> {t('scan.upload')}
               </Button>
               <Button variant="outline" className="h-12 rounded-xl text-sm font-semibold" onClick={typeInstead}>
-                <Keyboard data-icon="inline-start" /> Type it instead
+                <Keyboard data-icon="inline-start" /> {t('scan.typeInstead')}
               </Button>
             </div>
             <input
@@ -528,11 +540,11 @@ export function Scanner({
               onChange={(e) => onPhoto(e.target.files?.[0])}
             />
             <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
-              <Lock className="size-3.5 shrink-0" /> Images are read on this device and never leave it.
+              <Lock className="size-3.5 shrink-0" /> {t('scan.privacy')}
             </p>
           </footer>
           <p className="sr-only" aria-live="polite" aria-atomic="true" data-scan-announce>
-            {announce}
+            {say(announce)}
           </p>
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
@@ -567,49 +579,59 @@ function StatePanel({
 
 /** The medicine name read from a photo that had no batch number: the name still helps the person. */
 function EmptyName({ pack }: { pack?: PackLabel | null }) {
-  const { name, detail } = packSummary(pack)
+  const { tr, locale } = useT()
+  const { name, detail: read } = packSummary(pack)
+  const detail = moreIn(locale, read)
   if (!name) return null
   return (
     <p className="mb-2 text-foreground" data-scan-empty-name>
-      We read <span className="font-semibold">{name}</span>
+      {tr('scan.emptyName', { name: <span className="font-semibold">{name}</span> })}
       {detail ? <span className="text-muted-foreground"> · {detail}</span> : null}
     </p>
   )
 }
 
-const BLOCKED: Record<Blocked, { title: string; body: React.ReactNode; retry?: boolean }> = {
-  denied: {
-    title: 'Camera access is off for Nazar',
-    body: (
-      <>
-        <p>To scan, allow the camera for this site, then try again:</p>
-        <ul className="mt-3 grid gap-1.5 text-left">
-          <li><span className="font-semibold text-foreground">Chrome (Android):</span> tap the icon left of the address, then Permissions → Camera → Allow.</li>
-          <li><span className="font-semibold text-foreground">Safari (iPhone):</span> tap <span className="font-mono">aA</span> in the address bar → Website Settings → Camera → Allow.</li>
-          <li><span className="font-semibold text-foreground">Desktop:</span> click the camera or lock icon in the address bar and allow the camera.</li>
-        </ul>
-      </>
-    ),
-    retry: true,
-  },
-  nocamera: { title: 'No camera found', body: <p>This device has no camera we can use. Upload a photo of the pack or type the batch number.</p>, retry: true },
-  busy: { title: 'The camera is in use', body: <p>Another app or tab is using the camera. Close it, then try again.</p>, retry: true },
-  insecure: {
-    title: 'The camera needs a secure connection',
-    body: <p>Browsers only allow the camera on pages opened over <span className="font-mono">https://</span>. Open Nazar with https, or upload a photo instead.</p>,
-  },
-  unsupported: { title: "This browser can't open the camera", body: <p>Upload a photo of the pack or type the batch number instead.</p> },
+function blockedCopy(reason: Blocked, t: ReturnType<typeof useT>['t'], tr: ReturnType<typeof useT>['tr']): { title: string; body: React.ReactNode; retry?: boolean } {
+  switch (reason) {
+    case 'denied':
+      return {
+        title: t('scan.blocked.denied.title'),
+        body: (
+          <>
+            <p>{t('scan.blocked.denied.lead')}</p>
+            <ul className="mt-3 grid gap-1.5 text-left">
+              <li><span className="font-semibold text-foreground">{t('scan.blocked.chrome')}</span>{t('scan.blocked.chromeSteps')}</li>
+              <li><span className="font-semibold text-foreground">{t('scan.blocked.safari')}</span>{tr('scan.blocked.safariSteps', { code: <span className="font-mono">aA</span> })}</li>
+              <li><span className="font-semibold text-foreground">{t('scan.blocked.desktop')}</span>{t('scan.blocked.desktopSteps')}</li>
+            </ul>
+          </>
+        ),
+        retry: true,
+      }
+    case 'nocamera':
+      return { title: t('scan.blocked.nocamera.title'), body: <p>{t('scan.blocked.nocamera.body')}</p>, retry: true }
+    case 'busy':
+      return { title: t('scan.blocked.busy.title'), body: <p>{t('scan.blocked.busy.body')}</p>, retry: true }
+    case 'insecure':
+      return {
+        title: t('scan.blocked.insecure.title'),
+        body: <p>{tr('scan.blocked.insecure.body', { https: <span className="font-mono">https://</span> })}</p>,
+      }
+    case 'unsupported':
+      return { title: t('scan.blocked.unsupported.title'), body: <p>{t('scan.blocked.unsupported.body')}</p> }
+  }
 }
 
 function BlockedPanel({ reason, onRetry }: { reason: Blocked; onRetry: () => void }) {
-  const b = BLOCKED[reason]
+  const { t, tr } = useT()
+  const b = blockedCopy(reason, t, tr)
   return (
     <div data-blocked={reason} className="flex flex-1 flex-col">
       <StatePanel icon={<CameraOff />} title={b.title} tone="caution">
         {b.body}
         {b.retry && (
           <Button variant="outline" className="mt-5 h-12 rounded-xl px-5" onClick={onRetry}>
-            <Camera data-icon="inline-start" /> Try again
+            <Camera data-icon="inline-start" /> {t('scan.tryAgain')}
           </Button>
         )}
       </StatePanel>

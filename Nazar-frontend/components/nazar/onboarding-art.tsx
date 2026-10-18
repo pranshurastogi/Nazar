@@ -5,6 +5,7 @@ import { motion } from 'motion/react'
 import { CircleHelp, FileText, Hash, History, Lock, Search, Smartphone, TriangleAlert } from 'lucide-react'
 
 import { NazarMark } from '@/components/nazar/logo'
+import { regionName, useT } from '@/lib/i18n'
 import { stateName } from '@/lib/source/labels'
 import { STATIC_SOURCES } from '@/lib/source/sources'
 import { cn } from '@/lib/utils'
@@ -35,15 +36,19 @@ const SPOTS = [
  * ones like Kerala and Telangana stay out), named by state or authority, curators excluded.
  */
 const SOURCES = [
-  ...new Set(
-    STATIC_SOURCES.filter((s) => s.enabled && s.id !== 'curated').map((s) => (s.jurisdiction === 'IN' ? s.authority : (stateName(s.jurisdiction) ?? s.authority))),
-  ),
+  ...new Map(
+    STATIC_SOURCES.filter((s) => s.enabled && s.id !== 'curated').map((s) => {
+      const label = s.jurisdiction === 'IN' ? s.authority : (stateName(s.jurisdiction) ?? s.authority)
+      return [label, { label, region: s.jurisdiction === 'IN' ? null : s.jurisdiction }] as const
+    }),
+  ).values(),
 ]
   .slice(0, SPOTS.length)
-  .map((label, i) => ({ label, ...SPOTS[i]! }))
+  .map((src, i) => ({ ...src, ...SPOTS[i]! }))
 
 /** Step 1: the nazar eye at the centre of pulsing rings, with the regulators it watches. */
 export function WatchArt() {
+  const { locale } = useT()
   return (
     <div className="relative grid size-56 place-items-center sm:size-64">
       {[0, 1, 2].map((i) => (
@@ -82,7 +87,7 @@ export function WatchArt() {
           }}
         >
           <span className="mr-1.5 inline-block size-1.5 -translate-y-px rounded-full bg-primary align-middle" />
-          {s.label}
+          {s.region ? regionName(locale, s.region, s.label) : s.label}
         </motion.span>
       ))}
     </div>
@@ -91,6 +96,7 @@ export function WatchArt() {
 
 /** Step 2: a syrup bottle whose label is scanned until the batch number lights up. */
 export function BatchArt() {
+  const { t } = useT()
   return (
     <div className="relative flex items-center gap-5 sm:gap-7">
       <motion.svg
@@ -136,7 +142,7 @@ export function BatchArt() {
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 0.35 }}
         >
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Batch read</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground hi:text-[11px]">{t('onboarding.art.batchRead')}</p>
           <p className="mt-0.5 font-mono text-lg font-semibold text-primary">SR-13</p>
         </motion.div>
         {['B.No.', 'Batch', 'Lot'].map((l, i) => (
@@ -155,15 +161,16 @@ export function BatchArt() {
   )
 }
 
-const STATES = [
-  { icon: TriangleAlert, label: 'Flagged', note: 'Failed a government test', tone: 'text-flagged bg-flagged-soft border-flagged-border', tile: 'bg-flagged text-white dark:text-background' },
-  { icon: History, label: 'Retracted', note: 'Alert was withdrawn', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },
-  { icon: Search, label: 'No alert found', note: 'Not a safety certificate', tone: 'text-quiet bg-quiet-soft border-quiet-border', tile: 'bg-quiet text-white dark:text-background' },
-  { icon: CircleHelp, label: "Can't tell", note: 'Batch number unclear', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },
+const STATES: { icon: typeof Search; state: 'flagged' | 'retracted' | 'no_alert' | 'unreadable'; tone: string; tile: string }[] = [
+  { icon: TriangleAlert, state: 'flagged', tone: 'text-flagged bg-flagged-soft border-flagged-border', tile: 'bg-flagged text-white dark:text-background' },
+  { icon: History, state: 'retracted', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },
+  { icon: Search, state: 'no_alert', tone: 'text-quiet bg-quiet-soft border-quiet-border', tile: 'bg-quiet text-white dark:text-background' },
+  { icon: CircleHelp, state: 'unreadable', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },
 ]
 
 /** Step 3: the four result states, with a highlight that walks through them. */
 export function StatesArt() {
+  const { t } = useT()
   const [active, setActive] = useState(0)
   useEffect(() => {
     const id = setInterval(() => setActive((a) => (a + 1) % STATES.length), 1700)
@@ -172,9 +179,9 @@ export function StatesArt() {
 
   return (
     <ul className="grid w-full max-w-80 gap-2.5">
-      {STATES.map(({ icon: Icon, label, note, tone, tile }, i) => (
+      {STATES.map(({ icon: Icon, state, tone, tile }, i) => (
         <motion.li
-          key={label}
+          key={state}
           className={cn('flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-[box-shadow,opacity] duration-300', tone, active === i ? 'opacity-100 ring-2 ring-current/30' : 'opacity-75')}
           initial={{ x: 24, opacity: 0 }}
           animate={{ x: 0, opacity: 1, scale: active === i ? 1.03 : 1 }}
@@ -184,8 +191,8 @@ export function StatesArt() {
             <Icon className="size-4" />
           </span>
           <span className="min-w-0">
-            <span className="block text-sm font-semibold leading-tight">{label}</span>
-            <span className="block truncate text-xs text-muted-foreground">{note}</span>
+            <span className="block text-sm font-semibold leading-tight">{t(`state.${state}`)}</span>
+            <span className="block truncate text-xs text-muted-foreground">{t(`onboarding.art.${state}`)}</span>
           </span>
         </motion.li>
       ))}
@@ -227,13 +234,14 @@ function Link({ delay }: { delay: number }) {
 
 /** Step 4: the chain of proof from notice to public record, and the phone that keeps your checks. */
 export function ProofArt() {
+  const { t } = useT()
   return (
     <div className="grid w-full max-w-80 gap-0">
-      <Node icon={FileText} title="Regulator notice" sub="CDSCO · TN DC · PDF" delay={0.05} />
+      <Node icon={FileText} title={t('onboarding.art.notice')} sub="CDSCO · TN DC · PDF" delay={0.05} />
       <Link delay={0.3} />
-      <Node icon={Hash} title="Fingerprinted" sub="sha256 9f2c…a71e" delay={0.2} />
+      <Node icon={Hash} title={t('onboarding.art.fingerprinted')} sub="sha256 9f2c…a71e" delay={0.2} />
       <Link delay={0.6} />
-      <Node icon={NazarIcon} title="Public record on Arkiv" sub="entity 0x4be1…09dc" delay={0.35} />
+      <Node icon={NazarIcon} title={t('onboarding.art.record')} sub="entity 0x4be1…09dc" delay={0.35} />
       <motion.div
         className="mt-3 flex items-center gap-2 self-center rounded-full border border-dashed bg-card/70 px-3 py-1.5 text-xs text-muted-foreground"
         initial={{ opacity: 0 }}
@@ -241,7 +249,7 @@ export function ProofArt() {
         transition={{ delay: 0.7 }}
       >
         <Smartphone className="size-3.5" />
-        Your checks stay on this device
+        {t('onboarding.art.device')}
         <Lock className="size-3.5 text-primary" />
       </motion.div>
     </div>

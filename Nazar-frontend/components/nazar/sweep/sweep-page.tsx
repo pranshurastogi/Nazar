@@ -6,12 +6,12 @@ import { RefreshCw, RotateCcw, Search, X } from 'lucide-react'
 
 import type { SentinelState } from '@/components/ui/sentinel-core'
 import { scheduleSnapshot } from '@/lib/source/snapshot'
+import { formatAsOfIn, useT } from '@/lib/i18n'
 import { siteOrigin } from '@/lib/share'
 import {
   alertOf,
   cantTell,
   countItems,
-  istText,
   itemsFor,
   itemState,
   parseList,
@@ -28,11 +28,13 @@ import { SweepHero } from './hero'
 import { InputPanel } from './input-panel'
 import { PrintSheet } from './print-sheet'
 import { ResultsList } from './results'
-import { plural, useWide } from './shared'
+import { useWide } from './shared'
 import { SummaryChips, SweepProgressBar, type Filter } from './summary'
 
 /** Shelf sweep: paste or upload a stock list, check every batch at once, export the answers. */
 export function SweepPage() {
+  const { t, tp, locale } = useT()
+  const istText = (d: Date) => formatAsOfIn(locale, d, true)
   const [text, setText] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
   const parsed = useMemo(() => parseList(text), [text])
@@ -148,12 +150,12 @@ export function SweepPage() {
             <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
               <div className="min-w-0">
                 <h2 id="sweep-results-title" className="text-2xl font-semibold tracking-[-0.03em]">
-                  {plural(counts.total, 'row')} checked
+                  {tp('sweep.rowsChecked', counts.total)}
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground" data-sweep-meta>
-                  {startedAt && <>Checked {istText(startedAt)}</>}
-                  {progress?.via === 'snapshot' && progress.snapshotAt && <> · alert data as of {istText(progress.snapshotAt)}, matched on this device</>}
-                  {progress?.via === 'api' && <> · checked with the live API</>}
+                  {startedAt && t('sweep.checkedAt', { time: istText(startedAt) })}
+                  {progress?.via === 'snapshot' && progress.snapshotAt && t('sweep.viaSnapshot', { time: istText(progress.snapshotAt) })}
+                  {progress?.via === 'api' && t('sweep.viaApi')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -164,7 +166,7 @@ export function SweepPage() {
                   className="inline-flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                   data-sweep-reset
                 >
-                  <RotateCcw className="size-4" aria-hidden="true" /> New sweep
+                  <RotateCcw className="size-4" aria-hidden="true" /> {t('sweep.newSweep')}
                 </button>
               </div>
             </div>
@@ -181,14 +183,14 @@ export function SweepPage() {
 
             {!busy && unchecked.length > 0 && (
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-caution-border bg-caution-soft px-4 py-2 text-sm text-caution" data-sweep-unchecked>
-                <span className="font-medium">{plural(unchecked.length, 'batch', 'batches')} couldn&rsquo;t be checked: the live record didn&rsquo;t answer.</span>
+                <span className="font-medium">{tp('sweep.uncheckedCount', unchecked.length)}</span>
                 <button
                   type="button"
                   onClick={() => run(items, new Set(unchecked.map((i) => i.id)))}
                   className="-my-1 inline-flex min-h-11 items-center gap-1.5 font-semibold underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                   data-sweep-retry
                 >
-                  <RefreshCw className="size-3.5" aria-hidden="true" /> Try again
+                  <RefreshCw className="size-3.5" aria-hidden="true" /> {t('sweep.tryAgain')}
                 </button>
               </div>
             )}
@@ -200,17 +202,17 @@ export function SweepPage() {
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search batch, product or regulator"
-                  aria-label="Search the results"
+                  placeholder={t('sweep.searchPlaceholder')}
+                  aria-label={t('sweep.searchAria')}
                   className="h-11 w-full rounded-xl border bg-background pr-3 pl-10 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
                   data-sweep-search
                 />
               </div>
               <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite" data-sweep-shown>
-                {filter !== 'all' || deferredQuery.trim() ? `Showing ${shown.length} of ${counts.total}` : 'Flagged first'}
+                {filter !== 'all' || deferredQuery.trim() ? t('sweep.showingOf', { n: shown.length, total: counts.total }) : t('sweep.flaggedFirst')}
                 {filter !== 'all' && (
                   <button type="button" onClick={() => setFilter('all')} className="-my-3 ml-2 inline-flex min-h-11 items-center gap-1 font-medium text-foreground hover:underline">
-                    <X className="size-3.5" aria-hidden="true" /> Show all
+                    <X className="size-3.5" aria-hidden="true" /> {t('sweep.showAll')}
                   </button>
                 )}
               </p>
@@ -221,8 +223,7 @@ export function SweepPage() {
             </div>
 
             <p className="mt-4 max-w-[70ch] text-xs leading-5 text-muted-foreground" data-sweep-footnote>
-              Flagged means a regulator alert names that batch. &ldquo;No alert found&rdquo; means no published alert names it as of the date above: it is not a safety certificate. A look-alike is one
-              character away from an alerted batch and is never a flag; check the pack again.
+              {t('sweep.footnote')}
             </p>
           </motion.section>
         )}

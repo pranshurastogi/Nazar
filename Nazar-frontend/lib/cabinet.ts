@@ -229,8 +229,9 @@ export function expiryStatus(expiry: string | null, now = new Date()): ExpirySta
   return null
 }
 
-export function formatExpiry(expiry: string | null) {
+/** "Oct 2026" (English) or "अक्टूबर 2026" (Hindi short months read badly, so the full name). */
+export function formatExpiry(expiry: string | null, locale: 'en' | 'hi' = 'en') {
   if (!expiry || !YM.test(expiry)) return null
   const [y, m] = expiry.split('-').map(Number) as [number, number]
-  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleDateString(locale === 'hi' ? 'hi-IN' : 'en-IN', { month: locale === 'hi' ? 'long' : 'short', year: 'numeric' })
 }

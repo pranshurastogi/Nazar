@@ -1,5 +1,8 @@
+'use client'
+
 import { FileText, MessageSquareQuote } from 'lucide-react'
 
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { callLine, FETCHED_ON, PROMPT, RESOURCES, TOOL_SAMPLES, TOOLS } from './data'
 import { AiSection } from './shared'
@@ -8,14 +11,10 @@ import { AiSection } from './shared'
 // a real response from the live server. Then the two resources and the prompt.
 
 export function Tools() {
+  const { t: tx, tr } = useT()
   return (
-    <AiSection
-      id="tools"
-      kicker="Tools"
-      title="Six tools, each answering one question."
-      intro={`All six only read. The example under each card is the start of a real response from the live server, recorded ${FETCHED_ON}.`}
-    >
-      <ul className="grid gap-4 md:grid-cols-2" aria-label="Nazar MCP tools">
+    <AiSection id="tools" kicker={tx('ai.tools.kicker')} title={tx('ai.tools.title')} intro={tx('ai.tools.intro', { date: FETCHED_ON })}>
+      <ul className="grid gap-4 md:grid-cols-2" aria-label={tx('ai.tools.aria')}>
         {TOOLS.map((t) => (
           <li key={t.name} className="flex min-w-0 flex-col rounded-2xl border bg-card" data-mcp-tool={t.name}>
             <div className="p-4 pb-3 sm:p-5 sm:pb-3.5">
@@ -28,9 +27,9 @@ export function Tools() {
               </p>
               <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t.body}</p>
               <div className="mt-3">
-                <p className="sr-only">Inputs</p>
+                <p className="sr-only">{tx('ai.tools.inputs')}</p>
                 {t.inputs.length ? (
-                  <ul className="flex flex-wrap gap-1.5" aria-label={`${t.name} inputs`}>
+                  <ul className="flex flex-wrap gap-1.5" aria-label={tx('ai.tools.inputsOf', { name: t.name })}>
                     {t.inputs.map((i) => (
                       <li key={i.name} className="inline-flex max-w-full items-baseline gap-1.5 rounded-lg border bg-background/60 px-2 py-1 text-[11.5px]" title={i.note}>
                         <code className={cn('font-mono font-semibold', i.required && 'text-primary')}>
@@ -39,13 +38,13 @@ export function Tools() {
                         </code>
                         <span className="truncate text-muted-foreground">{i.type}</span>
                         <span className="sr-only">
-                          , {i.required ? 'required' : 'optional'}: {i.note}
+                          , {tx(i.required ? 'ai.tools.required' : 'ai.tools.optional')}: {i.note}
                         </span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-[11.5px] text-muted-foreground">No inputs.</p>
+                  <p className="text-[11.5px] text-muted-foreground">{tx('ai.tools.noInputs')}</p>
                 )}
               </div>
             </div>
@@ -66,7 +65,7 @@ export function Tools() {
         {RESOURCES.map((r) => (
           <div key={r.uri} className="rounded-2xl border bg-card p-4" data-mcp-resource={r.uri}>
             <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <FileText className="size-3.5" aria-hidden="true" /> Resource
+              <FileText className="size-3.5" aria-hidden="true" /> {tx('ai.tools.resource')}
             </p>
             <p className="mt-2 font-mono text-[13px] font-semibold">{r.uri}</p>
             <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
@@ -76,11 +75,11 @@ export function Tools() {
         ))}
         <div className="rounded-2xl border border-primary/30 bg-primary/[0.04] p-4" data-mcp-prompt>
           <p className="flex items-center gap-2 text-xs font-semibold text-primary">
-            <MessageSquareQuote className="size-3.5" aria-hidden="true" /> Prompt
+            <MessageSquareQuote className="size-3.5" aria-hidden="true" /> {tx('ai.tools.prompt')}
           </p>
           <p className="mt-2 font-mono text-[13px] font-semibold">{PROMPT.name}</p>
           <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            <span className="font-medium text-foreground">{PROMPT.title}.</span> {PROMPT.body} Takes <code className="font-mono text-[12px]">{PROMPT.arg}</code>.
+            <span className="font-medium text-foreground">{PROMPT.title}.</span> {PROMPT.body} {tr('ai.tools.takes', { arg: <code className="font-mono text-[12px]">{PROMPT.arg}</code> })}
           </p>
         </div>
       </div>

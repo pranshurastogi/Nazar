@@ -1,3 +1,6 @@
+'use client'
+
+import { useT } from '@/lib/i18n'
 import { ChatDemo } from './chat-demo'
 import { Connect } from './connect'
 import { AiHero } from './hero'
@@ -12,6 +15,7 @@ import './ai.css'
 // up, what each tool answers, the rules the assistant must follow, and what the server can see.
 
 export function AiPage() {
+  const { t, tr, locale } = useT()
   return (
     <div className="pt-2 md:pt-4" data-ai-page>
       <AiHero />
@@ -20,11 +24,17 @@ export function AiPage() {
         <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="max-w-[60ch]">
             <h2 id="ai-demo-title" className="text-[1.625rem] leading-tight font-semibold tracking-[-0.03em] text-balance sm:text-3xl">
-              Three questions, three honest answers.
+              {t('ai.demoTitle')}
             </h2>
             <p className="mt-2 text-[15px] leading-7 text-pretty text-muted-foreground">
-              Each reply is built from Nazar&rsquo;s real response. Watch the assistant call <code className="font-mono text-[13px] text-foreground">check_batch</code>, then switch questions.
+              {tr('ai.demoIntro', { code: <code className="font-mono text-[13px] text-foreground">check_batch</code> })}
             </p>
+            {/* Hindi mode: the protocol parts (setup steps, code, tool docs, the recorded chat) stay as the apps and server show them. */}
+            {locale !== 'en' && (
+              <p className="mt-2 text-xs leading-5 text-muted-foreground" data-ai-english-note>
+                {t('ai.englishNote')}
+              </p>
+            )}
           </div>
         </div>
         <ChatDemo />

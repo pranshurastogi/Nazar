@@ -4,9 +4,9 @@ import { useRef, useState } from 'react'
 import { ArrowRight, FileSpreadsheet, LoaderCircle, Lock, Sparkles, Upload, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { previewLine, SWEEP_MAX, SWEEP_MAX_FILE_BYTES, type ParsedList } from '@/lib/sweep'
+import { useT } from '@/lib/i18n'
+import { SWEEP_MAX, SWEEP_MAX_FILE_BYTES, type ParsedList } from '@/lib/sweep'
 import { cn } from '@/lib/utils'
-import { plural } from './shared'
 
 type Props = {
   text: string
@@ -21,6 +21,14 @@ type Props = {
 
 /** The list: a big paste box, a CSV/TSV upload (or drop), a sample, a live count and the check button. */
 export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onCheck, onSample }: Props) {
+  const { t, tp, tr, intl } = useT()
+  // "3 batches · 1 unreadable · 2 duplicates merged" (lib/sweep previewLine, in the page's language).
+  const previewLine = (p: ParsedList) => {
+    const parts = [tp('sweep.batches', p.rows.length)]
+    if (p.unreadable.length) parts.push(t('sweep.unreadableCount', { n: p.unreadable.length.toLocaleString(intl) }))
+    if (p.duplicates) parts.push(tp('sweep.duplicates', p.duplicates))
+    return parts.join(' · ')
+  }
   const fileRef = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -30,8 +38,8 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
   const read = async (file: File | undefined) => {
     if (!file) return
     setFileError(null)
-    if (file.size > SWEEP_MAX_FILE_BYTES) return setFileError(`${file.name} is larger than 2 MB. Save just the batch column, or split the sheet.`)
-    if (!/\.(csv|tsv|txt)$/i.test(file.name) && !/^text\//.test(file.type)) return setFileError('Upload a .csv or .tsv file. From Excel: File › Save as › CSV.')
+    if (file.size > SWEEP_MAX_FILE_BYTES) return setFileError(t('sweep.fileTooBig', { name: file.name }))
+    if (!/\.(csv|tsv|txt)$/i.test(file.name) && !/^text\//.test(file.type)) return setFileError(t('sweep.fileType'))
     // Read on the device; the file never leaves it.
     onFile(file.name, await file.text())
   }
@@ -65,9 +73,9 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <label htmlFor="sweep-input" className="text-sm font-semibold">
-            Batch numbers
+            {t('sweep.label')}
           </label>
-          <span className="text-xs text-muted-foreground">Up to {SWEEP_MAX} · from Excel, Sheets or a CSV</span>
+          <span className="text-xs text-muted-foreground">{t('sweep.upTo', { max: SWEEP_MAX })}</span>
         </div>
         <textarea
           ref={taRef}
@@ -80,7 +88,7 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit()
           }}
-          placeholder={'Paste batch numbers, one per line or separated by commas\n\nSR-13\nTG25-2281A, AB1234'}
+          placeholder={t('sweep.placeholder')}
           spellCheck={false}
           autoCapitalize="characters"
           autoComplete="off"
@@ -92,11 +100,11 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
 
         <div className="mt-3 flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
           <p id="sweep-preview" className={cn('font-medium tabular-nums', count ? 'text-foreground' : 'text-muted-foreground')} aria-live="polite" data-sweep-preview>
-            {count ? previewLine(parsed) : 'Nothing to check yet'}
+            {count ? previewLine(parsed) : t('sweep.nothingYet')}
           </p>
           {parsed.overLimit > 0 && (
             <p className="text-sm font-medium text-caution" data-sweep-over>
-              Only the first {SWEEP_MAX} are checked; {plural(parsed.overLimit, 'more batch', 'more batches')} left out.
+              {tp('sweep.overLimit', parsed.overLimit, { max: SWEEP_MAX })}
             </p>
           )}
         </div>
@@ -107,26 +115,25 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
             <span aria-hidden="true">·</span>
             {parsed.columns ? (
               <span data-sweep-columns>
-                Batch column: <span className="font-medium text-foreground">“{parsed.columns.batch}”</span>
-                {[parsed.columns.product, parsed.columns.qty, parsed.columns.expiry].some(Boolean) && (
-                  <> · also kept: {[parsed.columns.product, parsed.columns.qty, parsed.columns.expiry].filter(Boolean).join(', ')}</>
-                )}
+                {tr('sweep.batchColumn', { col: <span className="font-medium text-foreground">“{parsed.columns.batch}”</span> })}
+                {[parsed.columns.product, parsed.columns.qty, parsed.columns.expiry].some(Boolean) &&
+                  t('sweep.alsoKept', { list: [parsed.columns.product, parsed.columns.qty, parsed.columns.expiry].filter(Boolean).join(', ') })}
               </span>
             ) : (
-              <span>No header row found; every value is read as a batch</span>
+              <span>{t('sweep.noHeader')}</span>
             )}
             <button
               type="button"
               onClick={() => onFile(null, '')}
               className="-my-2 inline-flex min-h-11 items-center gap-1 rounded-md px-1.5 font-medium text-muted-foreground hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-              aria-label={`Remove ${fileName}`}
+              aria-label={t('sweep.removeAria', { name: fileName })}
             >
-              <X className="size-3.5" aria-hidden="true" /> Remove
+              <X className="size-3.5" aria-hidden="true" /> {t('sweep.remove')}
             </button>
           </div>
         )}
         <p id="sweep-empty" role="status" className={cn('text-sm font-medium text-caution', (emptyHint || fileError) && 'mt-2')} data-sweep-hint>
-          {fileError ?? (emptyHint ? 'Paste at least one batch number, or upload a CSV.' : '')}
+          {fileError ?? (emptyHint ? t('sweep.emptyHint') : '')}
         </p>
 
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
@@ -145,20 +152,20 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
               data-sweep-file
             />
             <Button variant="outline" className="h-12 rounded-xl px-4 text-sm font-semibold" onClick={() => fileRef.current?.click()}>
-              <Upload /> Upload CSV
+              <Upload /> {t('sweep.uploadCsv')}
             </Button>
             <Button variant="outline" className="h-12 rounded-xl px-4 text-sm font-semibold" onClick={onSample} data-sweep-sample>
-              <Sparkles /> Try a sample
+              <Sparkles /> {t('sweep.sample')}
             </Button>
           </div>
           <Button className="h-12 rounded-xl px-5 text-base font-semibold sm:ml-auto sm:min-w-52" onClick={submit} aria-busy={busy} data-sweep-check>
             {busy ? (
               <>
-                Checking <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
+                {t('sweep.checking')} <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
               </>
             ) : (
               <>
-                {parsed.rows.length ? `Check ${plural(parsed.rows.length, 'batch', 'batches')}` : 'Check batches'} <ArrowRight data-icon="inline-end" />
+                {parsed.rows.length ? tp('sweep.checkN', parsed.rows.length) : t('sweep.checkBatches')} <ArrowRight data-icon="inline-end" />
               </>
             )}
           </Button>
@@ -170,13 +177,13 @@ export function InputPanel({ text, onText, fileName, onFile, parsed, busy, onChe
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
             <Lock className="size-4" aria-hidden="true" />
           </span>
-          Processed on this device
+          {t('sweep.privacyTitle')}
         </p>
         <ul className="mt-3 grid gap-2.5 text-[13px] leading-5 text-muted-foreground">
-          <li>Your list, file, product names and quantities never leave this browser.</li>
-          <li>Batches are matched against Nazar&rsquo;s copy of every published alert, saved on the device.</li>
-          <li>Only the flagged and look-alike batch numbers go to Nazar&rsquo;s API, one at a time, the same as a normal check.</li>
-          <li>Downloads are made in your browser. Nothing is uploaded.</li>
+          <li>{t('sweep.privacy1')}</li>
+          <li>{t('sweep.privacy2')}</li>
+          <li>{t('sweep.privacy3')}</li>
+          <li>{t('sweep.privacy4')}</li>
         </ul>
       </aside>
     </div>

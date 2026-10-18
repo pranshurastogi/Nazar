@@ -2138,6 +2138,286 @@ if (MODE === 'mock') {
 }
 // ======== end Hindi ========
 
+// ---- Hindi (हिन्दी), phase 2 (mock): onboarding, the status pill, the WhatsApp text, the scanner, the cabinet, the
+// medicine card and the India pulse. OCR'd label text, the AI's medicine text and regulator data stay as read.
+if (MODE === 'mock') {
+  const HI = 'hindi 2'
+  const noClaim = (t) => !/सुरक्षित|असली|स्वीकृत/.test(t)
+  const width = () => js(`document.documentElement.scrollWidth`)
+  /** A Hindi screenshot in light and then dark (the theme class is flipped in place, then restored). */
+  const shot2 = async (name) => {
+    await shot(`hi2-${name}-light`)
+    await js(`(() => { const d = document.documentElement; d.classList.add('dark'); d.style.colorScheme = 'dark' })()`)
+    await shot(`hi2-${name}-dark`, 300)
+    await js(`(() => { const d = document.documentElement; d.classList.remove('dark'); d.style.colorScheme = 'light' })()`)
+  }
+  const waMessage = () => js(`(() => { const a = document.querySelector('[data-whatsapp]'); return a ? new URL(a.href).searchParams.get('text') : '' })()`)
+
+  // Onboarding, first visit, already in Hindi.
+  await vp(390, 844, false); await fresh()
+  await js(`localStorage.setItem('nazar:lang', 'hi')`); await send('Page.reload'); await wait(1500)
+  await waitFor(`!!document.querySelector('[role="dialog"]')`, 5000); await wait(500)
+  {
+    const d = await js(`document.querySelector('[role="dialog"]')?.innerText || ''`)
+    ok(`${HI}: onboarding step 1 in Hindi (kicker, title, points, buttons)`, ['स्वागत है', 'हर बैच पर नज़र', 'मुफ़्त, कोई अकाउंट नहीं', 'सिर्फ़ सरकारी स्रोत', 'तरीका दिखाएँ', 'छोड़ें'].every(s => d.includes(s)) && !d.includes('An eye on every batch') && noClaim(d), d.slice(0, 160))
+    ok(`${HI}: onboarding progress is labelled in Hindi`, (await js(`document.querySelector('[role="dialog"] [role="progressbar"]')?.getAttribute('aria-label')`)) === '4 में से कदम 1')
+    ok(`${HI}: no sideways overflow at 390 (onboarding)`, (await width()) <= 390, String(await width()))
+    await shot2('onboarding-step1')
+    await clickHas('तरीका दिखाएँ'); await wait(600)
+    ok(`${HI}: onboarding step 2 in Hindi`, (await js(`document.querySelector('[role="dialog"]')?.innerText || ''`)).includes('बैच नंबर ढूँढें'))
+    await clickHas('आगे'); await wait(600)
+    const d3 = await js(`document.querySelector('[role="dialog"]')?.innerText || ''`)
+    ok(`${HI}: onboarding step 3 keeps the honest-answers rule in Hindi (no सुरक्षित), with the four states`, d3.includes('चार साफ़-साफ़ जवाब') && ['चेतावनी जारी', 'कोई चेतावनी नहीं मिली', 'पक्का नहीं कह सकते'].every(s => d3.includes(s)) && noClaim(d3), d3.slice(0, 200))
+    await click('छोड़ें'); await wait(600); await settle()
+  }
+
+  // The status pill (mock heartbeat: 4 minutes ago).
+  {
+    const label = await js(`document.querySelector('[data-status]')?.getAttribute('aria-label')`)
+    ok(`${HI}: status pill in Hindi (compact "लाइव", full label for screen readers)`, label === 'स्थिति: पाइपलाइन लाइव · 4 मिनट पहले जाँचा' && (await js(`[...document.querySelectorAll('[data-status] span.truncate')].find(s => s.offsetParent)?.innerText`)) === 'लाइव', label)
+  }
+
+  // The WhatsApp text, in Hindi, never claiming safety.
+  await typeBatch('SR-13'); await wait(300)
+  {
+    const m = await waMessage()
+    ok(`${HI}: WhatsApp text for a flagged batch is Hindi (brand, batch and authority as published)`, /^COLDRIF बैच SR-13: .+ ने चेतावनी जारी की है \(.+\)। Nazar पर जाँचा गया।\n/.test(m) && m.includes('/b/SR-13') && noClaim(m), m)
+  }
+  await typeBatch('AB1234'); await wait(300)
+  {
+    const m = await waMessage()
+    ok(`${HI}: WhatsApp text for no alert says it is not a safety certificate, in Hindi`, /^बैच AB1234: \d{1,2} [ऀ-ॿ]+ \d{4} तक Nazar पर कोई चेतावनी नहीं मिली। यह सुरक्षा प्रमाणपत्र नहीं है।\n/.test(m) && noClaim(m), m)
+  }
+
+  // ---- Hindi phase 2: the scanner (prompt, blocked camera, a pack photo) and "About this medicine" (mock).
+  // Assumes MODE === 'mock', the HI const and noClaim() from the phase 1 block. Leaves Hindi switched on.
+  {
+    const ORIGIN = new globalThis.URL(URL).origin
+    const scanText = () => js(`document.querySelector('[data-scanner]')?.innerText || ''`)
+    const scanPhase = () => js(`document.querySelector('[data-scanner]')?.dataset.phase || null`)
+    // The Check page's scan button, by its Hindi name.
+    const openScanner = async () => { await js(`document.querySelector('button[aria-haspopup="dialog"][aria-label="पैक स्कैन करें"]').click()`); await waitFor(`!!document.querySelector('[data-scanner]')`, 5000); await wait(500) }
+    const setScanFile = async file => {
+      const doc = await send('DOM.getDocument', { depth: -1, pierce: true })
+      const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: 'input[data-scan-upload]' })
+      return send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] })
+    }
+    const field = k => js(`document.querySelector('[data-pack-field="${k}"] dd')?.innerText || ''`)
+    const fieldLabel = k => js(`document.querySelector('[data-pack-field="${k}"] dt')?.innerText || ''`)
+
+    await vp(390, 844, false)
+    await send('Page.navigate', { url: URL }); await wait(1200)
+    await js(`localStorage.setItem('nazar:lang', 'hi'); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('theme', 'light')`)
+    await send('Page.reload'); await wait(1500); await settle()
+    await send('Browser.resetPermissions')
+
+    // Before any permission: the prompt panel in Hindi.
+    await openScanner()
+    const st = await scanText()
+    ok(`${HI}: scanner prompt in Hindi (title, Use camera, upload, type, privacy line)`, (await scanPhase()) === 'prompt' && st.includes('पैक स्कैन करें') && st.includes('कैमरे से पैक पढ़ें') && st.includes('कैमरा चालू करें') && st.includes('पैक की फ़ोटो अपलोड करें') && st.includes('नंबर ख़ुद लिखें') && st.includes('फ़ोटो इसी डिवाइस पर पढ़ी जाती हैं'), st.slice(0, 300))
+    ok(`${HI}: scanner keeps B.No. in Latin and closes by a Hindi name`, st.includes('B.No.') && (await js(`!!document.querySelector('[data-scanner] [aria-label="स्कैनर बंद करें"]')`)))
+    await shot2('scanner-prompt')
+    ok(`${HI}: scanner fits 390 with no sideways scroll`, await js(`(() => { const d = document.querySelector('[data-scanner]'); return d.scrollWidth <= d.clientWidth + 1 })()`))
+
+    // Camera refused by the browser after "Use camera": the denied panel, in Hindi, with the steps.
+    await js(`navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('denied', 'NotAllowedError') }`)
+    await clickHas('कैमरा चालू करें'); await waitFor(`!!document.querySelector('[data-blocked]')`, 5000); await wait(300)
+    const den = await scanText()
+    ok(`${HI}: camera denied → Hindi panel with how to allow it, upload still offered`, (await js(`document.querySelector('[data-blocked]')?.dataset.blocked`)) === 'denied' && den.includes('Nazar के लिए कैमरा बंद है') && den.includes('Website Settings → Camera → Allow') && den.includes('दोबारा कोशिश करें') && den.includes('पैक की फ़ोटो अपलोड करें'), den.slice(0, 300))
+    await shot2('scanner-blocked')
+    // Another app holds the camera.
+    await js(`navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('busy', 'NotReadableError') }`)
+    await clickHas('दोबारा कोशिश करें'); await waitFor(`document.querySelector('[data-blocked]')?.dataset.blocked === 'busy'`, 5000); await wait(200)
+    ok(`${HI}: camera busy → Hindi panel`, (await scanText()).includes('कैमरा अभी कहीं और चल रहा है'))
+    // No camera at all.
+    await js(`navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('none', 'NotFoundError') }`)
+    await clickHas('दोबारा कोशिश करें'); await waitFor(`document.querySelector('[data-blocked]')?.dataset.blocked === 'nocamera'`, 5000); await wait(200)
+    ok(`${HI}: no camera → Hindi panel`, (await scanText()).includes('कोई कैमरा नहीं मिला'))
+    ok(`${HI}: blocked panels never claim सुरक्षित / असली / स्वीकृत`, noClaim(await scanText()))
+    await escape()
+
+    // The checked-in label photo: Hindi chrome around the brand "Sinarest" as read (OCR text stays as printed).
+    const BRAND_FIXTURE = decodeURIComponent(new globalThis.URL('./fixtures/pack-brand-label.png', import.meta.url).pathname)
+    await openScanner()
+    await setScanFile(BRAND_FIXTURE)
+    await waitFor(`!!document.querySelector('[data-scan-result]') || document.querySelector('[data-scanner]')?.dataset.phase === 'empty'`, 60000); await wait(400)
+    const rt = await scanText()
+    ok(`${HI}: photo read: the brand "Sinarest" as read, under a Hindi "Brand on the pack"`, (await js(`document.querySelector('[data-scan-medicine] [data-scan-brand]')?.innerText`)) === 'Sinarest' && (await js(`document.querySelector('[data-scan-medicine] p')?.innerText`)) === 'पैक पर ब्रांड', rt.slice(0, 300))
+    ok(`${HI}: photo read: "we read … check it?", batch label and buttons in Hindi; the batch stays Latin`, (await js(`document.getElementById('scan-batch')?.value`)) === 'SN5521' && rt.includes('हमने SN5521 पढ़ा – जाँचें?') && rt.includes('बैच नंबर · पैक से अलग हो तो ठीक करें') && rt.replace(/\s+/g, ' ').includes('SN5521 जाँचें') && rt.includes('फिर से स्कैन करें') && rt.includes('Paracetamol 500 mg + Phenylephrine Hydrochloride 10 mg + 2 और'), rt.slice(0, 400))
+    ok(`${HI}: photo read: how it was read in Hindi, OCR confidence stays a number`, rt.includes('छपा टेक्स्ट') && /\d+% भरोसा/.test(await js(`document.querySelector('[data-scan-confidence]')?.innerText || ''`)), await js(`document.querySelector('[data-scan-confidence]')?.innerText || ''`))
+    ok(`${HI}: label table: Hindi field names, salts as read`, (await js(`document.querySelector('[data-pack-fields] p')?.innerText`)) === 'लेबल पर' && (await fieldLabel('brand')) === 'ब्रांड' && (await fieldLabel('composition')) === 'साल्ट' && (await field('composition')).startsWith('Paracetamol IP 500 mg'), `${await fieldLabel('brand')} | ${await fieldLabel('composition')} | ${await field('composition')}`)
+    ok(`${HI}: label table: Edit / Done in Hindi`, await js(`[...document.querySelectorAll('[data-pack-fields] button')].some(b => b.textContent.trim() === 'बदलें')`))
+    ok(`${HI}: the scanner's "About this medicine" prompt names the brand in Hindi`, (await js(`document.querySelector('[data-scanner] [data-medicine-name]')?.innerText`)) === 'Sinarest के बारे में')
+    ok(`${HI}: no sideways overflow in the scanner result at 390`, await js(`(() => { const d = document.querySelector('[data-scanner]'); return d.scrollWidth <= d.clientWidth + 1 })()`))
+    ok(`${HI}: scanner result never claims सुरक्षित / असली / स्वीकृत`, noClaim(rt))
+    await js(`document.querySelector('[data-scanner]').scrollTo(0, 0)`); await shot2('scanner-result')
+    await escape()
+
+    // About this medicine on a flagged result: Hindi chrome, the AI's text as returned, and the English-content note.
+    await typeBatch('SR-13'); await wait(300)
+    const med = `document.querySelector('[data-medicine]')`
+    ok(`${HI}: medicine prompt in Hindi (eyebrow, "About COLDRIF", button)`, (await js(`${med}?.dataset.medicine`)) === 'idle' && (await js(`${med}.querySelector('[data-medicine-name]')?.innerText`)) === 'COLDRIF के बारे में' && (await js(`${med}.innerText`)).includes('सामान्य जानकारी देखें'))
+    ok(`${HI}: medicine: official warning first, AI badge and caveat in Hindi`, (await js(`${med}.innerText`)).startsWith('इस बैच पर सरकारी चेतावनी है – इसे इस्तेमाल न करें।') && (await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)).includes('AI ने लिखा') && (await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)).includes('सरकारी विभाग से नहीं · ग़लत हो सकता है'))
+    await js(`[...${med}.querySelectorAll('button')].find(b => b.textContent.includes('सामान्य जानकारी देखें')).click()`)
+    await waitFor(`!!document.querySelector('[data-medicine-card]')`, 8000); await wait(500)
+    const mt = await js(`${med}.innerText`)
+    const nz = await js(`document.querySelector('[data-medicine-nazar]')?.innerText || ''`)
+    ok(`${HI}: medicine card chrome in Hindi (story titles, in short, footer)`, mt.includes('किस काम आती है') && mt.includes('आम साइड इफ़ेक्ट') && mt.includes('संक्षेप में') && mt.includes('यह डॉक्टरी सलाह नहीं है। अपने डॉक्टर या फ़ार्मासिस्ट से पूछें।'), mt.slice(0, 300))
+    ok(`${HI}: medicine: brand and ingredient counts in Hindi, kept apart`, nz.includes('Nazar में COLDRIF पर 2 सरकारी चेतावनियाँ हैं') && nz.includes('116 और चेतावनियाँ') && nz.includes('ये COLDRIF के बारे में नहीं हैं।') && nz.includes('चेतावनियाँ खोलें'), nz)
+    ok(`${HI}: medicine: the AI content stays as returned (English) with the Hindi note saying so`, (await js(`document.querySelector('[data-medicine-english-note]')?.innerText || ''`)) === 'यह सामान्य जानकारी AI ने अंग्रेज़ी में लिखी है।' && mt.includes('Paracetamol, Phenylephrine, Chlorpheniramine'))
+    ok(`${HI}: medicine card never claims सुरक्षित / असली / स्वीकृत`, noClaim(mt))
+    await js(`window.scrollTo(0, document.querySelector('[data-medicine]').getBoundingClientRect().top + scrollY - 16)`); await shot2('medicine-card')
+    await vp(360, 800, false); await wait(400)
+    ok(`${HI}: no sideways overflow at 360 (medicine card)`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+    await vp(390, 844, false)
+  }
+
+  // ---- Hindi phase 2: My medicines (cabinet). Assumes mock mode, `HI`, noClaim() and the shared helpers.
+  // Chooser, photo prefill (labels, sources), AI guess chip, the shelf status line; OCR'd text (Sinarest) stays as read.
+  {
+    const dlg = () => js(`document.querySelector('[data-cabinet-dialog]')?.innerText || ''`)
+    const val = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] input')?.value ?? null`)
+    const lbl = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] label')?.textContent || ''`)
+    const src = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] [data-field-source]')?.dataset.fieldSource || ''`)
+    const srcText = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] [data-field-source]')?.innerText || ''`)
+    const setFile = async (file, sel = 'input[data-add-upload]') => {
+      const doc = await send('DOM.getDocument', { depth: -1, pierce: true })
+      const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: sel })
+      return send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] })
+    }
+    const waitRead = () => waitFor(`!!document.querySelector('[data-cabinet-form][data-from-photo]')`, 90000)
+    const setField = (k, v) => js(`(() => { const i = document.querySelector('[data-cabinet-form] [data-field="${k}"] input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(v)}); i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+    const openChooser = async () => { await js(`(document.querySelector('[data-shelf-add]') || [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'दवा जोड़ें')).click()`); await waitFor(`!!document.querySelector('[data-cabinet-choose]')`, 5000); await wait(300) }
+    const closeDlg = async () => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(700) }
+    const BRAND = decodeURIComponent(new globalThis.URL('./fixtures/pack-brand-label.png', import.meta.url).pathname)
+    // No name on the label, so the AI offer is prominent (same image as the English "ai auto-fill" checks).
+    const noNamePng = await js(`(() => { const c = document.createElement('canvas'); c.width = 1000; c.height = 270; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 270); x.fillStyle = '#111'; x.font = '36px Arial'; x.fillText('Mfd. by: Micro Labs Limited, Hosur', 50, 90); x.fillText('DOBS4410     EXP 04/2028', 50, 165); return c.toDataURL('image/png') })()`)
+    const noName = `${OUT}/hi-cab-noname.png`; fs.writeFileSync(noName, Buffer.from(noNamePng.split(',')[1], 'base64'))
+
+    await vp(390, 844, false); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1200)
+    await js(`localStorage.clear(); localStorage.setItem('theme', 'light'); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('nazar:lang', 'hi')`); await send('Page.reload'); await wait(1500)
+    mock.identify = 'ok'
+    ok(`${HI}: cabinet hero, empty shelf and first-add button in Hindi`, (await body()).includes('आपकी दवाएँ,') && (await js(`document.querySelector('[data-shelf-add]')?.textContent.trim()`)) === 'पहली दवा जोड़ें' && (await js(`document.querySelector('[data-shelf-photo-hint]')?.innerText || ''`)).startsWith('सबसे आसान तरीका'))
+
+    await openChooser()
+    const tiles = await js(`[...document.querySelectorAll('[data-cabinet-choose] button')].map(b => b.textContent.trim())`)
+    ok(`${HI}: add chooser: three ways in, in Hindi`, tiles.length === 3 && tiles[0].startsWith('पैक की फ़ोटो लें') && tiles[1] === 'फ़ोटो अपलोड करें' && tiles[2] === 'ख़ुद लिखें' && (await dlg()).includes('फ़ोटो इसी डिवाइस पर पढ़ी जाती है'), JSON.stringify(tiles))
+
+    await shot2('cabinet-add-chooser')
+    // The brand fixture: Hindi chrome around the label text, which stays as read.
+    await setFile(BRAND); await waitRead(); await wait(300)
+    ok(`${HI}: photo prefill: heading and field labels in Hindi`, (await js(`document.activeElement?.textContent`)) === 'जो पढ़ा, उसे जाँच लें' && (await lbl('name')) === 'दवा का नाम' && (await lbl('batch')) === 'बैच नंबर' && (await lbl('composition')) === 'साल्ट' && (await lbl('maker')) === 'बनाने वाली कंपनी', `${await lbl('name')} | ${await lbl('batch')} | ${await lbl('composition')}`)
+    ok(`${HI}: photo prefill: the brand "Sinarest" and the salts stay as read`, (await val('name')) === 'Sinarest' && /^Paracetamol IP 500 mg/.test(await val('composition')) && (await val('batch')) === 'SN5521', `${await val('name')} | ${await val('batch')}`)
+    ok(`${HI}: photo prefill: each source chip says "लेबल से पढ़ा · N%" (percentage stays numeric)`, (await Promise.all(['name', 'batch'].map(srcText))).every(t => /^लेबल से पढ़ा · \d{1,3}%/.test(t)), (await Promise.all(['name', 'batch'].map(srcText))).join(' | '))
+    await shot2('cabinet-prefill')
+    ok(`${HI}: photo prefill: confirm button reads "मेरी दवाओं में जोड़ें"`, (await js(`document.querySelector('[data-cabinet-form] button[type="submit"]')?.textContent.trim()`)) === 'मेरी दवाओं में जोड़ें')
+    await closeDlg()
+
+    // No name read: the AI offer, the switch, then an AI guess and its chip.
+    await openChooser(); await setFile(noName); await waitRead(); await wait(300)
+    const panel = () => js(`document.querySelector('[data-ai-panel]')?.innerText || ''`)
+    ok(`${HI}: AI offer in Hindi (reason, button, switch, disclosure)`, (await panel()).includes('नाम पढ़ा जा सका') && (await js(`document.querySelector('[data-ai-guess]')?.textContent.trim()`)) === 'AI से अंदाज़ा लगवाएँ' && (await panel()).includes('छूटी जानकारी AI से भरें') && (await js(`document.querySelector('[data-ai-disclosure]')?.innerText || ''`)).includes('फ़ोटो इसी फ़ोन पर रहती है'), await panel())
+    await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-done]')`, 8000); await wait(300)
+    ok(`${HI}: AI guess chip reads "AI का अंदाज़ा · जाँचें"; the done note says it is not regulator data`, (await src('name')) === 'ai' && (await srcText('name')) === 'AI का अंदाज़ा · जाँचें' && (await js(`document.querySelector('[data-ai-done]')?.innerText || ''`)).includes('सरकारी डेटा नहीं'), `${await srcText('name')}`)
+    await shot2('cabinet-ai-guess')
+    await js(`document.querySelector('[data-cabinet-form] [data-field="name"] [data-field-source="ai"]').click()`); await waitFor(`!!document.querySelector('[data-ai-evidence]')`, 3000); await wait(250)
+    ok(`${HI}: AI evidence popup in Hindi`, (await js(`document.querySelector('[data-ai-evidence]')?.innerText || ''`)).includes('AI का अंदाज़ा, सरकारी डेटा नहीं'))
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(400)
+    ok(`${HI}: no sideways overflow at 390 with the AI guess open`, await js(`(() => { const d = document.querySelector('[data-cabinet-dialog]'); return document.documentElement.scrollWidth <= 390 && d.scrollWidth <= d.clientWidth + 1 })()`))
+    await closeDlg()
+
+    // Save Sinarest (no alert in the mock), then SR-13 typed in (flagged): the shelf status line in Hindi.
+    await openChooser(); await setFile(BRAND); await waitRead(); await wait(300)
+    await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(800)
+    await waitFor(`document.querySelector('[data-shelf-batch="SN5521"]')?.dataset.shelfState === 'no_alert'`, 15000); await wait(300)
+    const summary = () => js(`document.querySelector('[data-shelf-summary]')?.innerText || ''`)
+    ok(`${HI}: shelf: one no-alert medicine, with "तक इस बैच पर कोई चेतावनी नहीं मिली" and not a safety certificate`, /तक इस बैच पर कोई चेतावनी नहीं मिली$/.test((await summary()).trim()) && (await js(`document.querySelector('[data-shelf]')?.innerText || ''`)).includes('यह सुरक्षा प्रमाणपत्र नहीं है।'), await summary())
+    ok(`${HI}: shelf: the count line reads "1 दवा"`, (await js(`document.querySelector('[data-cabinet-count]')?.innerText || ''`)).startsWith('1 दवा'), await js(`document.querySelector('[data-cabinet-count]')?.innerText`))
+    ok(`${HI}: shelf: the Sinarest card keeps the name as read, with a Hindi state chip`, (await js(`document.querySelector('[data-cabinet-item][data-batch="SN5521"]')?.innerText || ''`)).includes('Sinarest') && (await js(`document.querySelector('[data-batch="SN5521"] [data-cabinet-state]')?.textContent`)) === 'कोई चेतावनी नहीं मिली')
+
+    await openChooser(); await js(`document.querySelector('[data-add-type]').click()`); await wait(300)
+    await setField('name', 'COLDRIF'); await setField('batch', 'SR-13')
+    await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(800)
+    await waitFor(`document.querySelector('[data-shelf-batch="SR-13"]')?.dataset.shelfState === 'flagged'`, 15000); await wait(300)
+    const counts = await js(`document.querySelector('[data-shelf-counts]')?.innerText || ''`)
+    ok(`${HI}: shelf status line with a flagged medicine: title, counts and Review in Hindi`, (await summary()).includes('मेरी दवाओं में से 1 पर सरकारी चेतावनी है') && counts.includes('1 पर चेतावनी जारी') && counts.includes('1 पर कोई चेतावनी नहीं मिली') && (await js(`document.querySelector('[data-cabinet-banner] button')?.textContent.trim()`)) === 'चेतावनी देखें', `${await summary()} / ${counts}`)
+    ok(`${HI}: shelf capsule aria-label in Hindi, batch kept in Latin`, /^COLDRIF, बैच SR-13\. चेतावनी जारी/.test(await js(`document.querySelector('[data-shelf-batch="SR-13"] button')?.getAttribute('aria-label') || ''`)), await js(`document.querySelector('[data-shelf-batch="SR-13"] button')?.getAttribute('aria-label')`))
+    await js(`window.scrollTo(0, 0)`); await shot2('shelf')
+    ok(`${HI}: cabinet: never सुरक्षित / असली / स्वीकृत`, noClaim(await body()))
+    await vp(360, 800, false); await wait(400)
+    ok(`${HI}: cabinet: no sideways overflow at 360`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+    await vp(390, 844, false)
+  }
+
+
+  // Hindi phase 2: Shelf sweep and the AI page (mock mode, Hindi already active via localStorage 'nazar:lang' = 'hi').
+  {
+    const HS = HI
+    const noClaimS = (t) => !/सुरक्षित|असली|स्वीकृत/.test(t)
+    await send('Page.navigate', { url: new globalThis.URL('/sweep', URL).href }); await wait(1500)
+    ok(`${HS}: hero, label, buttons and privacy panel in Hindi`, await js(`(() => { const h = document.querySelector('[data-sweep-hero]')?.innerText || ''; const b = document.body.innerText; return h.includes('पूरी शेल्फ़ जाँचें,') && h.includes('एक ही बार में।') && b.includes('CSV अपलोड करें') && b.includes('नमूना आज़माएँ') && b.includes('इसी डिवाइस पर जाँच') && document.querySelector('[data-sweep-check]').innerText.includes('बैच जाँचें') && document.getElementById('sweep-input').placeholder.startsWith('बैच नंबर पेस्ट करें') })()`))
+    await js(`document.querySelector('[data-sweep-check]').click()`); await wait(200)
+    ok(`${HS}: an empty sweep asks in Hindi`, (await js(`document.querySelector('[data-sweep-hint]')?.innerText || ''`)) === 'कम से कम एक बैच नंबर पेस्ट करें, या CSV अपलोड करें।')
+    await js(`document.querySelector('[data-sweep-sample]').click()`)
+    await waitFor(`document.querySelector('[data-sweep]')?.dataset.sweepPhase === 'done'`, 20000); await wait(400)
+    const sw = await js(`document.querySelector('[data-sweep-results]')?.innerText || ''`)
+    ok(`${HS}: results in Hindi (rows checked, the four chips, footnote says not a safety certificate)`, /पंक्ति(याँ)? जाँची गई/.test(sw) && ['चेतावनी जारी', 'कोई चेतावनी नहीं मिली', 'पक्का नहीं कह सकते', 'यह सुरक्षा प्रमाणपत्र नहीं है'].every(s => sw.includes(s)) && (await js(`document.querySelector('[data-sweep-footnote]').innerText`)).includes('सुरक्षा प्रमाणपत्र नहीं है'), sw.slice(0, 160))
+    ok(`${HS}: batch numbers stay in the mono face`, /JetBrains Mono/.test(await js(`getComputedStyle(document.querySelector('[data-sweep-row] .font-mono')).fontFamily`)))
+    ok(`${HS}: never सुरक्षित / असली / स्वीकृत on the sweep page`, noClaimS(await body()))
+    await vp(360, 800, false); await wait(400)
+    ok(`${HS}: no sideways overflow at 360 (sweep with results)`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+
+    await send('Page.navigate', { url: new globalThis.URL('/ai', URL).href }); await wait(1500)
+    ok(`${HS}: AI page heading, set-up link and section titles in Hindi; code stays as written`, (await js(`document.getElementById('ai-hero-title')?.innerText`)) === 'अपने AI से किसी बैच के बारे में पूछें, और सरकारी विभाग का जवाब पाएँ।' && (await js(`document.querySelector('[data-ai-setup-cta]').innerText.trim()`)) === 'सेटअप करें' && (await js(`document.getElementById('rules-title')?.innerText`)) === 'हर AI सहायक को मिलने वाले नियम।' && (await js(`!!document.querySelector('[data-ai-english-note]')`)) && (await js(`document.querySelector('[data-mcp-snippet] pre')?.innerText || ''`)).startsWith('claude mcp add'))
+    ok(`${HS}: never सुरक्षित / असली / स्वीकृत on the AI page`, noClaimS(await body()))
+    ok(`${HS}: no sideways overflow at 360 (AI page)`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+    await vp(390, 844, false)
+  }
+
+  // The India pulse on Alerts: Hindi chrome and Hindi state names; the tiles keep their 2-letter codes.
+  await vp(390, 844, false)
+  {
+    const spa = await navTo('चेतावनियाँ'); await feedIdle()
+    ok(`${HI}: Alerts reached from the Hindi nav`, spa && (await js(`location.pathname`)) === '/feed')
+    if (await waitFor(`!!document.querySelector('[data-feed-pulse] [data-pulse-tile="IN-TN"]')`, 10000)) {
+      const p = await js(`document.querySelector('[data-feed-pulse]').innerText`)
+      ok(`${HI}: India pulse heading and stats in Hindi`, (await js(`document.getElementById('pulse-title').textContent`)) === 'फ़ेल हुए बैच कहाँ बने।' && p.includes('भारत की नब्ज़') && p.includes('नकली या ज़हरीली') && p.includes('नक्शा दिखाएँ'), p.slice(0, 160))
+      ok(`${HI}: India pulse ledger line in Hindi, as of an Indian date`, /^Nazar के रिकॉर्ड में [\d,]+ चेतावन(ी|ियाँ) · \d{1,2} [ऀ-ॿ]+ \d{4}, \d{1,2}:\d{2}\s[ap]m\sIST तक$/.test((await js(`document.querySelector('[data-pulse-source]').innerText`)).trim()), await js(`document.querySelector('[data-pulse-source]').innerText`))
+      await js(`document.querySelector('[data-pulse-toggle]').click()`); await wait(500)
+      const tn = await js(`document.querySelector('[data-pulse-tile="IN-TN"]').getAttribute('aria-label')`)
+      ok(`${HI}: a tile's aria-label names the state in Hindi; the tile keeps its code`, /^तमिलनाडु: [\d,]+ चेतावन/.test(tn) && (await js(`document.querySelector('[data-pulse-tile="IN-TN"] span span').textContent`)) === 'TN', tn)
+      ok(`${HI}: the map group is labelled in Hindi`, (await js(`document.querySelector('[data-feed-pulse] [role="group"]').getAttribute('aria-label')`)).startsWith('दवा जिस राज्य में बनी'))
+      const ro = await js(`document.querySelector('[data-pulse-readout]').innerText`)
+      ok(`${HI}: the readout speaks Hindi, never सुरक्षित`, /सबसे ज़्यादा चेतावनियाँ|कहाँ बनी|सूची में दिख रहा है/.test(ro) && noClaim(await js(`document.querySelector('[data-feed-pulse]').innerText`)), ro)
+      ok(`${HI}: no sideways overflow at 390 (India pulse open)`, (await width()) <= 390, String(await width()))
+      await js(`document.querySelector('[data-feed-pulse]').scrollIntoView()`); await wait(300)
+      await shot2('pulse')
+    } else ok(`${HI}: India pulse drawn`, false)
+  }
+
+  ok(`${HI}: the Alerts "Made in" filter lists states in Hindi, like the India pulse`, await js(`(() => { const o = [...document.querySelectorAll('#feed-state option')].map((x) => x.value + '=' + x.textContent); return o.some((x) => x === 'IN-TN=तमिलनाडु') && !o.some((x) => x === 'IN-TN=Tamil Nadu') })()`), String(await js(`[...document.querySelectorAll('#feed-state option')].slice(0, 4).map((x) => x.textContent).join(',')`)))
+
+  // Every phase 2 surface at 360.
+  await vp(360, 800, false); await wait(500)
+  ok(`${HI}: no sideways overflow at 360 (Alerts with the India pulse)`, (await width()) <= 360, String(await width()))
+
+  // Back to English: everything in phase 2 reads exactly as before.
+  await vp(390, 844, false); await wait(300)
+  const noDevanagari = async () => !/[\u0900-\u097F]/.test((await body()).replace(/हिं/g, ''))
+  await js(`document.querySelector('[data-lang-toggle]').click()`); await wait(600)
+  ok(`${HI}: back in English: the India pulse and the status pill read as before`, (await js(`document.documentElement.lang`)) === 'en' && (await js(`document.getElementById('pulse-title')?.textContent`)) === 'Where failed batches were made.' && (await js(`document.querySelector('[data-status]')?.getAttribute('aria-label')`)) === 'Status: Pipeline live · checked 4 min ago' && (await noDevanagari()), await js(`document.getElementById('pulse-title')?.textContent`))
+  await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1500)
+  ok(`${HI}: back in English: the cabinet has no Hindi left`, (await js(`document.querySelector('[data-cabinet-banner] button')?.textContent.trim()`)) !== 'चेतावनी देखें' && (await noDevanagari()) && (await body()).includes('COLDRIF'))
+  await send('Page.navigate', { url: URL }); await wait(1500); await settle()
+  await typeBatch('AB1234'); await wait(300)
+  ok(`${HI}: back in English: the WhatsApp text is English again`, (await waMessage()).startsWith('Batch AB1234: No alert found on Nazar as of ') && (await waMessage()).includes('This is not a safety certificate.'), await waMessage())
+  await clickHas('Guide') || await js(`document.querySelector('header button:nth-last-child(2)').click()`); await wait(800)
+  ok(`${HI}: back in English: onboarding reads as before`, (await body()).includes('An eye on every batch') && (await noDevanagari()))
+  await escape()
+  await js(`localStorage.removeItem('nazar:lang')`)
+}
+// ======== end Hindi phase 2 ========
+
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))
 console.log(`\n[${MODE}] ${results.filter(r => r[0] === 'PASS').length}/${results.length} passed`)

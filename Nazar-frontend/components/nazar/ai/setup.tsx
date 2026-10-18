@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CircleCheck, FlaskConical, LifeBuoy, MapPin } from 'lucide-react'
 
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { CLIENTS, TEST_CURL, TEST_INSPECTOR, TROUBLESHOOTING } from './data'
 import { AiSection, CodeBlock } from './shared'
@@ -11,6 +12,7 @@ import { AiSection, CodeBlock } from './shared'
 // Then a one-line test from a terminal, and the few things that trip people up.
 
 export function Setup() {
+  const { t, tr } = useT()
   const [tab, setTab] = useState(CLIENTS[0].id)
   const onKey = (e: React.KeyboardEvent, i: number) => {
     const n = CLIENTS.length
@@ -22,9 +24,9 @@ export function Setup() {
   }
 
   return (
-    <AiSection id="setup" kicker="Set it up" title="Add Nazar to your assistant in under a minute." intro="Pick your client. Every option points at the same public endpoint; there is nothing to install and no key to paste.">
+    <AiSection id="setup" kicker={t('ai.setup.kicker')} title={t('ai.setup.title')} intro={t('ai.setup.intro')}>
       <div className="overflow-hidden rounded-3xl border bg-card">
-        <div role="tablist" aria-label="Choose your assistant" className="flex flex-wrap gap-1 border-b bg-muted/30 p-1.5" data-mcp-tabs>
+        <div role="tablist" aria-label={t('ai.setup.tabsAria')} className="flex flex-wrap gap-1 border-b bg-muted/30 p-1.5" data-mcp-tabs>
           {CLIENTS.map((c, i) => (
             <button
               key={c.id}
@@ -84,19 +86,19 @@ export function Setup() {
       <div className="mt-10 grid gap-10">
         <div className="min-w-0" data-mcp-test>
           <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-            <FlaskConical className="size-4 text-muted-foreground" aria-hidden="true" /> Test it from a terminal
+            <FlaskConical className="size-4 text-muted-foreground" aria-hidden="true" /> {t('ai.setup.test')}
           </h3>
           <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
-            Ask for SR-13 directly. The reply should start with <code className="font-mono text-[12px] text-foreground">FLAGGED: batch SR-13</code>.
+            {tr('ai.setup.testBody', { code: <code className="font-mono text-[12px] text-foreground">FLAGGED: batch SR-13</code> })}
           </p>
           <div className="mt-3 grid gap-3">
             <CodeBlock s={{ title: 'curl', code: TEST_CURL, label: 'curl test command' }} />
-            <CodeBlock s={{ title: 'Or list the tools: MCP Inspector', code: TEST_INSPECTOR, label: 'MCP Inspector command' }} />
+            <CodeBlock s={{ title: t('ai.setup.inspector'), code: TEST_INSPECTOR, label: 'MCP Inspector command' }} />
           </div>
         </div>
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
-            <LifeBuoy className="size-4 text-muted-foreground" aria-hidden="true" /> If something looks off
+            <LifeBuoy className="size-4 text-muted-foreground" aria-hidden="true" /> {t('ai.setup.trouble')}
           </h3>
           <dl className="mt-3 grid gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-2" data-mcp-troubleshooting>
             {TROUBLESHOOTING.map((x) => (

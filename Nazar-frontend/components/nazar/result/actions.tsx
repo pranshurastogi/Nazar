@@ -53,7 +53,7 @@ function SaveAction({ result }: { result: CheckResult }) {
  * buttons so the bar stays on one line at 360 px.
  */
 export function ShareSave({ result, saveable }: { result: CheckResult; saveable: boolean }) {
-  const { t } = useT()
+  const { t, locale } = useT()
   const [canShare, setCanShare] = useState(false)
   useEffect(() => setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function'), [])
   // A can't-tell answer is not worth forwarding, and cannot be saved either.
@@ -64,7 +64,7 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
   const share = async () => {
     try {
       // The link goes in `url`, not in the text, so share targets do not show it twice.
-      await navigator.share({ title: `${t('result.batch')} ${result.batch} · ${t(`state.${result.state}`)} · Nazar`, text: shareSummary(result), url })
+      await navigator.share({ title: `${t('result.batch')} ${result.batch} · ${t(`state.${result.state}`)} · Nazar`, text: shareSummary(result, locale), url })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       await copyLink()
@@ -89,7 +89,7 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
         </Button>
       )}
       <a
-        href={whatsappHref(shareMessage(result, url))}
+        href={whatsappHref(shareMessage(result, url, locale))}
         target="_blank"
         rel="noreferrer noopener"
         className={cn(buttonVariants({ variant: 'ghost' }), ICON_ACTION)}

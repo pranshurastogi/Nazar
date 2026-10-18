@@ -31,7 +31,7 @@ import type { SnapshotIndex } from '@/lib/source/snapshot'
 import { alertEntries, alertKey, endVisit, isNew, markSeen, snapshotEntries, visitBaseline, type SeenState } from '@/lib/seen'
 import { peek, revalidate } from '@/lib/source/swr'
 import { serif } from '@/lib/fonts'
-import { formatYmLocale, useT, type Locale, type MessageKey, type PluralKey, type Vars } from '@/lib/i18n'
+import { formatYmLocale, regionName, useT, type Locale, type MessageKey, type PluralKey, type Vars } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The Feed tab: every alert Nazar holds, newest first, from whichever source answers
@@ -91,9 +91,9 @@ const keeps = (a: Alert, f: Filters) =>
 
 type T = (key: MessageKey, vars?: Vars) => string
 
-/** Short names of the filters in use, for the search and RSS notes. State and source names are the regulator's. */
-const filterNames = (f: Filters, t: T) =>
-  [f.serious && t('feed.serious'), f.peds && t('feed.childOnly'), f.state && t('feed.madeInState', { state: STATE_NAME[f.state] ?? f.state }), f.source && (SOURCE_NAME[f.source] ?? f.source)].filter(
+/** Short names of the filters in use, for the search and RSS notes. States follow the language, like the India pulse; source names are the regulator's. */
+const filterNames = (f: Filters, t: T, locale: Locale) =>
+  [f.serious && t('feed.serious'), f.peds && t('feed.childOnly'), f.state && t('feed.madeInState', { state: regionName(locale, f.state, STATE_NAME[f.state] ?? f.state) }), f.source && (SOURCE_NAME[f.source] ?? f.source)].filter(
     (x): x is string => !!x,
   )
 
@@ -165,8 +165,8 @@ function SeverityTile({ value }: { value: number }) {
 }
 
 function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: Alert; open: boolean; onToggle: () => void; terms?: string[]; fresh?: boolean }) {
-  const { t } = useT()
-  const made = stateName(alert.state)
+  const { t, locale } = useT()
+  const made = alert.state ? regionName(locale, alert.state, stateName(alert.state) ?? alert.state) : stateName(alert.state)
   // While searching, say where a match came from when it is not the name or batch on show.
   const maker = terms.length && mentions(alert.manufacturer, terms) ? alert.manufacturer : null
   const generic = terms.length && alert.drug && alert.drug !== alert.brand && mentions(alert.drug, terms) ? alert.drug : null
@@ -304,6 +304,11 @@ function useSeen() {
 export function Feed() {
   const { t, tp, tr, locale, intl } = useT()
   const plural = (base: PluralKey, n: number) => tp(base, n)
+  // State names in the filter follow the language (as on the India pulse), sorted in that language.
+  const states = useMemo(
+    () => (locale === 'en' ? STATES : STATES.map(([code, name]) => [code, regionName(locale, code, name)] as [string, string]).sort((a, b) => a[1].localeCompare(b[1], 'hi'))),
+    [locale],
+  )
   const [filters, setFilters] = useState<Filters | null>(null)
   const [items, setItems] = useState<Alert[]>([])
   const [page, setPage] = useState<FeedPage | null>(null)
@@ -432,7 +437,7 @@ export function Feed() {
   const batch = searching ? batchLike(query) : null
   const shown = results ? results.items.filter((a) => keeps(a, f)) : []
   const hidden = results ? results.items.length - shown.length : 0
-  const following = filterNames(f, t)
+  const following = filterNames(f, t, locale)
 
   const first = searching ? !results : loading === 'first'
   const source = searching ? results?.source : page?.source
@@ -526,7 +531,7 @@ export function Feed() {
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3 md:contents">
-            <SelectField id="feed-state" label={t('feed.madeIn')} value={f.state} onChange={(v) => update({ state: v })} all={t('feed.allStates')} options={STATES} />
+            <SelectField id="feed-state" label={t('feed.madeIn')} value={f.state} onChange={(v) => update({ state: v })} all={t('feed.allStates')} options={states} />
             <SelectField id="feed-source" label={t('feed.source')} value={f.source} onChange={(v) => update({ source: v })} all={t('feed.allSources')} options={SOURCES} />
           </div>
         </div>

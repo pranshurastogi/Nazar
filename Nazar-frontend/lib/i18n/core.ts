@@ -34,6 +34,18 @@ export function translate(locale: Locale, key: MessageKey, vars?: Vars): string 
   return fill(DICTS[locale][key] ?? en[key] ?? key, vars)
 }
 
+/** A state or UT by its code ("IN-TN" → Tamil Nadu / तमिलनाडु). Unknown codes fall back as given. */
+export function regionName(locale: Locale, code: string, fallback = code): string {
+  const key = `region.${code}`
+  return key in en ? translate(locale, key as MessageKey) : fallback
+}
+
+/** A short failure reason by its code ("assay" → wrong strength / दवा की मात्रा ग़लत). Unknown codes fall back as given. */
+export function failureName(locale: Locale, code: string, fallback: string): string {
+  const key = `failure.${code}`
+  return key in en ? translate(locale, key as MessageKey) : fallback
+}
+
 const plurals = new Map<Locale, Intl.PluralRules>()
 /** A counted phrase: `.one` or `.other` by the locale's plural rules ({n} is filled with a formatted number). */
 export function translatePlural(locale: Locale, base: PluralKey, n: number, vars?: Vars): string {

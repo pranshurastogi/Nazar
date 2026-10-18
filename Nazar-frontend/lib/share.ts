@@ -1,3 +1,4 @@
+import { formatDay, translate, type Locale } from '@/lib/i18n/core'
 import type { CheckResult } from '@/lib/source/types'
 
 // Share links for a batch. A shared link names only the batch: the page behind it shows
@@ -22,26 +23,22 @@ export const shareUrl = (batch: string) => `${siteOrigin()}${sharePath(batch)}`
 /** Path that opens Check with the batch filled in and checked: /?batch=SR-13. */
 export const checkPath = (batch: string) => `/?batch=${encodeURIComponent(batch.trim().toUpperCase())}`
 
-const asOfText = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-
-/** One-line summary of a result, without the link. Never says "safe", "genuine" or "approved". */
-export function shareSummary(result: CheckResult): string {
-  if (result.state === 'flagged') {
+/**
+ * One-line summary of a result, without the link, in the reader's language. Never says "safe",
+ * "genuine" or "approved" (in Hindi: never सुरक्षित, असली or स्वीकृत); a no-alert summary always
+ * says it is not a safety certificate.
+ */
+export function shareSummary(result: CheckResult, locale: Locale = 'en'): string {
+  if (result.state === 'flagged' || result.state === 'retracted') {
     const a = result.alert
-    return `${a.brand} batch ${a.batch}: Flagged by ${a.authority} (${a.noticeDate}). Checked on Nazar.`
+    return translate(locale, `sharetext.${result.state}`, { brand: a.brand, batch: a.batch, authority: a.authority, date: a.noticeDate })
   }
-  if (result.state === 'retracted') {
-    const a = result.alert
-    return `${a.brand} batch ${a.batch}: an alert by ${a.authority} was withdrawn (Retracted). Checked on Nazar.`
-  }
-  if (result.state === 'no_alert') {
-    return `Batch ${result.batch}: No alert found on Nazar as of ${asOfText(result.asOf)}. This is not a safety certificate.`
-  }
-  return `Batch ${result.batch}: Nazar can't tell from this number. Re-check the batch printed on the pack.`
+  if (result.state === 'no_alert') return translate(locale, 'sharetext.no_alert', { batch: result.batch, date: formatDay(locale, result.asOf) })
+  return translate(locale, 'sharetext.unreadable', { batch: result.batch })
 }
 
 /** The message with its link, for the clipboard and WhatsApp. */
-export const shareMessage = (result: CheckResult, url = shareUrl(result.batch)) => `${shareSummary(result)}\n${url}`
+export const shareMessage = (result: CheckResult, url = shareUrl(result.batch), locale: Locale = 'en') => `${shareSummary(result, locale)}\n${url}`
 
 /** WhatsApp click-to-chat link carrying the message. */
 export const whatsappHref = (message: string) => `https://wa.me/?text=${encodeURIComponent(message)}`

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Activity, ArrowRight, Cog, FileText, Landmark, ShieldAlert, Siren, Stethoscope, Thermometer } from 'lucide-react'
 
 import type { MedicineExplain } from '@/lib/source/api'
+import { useT, type MessageKey, type PluralKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The AI-written body of "About this medicine": a compact header, then short story cards that
@@ -12,41 +13,44 @@ import { cn } from '@/lib/utils'
 
 type Story = { id: string; title: string; Icon: typeof Activity; bullets: string[]; extra?: { label: string; bullets: string[] }; tone?: 'urgent' }
 
-export function stories(m: MedicineExplain['medicine']): Story[] {
+/** The story cards. Titles are Nazar's (translated); the bullets are the AI's text, as returned. */
+export function stories(m: MedicineExplain['medicine'], t: (key: MessageKey) => string): Story[] {
   const list: Story[] = [
-    { id: 'for', title: "What it's for", Icon: Stethoscope, bullets: m.whatItIsFor },
-    { id: 'how', title: 'How it works', Icon: Cog, bullets: m.howItWorks ? [m.howItWorks] : [] },
-    { id: 'side', title: 'Common side effects', Icon: Activity, bullets: m.commonSideEffects },
-    { id: 'help', title: 'Get help now if…', Icon: Siren, bullets: m.seriousWarnings, tone: 'urgent' },
+    { id: 'for', title: t('medicine.story.for'), Icon: Stethoscope, bullets: m.whatItIsFor },
+    { id: 'how', title: t('medicine.story.how'), Icon: Cog, bullets: m.howItWorks ? [m.howItWorks] : [] },
+    { id: 'side', title: t('medicine.story.side'), Icon: Activity, bullets: m.commonSideEffects },
+    { id: 'help', title: t('medicine.story.help'), Icon: Siren, bullets: m.seriousWarnings, tone: 'urgent' },
     {
       id: 'careful',
-      title: 'Be careful if…',
+      title: t('medicine.story.careful'),
       Icon: ShieldAlert,
       bullets: m.whoShouldBeCareful.slice(0, 4),
-      extra: m.interactions.length ? { label: 'Can interact with', bullets: m.interactions.slice(0, 2) } : undefined,
+      extra: m.interactions.length ? { label: t('medicine.story.interacts'), bullets: m.interactions.slice(0, 2) } : undefined,
     },
-    { id: 'store', title: 'Storage', Icon: Thermometer, bullets: m.storage ? [m.storage] : [] },
+    { id: 'store', title: t('medicine.story.store'), Icon: Thermometer, bullets: m.storage ? [m.storage] : [] },
   ]
   return list.filter((s) => s.bullets.length > 0 || s.extra)
 }
 
-const CONFIDENCE: Record<string, string | null> = {
+const CONFIDENCE: Record<string, MessageKey | null> = {
   high: null,
-  medium: 'Medium confidence',
-  low: 'Low confidence · details may be wrong',
+  medium: 'medicine.conf.medium',
+  low: 'medicine.conf.low',
 }
 
 export function MedicineCard({ data }: { data: MedicineExplain }) {
+  const { t, tr } = useT()
   const m = data.medicine
-  const all = stories(m)
+  const all = stories(m, t)
   const generic = m.genericNames.join(', ')
   const rx = m.prescriptionStatus && m.prescriptionStatus.toLowerCase() !== 'unknown' ? m.prescriptionStatus : null
-  const confidence = CONFIDENCE[m.confidence]
+  const confidenceKey = CONFIDENCE[m.confidence]
+  const confidence = confidenceKey ? t(confidenceKey) : null
 
   return (
     <div data-medicine-card>
       <div className="px-5 sm:px-6">
-        <p className="text-[11px] font-bold tracking-wider text-ai uppercase">General information</p>
+        <p className="text-[11px] font-bold tracking-wider text-ai uppercase">{t('medicine.general')}</p>
         <h3 className="mt-0.5 text-lg leading-snug font-semibold tracking-tight text-balance">{m.name}</h3>
         {(generic || (m.drugClass && m.drugClass !== 'unknown')) && (
           <p className="mt-0.5 max-w-prose text-sm text-muted-foreground">
@@ -67,7 +71,7 @@ export function MedicineCard({ data }: { data: MedicineExplain }) {
         )}
         {m.lookAlikeNames.length > 0 && (
           <p className="mt-2.5 max-w-prose text-xs leading-5 text-muted-foreground">
-            Easily confused with <span className="font-medium text-foreground">{m.lookAlikeNames.join(', ')}</span>. Check the name on the pack.
+            {tr('medicine.lookAlike', { names: <span className="font-medium text-foreground">{m.lookAlikeNames.join(', ')}</span> })}
           </p>
         )}
       </div>
@@ -75,15 +79,15 @@ export function MedicineCard({ data }: { data: MedicineExplain }) {
       <NazarCounts data={data} />
 
       <div className="mt-5 flex items-baseline justify-between gap-3 px-5 sm:px-6">
-        <h4 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">In short</h4>
+        <h4 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{t('medicine.inShort')}</h4>
         <p className="text-xs text-muted-foreground sm:hidden" aria-hidden="true">
-          Swipe for more →
+          {t('medicine.swipe')}
         </p>
       </div>
       {/* Phones swipe a row of even cards (long ones fold behind "Show more"); wider screens use a grid. */}
       <ul
         className="mt-2 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-px-5 px-5 pb-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-6 lg:grid-cols-3"
-        aria-label="About this medicine, in short cards"
+        aria-label={t('medicine.storiesAria')}
         tabIndex={0}
         data-medicine-stories
       >
@@ -117,6 +121,7 @@ function Bullets({ items, hideFrom, className }: { items: string[]; hideFrom?: n
  * line shows.
  */
 function StoryCard({ story: s }: { story: Story }) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const hiddenCount = Math.max(0, s.bullets.length - PHONE_BULLETS) + (s.extra?.bullets.length ?? 0)
   const clamp = !open && hiddenCount >= 2
@@ -148,14 +153,13 @@ function StoryCard({ story: s }: { story: Story }) {
           className="-mx-1 mt-2 inline-flex min-h-11 w-fit items-center rounded-lg px-1 text-sm font-semibold text-primary outline-none focus-visible:ring-3 focus-visible:ring-ring/40 sm:hidden"
           data-story-more
         >
-          Show {hiddenCount} more
+          {t('medicine.showMore', { n: hiddenCount })}
         </button>
       )}
     </li>
   )
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /**
  * Regulator alerts in Nazar, from Nazar's own ledger (not the AI). The brand count and the
@@ -163,8 +167,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * ingredient like paracetamol would make an ordinary pack look dangerous.
  */
 function NazarCounts({ data }: { data: MedicineExplain }) {
+  const { t, tp } = useT()
   const { brandName, brandAlerts, ingredientName, ingredientAlerts } = data
   if (!brandName && !ingredientAlerts) return null
+  // The count stays a plain number ("1234", as English always showed it), whatever the locale's grouping.
+  const count = (base: PluralKey, n: number, vars: Record<string, string>) => tp(base, n, { ...vars, n: String(n) })
   return (
     <div className="mx-5 mt-4 rounded-xl border bg-card px-3.5 py-3 text-sm sm:mx-6" data-medicine-nazar>
       {brandName && (
@@ -173,18 +180,19 @@ function NazarCounts({ data }: { data: MedicineExplain }) {
             <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             {brandAlerts > 0 ? (
               <span>
-                <span className="font-semibold">Nazar has {plural(brandAlerts, 'regulator alert', 'regulator alerts')} for {brandName}</span>{' '}
-                (any batch). Only a match on your batch number means your pack is affected.
+                <span className="font-semibold">{count('medicine.brandAlerts', brandAlerts, { brand: brandName })}</span>
+                {t('medicine.brandAlertsRest')}
               </span>
             ) : (
               <span>
-                <span className="font-semibold">No regulator alerts for {brandName}</span> in Nazar so far (any batch).
+                <span className="font-semibold">{t('medicine.brandNone', { brand: brandName })}</span>
+                {t('medicine.brandNoneRest')}
               </span>
             )}
           </p>
           {brandAlerts > 0 && (
             <Link href="/feed" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-primary hover:underline">
-              Open Feed <ArrowRight className="size-3.5" aria-hidden="true" />
+              {t('medicine.openFeed')} <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           )}
         </div>
@@ -194,8 +202,8 @@ function NazarCounts({ data }: { data: MedicineExplain }) {
           {!brandName && <Landmark className="mt-px size-4 shrink-0" aria-hidden="true" />}
           <span>
             {brandName
-              ? `${plural(ingredientAlerts, 'other alert is', 'other alerts are')} for different products that share an ingredient such as ${ingredientName.toLowerCase()}. They are not about ${brandName}.`
-              : `${plural(ingredientAlerts, 'alert in Nazar is', 'alerts in Nazar are')} for products containing ${ingredientName.toLowerCase()}, from many makers. They don't mean your pack is affected: only your batch number can tell.`}
+              ? count('medicine.ingredientOther', ingredientAlerts, { ingredient: ingredientName.toLowerCase(), brand: brandName })
+              : count('medicine.ingredientOnly', ingredientAlerts, { ingredient: ingredientName.toLowerCase() })}
           </span>
         </p>
       )}

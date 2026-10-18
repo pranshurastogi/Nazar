@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { API_URL } from '@/lib/source/config'
 import { apiExplainMedicine, apiLikelyDown, type MedicineExplain, type MedicineQuery } from '@/lib/source/api'
 import type { ResultState } from '@/lib/source'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { AutoHeight } from './auto-height'
 import { MedicineCard } from './medicine-card'
@@ -32,6 +33,7 @@ const queryKey = (q: MedicineQuery) => JSON.stringify([q.product, q.brand, q.com
 const PAD = 'px-5 sm:px-6'
 
 export function AboutMedicine({ query, verdict, className }: { query: MedicineQuery | null; verdict?: ResultState; className?: string }) {
+  const { t, tr, locale } = useT()
   const reduce = useReducedMotion() ?? false
   const [state, setState] = useState<State>({ kind: 'idle' })
   const [why, setWhy] = useState(false)
@@ -85,7 +87,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
         data-medicine="disabled"
         role="status"
       >
-        <Info className="size-4 shrink-0 text-ai" aria-hidden="true" /> General medicine information isn&apos;t available right now.
+        <Info className="size-4 shrink-0 text-ai" aria-hidden="true" /> {t('medicine.disabled')}
       </p>
     )
   }
@@ -96,15 +98,15 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
     <section
       className={cn('mt-4 overflow-hidden rounded-2xl border border-ai-border bg-ai-soft shadow-xs', className)}
       data-medicine={state.kind}
-      aria-label="About this medicine: AI-generated general information"
+      aria-label={t('medicine.aria')}
       aria-busy={state.kind === 'loading' || undefined}
     >
       {verdict === 'flagged' && (
         <div className={cn('flex items-start gap-2.5 border-b border-flagged-border bg-flagged-soft py-3', PAD)} data-medicine-official-warning>
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-flagged" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-pretty text-flagged">This batch has an official alert – don&apos;t use it.</p>
-            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Anything below is about the medicine in general, not about this batch.</p>
+            <p className="text-sm font-semibold text-pretty text-flagged">{t('medicine.officialWarn')}</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{t('medicine.generalOnly')}</p>
           </div>
         </div>
       )}
@@ -114,16 +116,16 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
         {/* Badge and caveats on one line from sm; on a phone the caveats sit under the badge instead of wrapping beside it. */}
         <div className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
           <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-ai px-2.5 text-[11px] font-bold tracking-wider text-white uppercase dark:text-background">
-            <Sparkles className="size-3" aria-hidden="true" /> AI-generated
+            <Sparkles className="size-3" aria-hidden="true" /> {t('medicine.aiBadge')}
           </span>
-          <span className="text-xs leading-4 text-muted-foreground">Not from a regulator · may be wrong</span>
+          <span className="text-xs leading-4 text-muted-foreground">{t('medicine.caveat')}</span>
         </div>
         <button
           type="button"
           className="-mr-3 ml-auto grid size-11 shrink-0 place-items-center rounded-full text-ai outline-none hover:bg-ai-border/40 focus-visible:ring-3 focus-visible:ring-ring/40"
           aria-expanded={why}
           aria-controls={whyId}
-          aria-label="Why this is marked AI-generated"
+          aria-label={t('medicine.whyAria')}
           onClick={() => setWhy((v) => !v)}
         >
           <Info className="size-4" aria-hidden="true" />
@@ -136,8 +138,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
           className="mx-5 mt-1 rounded-xl border border-ai-border bg-card px-3.5 py-2.5 text-xs leading-5 text-muted-foreground sm:mx-6"
           role="note"
         >
-          This text is written by an AI model from general medical knowledge. It is not part of any regulator notice, is not checked on Arkiv, and can be
-          incomplete or wrong. Only the verdict above comes from official sources. Nazar sends the medicine&apos;s name and ingredients, never your photo or who you are.
+          {t('medicine.why')}
         </motion.p>
       )}
 
@@ -150,11 +151,11 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
                   <BookOpenText className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-bold tracking-wider text-ai uppercase">General information</p>
+                  <p className="text-[11px] font-bold tracking-wider text-ai uppercase">{t('medicine.general')}</p>
                   <h3 className="mt-0.5 text-base leading-snug font-semibold tracking-tight text-balance" data-medicine-name>
-                    About {name ? <span>{name}</span> : 'this medicine'}
+                    {tr('medicine.about', { name: name ? <span>{name}</span> : t('medicine.thisMedicine') })}
                   </h3>
-                  <p className="mt-1 max-w-prose text-sm leading-5 text-pretty text-muted-foreground">What it&apos;s for, side effects, when to get help.</p>
+                  <p className="mt-1 max-w-prose text-sm leading-5 text-pretty text-muted-foreground">{t('medicine.sub')}</p>
                 </div>
               </div>
 
@@ -163,7 +164,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
                 {!name && (
                   <div className="mt-4" data-medicine-confirm-name>
                     <label htmlFor={nameId} className="text-sm font-medium">
-                      We couldn&apos;t read the medicine&apos;s name. Type it as printed on the pack.
+                      {t('medicine.askName')}
                     </label>
                     <input
                       ref={nameRef}
@@ -174,7 +175,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
                         if (nameError) setNameError(false)
                       }}
                       onKeyDown={(e) => e.key === 'Enter' && ask()}
-                      placeholder="e.g. Dolo 650"
+                      placeholder={t('medicine.placeholder')}
                       autoComplete="off"
                       maxLength={110}
                       aria-invalid={nameError || undefined}
@@ -183,7 +184,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
                     />
                     {nameError && (
                       <p id={`${nameId}-err`} className="mt-1.5 text-xs font-medium text-caution" role="status">
-                        Type the medicine&apos;s name, not just its form (like “Tablet”).
+                        {t('medicine.nameError')}
                       </p>
                     )}
                   </div>
@@ -193,7 +194,7 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
                   className="mt-4 h-11 w-full rounded-xl border border-ai/25 bg-card px-4 font-semibold text-foreground shadow-xs hover:bg-ai/10 dark:bg-ai/10 dark:hover:bg-ai/20 sm:w-auto [&_svg]:text-ai"
                   onClick={ask}
                 >
-                  <Sparkles data-icon="inline-start" aria-hidden="true" /> Show general information <ChevronDown data-icon="inline-end" aria-hidden="true" />
+                  <Sparkles data-icon="inline-start" aria-hidden="true" /> {t('medicine.show')} <ChevronDown data-icon="inline-end" aria-hidden="true" />
                 </Button>
               </div>
             </div>
@@ -206,11 +207,11 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
               <div className="flex items-start gap-3 rounded-xl border border-ai-border bg-card p-3.5">
                 <Info className="mt-0.5 size-4 shrink-0 text-ai" aria-hidden="true" />
                 <div className="min-w-0">
-                  <p className="text-sm">{state.message}</p>
-                  {state.kind === 'limited' && <p className="mt-0.5 text-xs text-muted-foreground">Please try again in a few minutes. The verdict above is not affected.</p>}
+                  <p className="text-sm">{locale === 'en' ? state.message : t(state.kind === 'limited' ? 'medicine.limited' : 'medicine.error')}</p>
+                  {state.kind === 'limited' && <p className="mt-0.5 text-xs text-muted-foreground">{t('medicine.limitedHint')}</p>}
                   {state.kind === 'error' && (
                     <Button variant="outline" className="mt-3 h-11 rounded-xl px-4" onClick={ask}>
-                      <RotateCcw data-icon="inline-start" /> Try again
+                      <RotateCcw data-icon="inline-start" /> {t('medicine.tryAgain')}
                     </Button>
                   )}
                 </div>
@@ -219,14 +220,20 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
           )}
 
           {state.kind === 'done' && <MedicineCard data={state.data} />}
+          {/* Hindi mode: the AI writes in English; say so rather than leave a reader wondering. */}
+          {state.kind === 'done' && locale !== 'en' && (
+            <p className={cn('mt-4 text-xs leading-5 text-muted-foreground', PAD)} data-medicine-english-note>
+              {t('medicine.englishNote')}
+            </p>
+          )}
         </motion.div>
       </AutoHeight>
 
       <footer className={cn('flex items-start gap-2.5 border-t border-ai-border bg-card/60 py-3 text-xs leading-5', PAD)} data-medicine-footer>
         <Stethoscope className="mt-0.5 size-4 shrink-0 text-ai" aria-hidden="true" />
         <div className="min-w-0">
-          <p className="font-semibold text-pretty text-foreground">Not medical advice. Ask your doctor or pharmacist.</p>
-          {state.kind === 'done' && <p className="text-muted-foreground">Written by AI from general medical knowledge – may be incomplete.</p>}
+          <p className="font-semibold text-pretty text-foreground">{t('medicine.notAdvice')}</p>
+          {state.kind === 'done' && <p className="text-muted-foreground">{t('medicine.writtenByAi')}</p>}
         </div>
       </footer>
     </section>
@@ -235,13 +242,14 @@ export function AboutMedicine({ query, verdict, className }: { query: MedicineQu
 
 /** Shaped like the finished card (title, chips, Nazar's count, story cards), so it opens without a jump. */
 function Skeleton({ name }: { name: string | null }) {
+  const { t } = useT()
   const bar = 'block animate-pulse rounded bg-ai-border/50 motion-reduce:animate-none'
   return (
     <div data-medicine-skeleton>
-      <p className="sr-only" role="status">Loading general information…</p>
+      <p className="sr-only" role="status">{t('medicine.loading')}</p>
       <div className={PAD} aria-hidden="true">
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> Writing a short summary{name ? ` about ${name}` : ''}…
+          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> {name ? t('medicine.writingAbout', { name }) : t('medicine.writing')}
         </p>
         <span className={cn(bar, 'mt-3 h-6 w-52 max-w-full')} />
         <span className={cn(bar, 'mt-2 h-4 w-72 max-w-full bg-ai-border/40')} />

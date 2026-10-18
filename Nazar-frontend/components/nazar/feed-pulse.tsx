@@ -8,6 +8,7 @@ import { serif } from '@/lib/fonts'
 import { currentSnapshot, formatYm, loadSnapshot, onSnapshot, SOURCE_NAME, STATE_NAME } from '@/lib/source'
 import { aggregate, failureShort, shadeSteps, type MonthTally, type StateTally } from '@/lib/source/aggregate'
 import type { SnapshotIndex } from '@/lib/source/snapshot'
+import { failureName, formatAsOfIn, formatYmLocale, regionName, useT, type Locale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 import './feed-pulse.css'
@@ -53,13 +54,19 @@ const mix = (pct: number) => `color-mix(in oklab, var(--flagged) ${pct}%, var(--
 const SEV_FILL = [26, 40, 56, 78, 100].map(mix)
 
 const fmt = (n: number) => n.toLocaleString('en-IN')
-const plural = (n: number, one: string, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`
 const short = (code: string) => code.replace(/^IN-/, '')
 /** "18 Oct 2026, 5:03 pm IST": the snapshot's time, always in India time whatever the device says. */
 const asOfIst = (d: Date) =>
   `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}, ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST`
-const name = (code: string) => STATE_NAME[code] ?? code
-const ymShort = (ym: number) => {
+/** The snapshot's time in the reader's language; English keeps its exact original form. */
+const asOfIn = (locale: Locale, d: Date) => (locale === 'en' ? asOfIst(d) : formatAsOfIn(locale, d, true))
+/** A state's name in the reader's language (the tiles keep their 2-letter codes). */
+const nameIn = (locale: Locale, code: string) => regionName(locale, code, STATE_NAME[code] ?? code)
+const ymShort = (locale: Locale, ym: number) => {
+  if (locale !== 'en') {
+    const d = new Date(Date.UTC(Math.floor(ym / 100), (ym % 100) - 1, 15))
+    return `${d.toLocaleDateString('hi-IN', { month: 'short', timeZone: 'UTC' })} ’${String(Math.floor(ym / 100)).slice(-2)}`
+  }
   const s = formatYm(ym)
   return s ? `${s.slice(0, 3)} ’${s.slice(-2)}` : ''
 }
@@ -79,6 +86,8 @@ export function FeedPulse({
   source: string
   onState: (code: string) => void
 }) {
+  const { t: tr, tp, locale } = useT()
+  const name = (code: string) => nameIn(locale, code)
   const reduced = useReducedMotion() ?? false
   // undefined while loading; null when the device has no snapshot and none could be fetched.
   const [snap, setSnap] = useState<SnapshotIndex | null | undefined>(undefined)
@@ -114,17 +123,17 @@ export function FeedPulse({
   const steps = shadeSteps(pulse.maxState)
   const ranked = [...pulse.states.values()].sort((a, b) => b.total - a.total)
   const busiest = ranked[0]?.code ?? 'IN-HP'
-  const asOf = asOfIst(pulse.asOf)
+  const asOf = asOfIn(locale, pulse.asOf)
   const stOf = (code: string): StateTally => pulse.states.get(code) ?? { code, total: 0, sev5: 0, serious: 0, peds: 0, grave: 0, topFailure: null }
-  const following = [serious && 'Serious 4–5', peds && 'Child Shield', source && SOURCE_NAME[source]].filter(Boolean) as string[]
+  const following = [serious && tr('feed.serious'), peds && tr('pulse.stat.peds'), source && SOURCE_NAME[source]].filter(Boolean) as string[]
   const active = cursor ?? (state && GRID[state] ? state : busiest)
 
   const tileLabel = (code: string) => {
     const t = stOf(code)
-    const bits = [plural(t.total, 'alert')]
-    if (t.sev5) bits.push(`${fmt(t.sev5)} severity 5`)
-    if (t.peds) bits.push(`${fmt(t.peds)} Child Shield`)
-    return `${name(code)}: ${bits.join(', ')}`
+    const bits = [tp('feed.alerts', t.total)]
+    if (t.sev5) bits.push(tr('pulse.nSev5', { n: fmt(t.sev5) }))
+    if (t.peds) bits.push(tr('pulse.nPeds', { n: fmt(t.peds) }))
+    return tr('pulse.tileLabel', { state: name(code), bits: bits.join(', ') })
   }
 
   // Arrow keys move between tiles by position: the nearest tile in that direction.
@@ -163,10 +172,10 @@ export function FeedPulse({
 
   const t = pulse.tally
   const stats = [
-    { label: 'Alerts', value: t.total, mark: null },
-    { label: 'Severity\u00a05', value: t.sev5, mark: 'sev5' as const },
-    { label: 'Child Shield', value: t.peds, mark: 'peds' as const },
-    { label: 'Spurious or toxic', value: t.grave, mark: null },
+    { label: tr('pulse.stat.alerts'), value: t.total, mark: null },
+    { label: tr('pulse.stat.sev5'), value: t.sev5, mark: 'sev5' as const },
+    { label: tr('pulse.stat.peds'), value: t.peds, mark: 'peds' as const },
+    { label: tr('pulse.stat.grave'), value: t.grave, mark: null },
   ]
   const top3 = ranked.slice(0, 3).filter((r) => r.total > 0)
 
@@ -185,10 +194,11 @@ export function FeedPulse({
         style={{ backgroundImage: 'radial-gradient(90% 60% at 85% 0%, color-mix(in srgb, var(--flagged) 7%, transparent), transparent 70%)' }}
       />
       <div className="relative p-4 sm:p-5">
-        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">India pulse</p>
+        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase hi:text-xs">{tr('pulse.kicker')}</p>
         <div className="mt-1.5">
-          <h3 id="pulse-title" className="min-w-0 text-xl leading-tight font-semibold tracking-[-0.03em] sm:text-2xl">
-            Where failed batches <span className={cn(serif.className, 'pr-0.5 text-[1.12em] font-normal tracking-normal whitespace-nowrap text-primary')}>were made.</span>
+          <h3 id="pulse-title" className="min-w-0 text-xl leading-tight font-semibold tracking-[-0.03em] sm:text-2xl hi:leading-snug">
+            {tr('pulse.titleLead')}
+            <span className={cn(locale === 'hi' ? 'font-semibold' : [serif.className, 'pr-0.5 text-[1.12em] font-normal tracking-normal'], 'whitespace-nowrap text-primary')}>{tr('pulse.titleAccent')}</span>
           </h3>
         </div>
 
@@ -206,9 +216,10 @@ export function FeedPulse({
         {/* Says which count this is: alerts in Nazar's ledger (one per batch notice, duplicates
             merged, retractions left out), which is not the same number as entities on Arkiv. */}
         <p className="mt-2 text-xs leading-5 text-pretty text-muted-foreground" data-pulse-source>
-          <span className="font-semibold text-foreground/85">{plural(pulse.ledgerTotal, 'alert')} in Nazar&apos;s ledger</span>
-          <span className="whitespace-nowrap">
-            <span aria-hidden="true"> · </span>as of {asOf}
+          <span className="font-semibold text-foreground/85 hi:whitespace-nowrap">{tp('pulse.ledger', pulse.ledgerTotal)}</span>
+          <span className="whitespace-nowrap hi:whitespace-normal">
+            <span aria-hidden="true"> · </span>
+            {tr('pulse.asOf', { time: asOf })}
           </span>
         </p>
 
@@ -216,19 +227,19 @@ export function FeedPulse({
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {state && (
               <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/5 py-0.5 pr-0.5 pl-3 font-semibold text-primary">
-                Made in {name(state)}
+                {tr('pulse.madeInState', { state: name(state) })}
                 <button
                   type="button"
                   onClick={() => onState('')}
                   data-pulse-clear
-                  aria-label={`Clear the ${name(state)} filter`}
-                  className="inline-flex h-8 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-[11px] font-bold tracking-wide uppercase hover:bg-primary/20 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  aria-label={tr('pulse.clearAria', { state: name(state) })}
+                  className="inline-flex h-8 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-[11px] font-bold tracking-wide uppercase hi:text-xs hover:bg-primary/20 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
-                  <X className="size-3.5" aria-hidden="true" /> Clear
+                  <X className="size-3.5" aria-hidden="true" /> {tr('pulse.clear')}
                 </button>
               </span>
             )}
-            {following.length > 0 && <span>Counting {following.join(' · ')} only</span>}
+            {following.length > 0 && <span>{tr('pulse.counting', { list: following.join(' · ') })}</span>}
           </div>
         )}
 
@@ -241,19 +252,19 @@ export function FeedPulse({
           className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border bg-background/70 px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:hidden"
         >
           <MapIcon className="size-4 text-primary" aria-hidden="true" />
-          {open ? 'Hide the map' : 'Show the map'}
+          {open ? tr('pulse.hideMap') : tr('pulse.showMap')}
           <ChevronDown className={cn('size-4 transition-transform duration-200 motion-reduce:transition-none', open && 'rotate-180')} aria-hidden="true" />
         </button>
 
         <p className="sr-only">
-          {`From Nazar's snapshot as of ${asOf}: ${plural(t.total, 'alert')}${state ? ` naming a maker in ${name(state)}` : ''}, ${fmt(t.sev5)} of severity 5, ${fmt(t.peds)} under Child Shield. `}
-          {top3.length > 0 && `States with the most alerts: ${top3.map((r) => `${name(r.code)} ${fmt(r.total)}`).join(', ')}. `}
-          Choose a state on the map to show only its alerts in the list below.
+          {tr('pulse.srSummary', { time: asOf, alerts: tp('feed.alerts', t.total), where: state ? tr('pulse.srWhere', { state: name(state) }) : '', sev5: fmt(t.sev5), peds: fmt(t.peds) })}
+          {top3.length > 0 && tr('pulse.srTop', { list: top3.map((r) => `${name(r.code)} ${fmt(r.total)}`).join(', ') })}
+          {tr('pulse.srChoose')}
         </p>
 
         <div id="pulse-body" className={cn('mt-5 grid gap-6 md:mt-6 md:grid-cols-[minmax(0,1fr)_minmax(17rem,23rem)] md:gap-8', !open && 'hidden md:grid')}>
           <div className="order-2 flex min-w-0 flex-col gap-4 md:order-1">
-            <Readout pulse={pulse} code={shown} month={month} top={ranked} stOf={stOf} selected={!!state && !focus} />
+            <Readout locale={locale} pulse={pulse} code={shown} month={month} top={ranked} stOf={stOf} selected={!!state && !focus} />
             <Seismograph months={pulse.months} undated={pulse.undated} reduced={reduced} focusYm={month?.ym ?? null} onFocus={(ym) => setFocus(ym ? { kind: 'month', ym } : null)} />
           </div>
 
@@ -263,7 +274,7 @@ export function FeedPulse({
             <div className="-mx-4 overflow-x-auto px-[3px] py-1.5 min-[360px]:overflow-visible sm:mx-0 sm:px-0" data-pulse-map>
               <div
                 role="group"
-                aria-label="Alerts by the state where the medicine was made. Arrow keys move between states; choose one to filter the list."
+                aria-label={tr('pulse.mapAria')}
                 className="@container relative mx-auto grid min-w-[20rem] max-w-[23rem] gap-[2px] sm:gap-1 md:min-w-0"
                 style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${ROWS}, auto)` }}
                 onMouseLeave={() => setFocus(null)}
@@ -324,7 +335,7 @@ export function FeedPulse({
 
             <div className="mx-auto mt-3 flex max-w-[23rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
               <div className="flex items-center gap-1.5" aria-hidden="true">
-                <span className="mr-0.5">Alerts</span>
+                <span className="mr-0.5">{tr('pulse.stat.alerts')}</span>
                 <span className="size-3 rounded-[3px] border border-border/80 bg-muted/40" />
                 <span className="font-mono">0</span>
                 {steps.map((s, i) => (
@@ -335,13 +346,13 @@ export function FeedPulse({
                 ))}
               </div>
               <div className="flex items-center gap-3" aria-hidden="true">
-                <span className="flex items-center gap-1"><Marker kind="sev5" className="text-foreground" /> severity 5</span>
-                <span className="flex items-center gap-1"><Marker kind="peds" className="text-foreground" /> Child Shield</span>
+                <span className="flex items-center gap-1"><Marker kind="sev5" className="text-foreground" /> {tr('pulse.legendSev5')}</span>
+                <span className="flex items-center gap-1"><Marker kind="peds" className="text-foreground" /> {tr('pulse.stat.peds')}</span>
               </div>
             </div>
             {pulse.noState > 0 && (
               <p className="mx-auto mt-2 max-w-[23rem] text-[11px] leading-4 text-muted-foreground">
-                {plural(pulse.noState, 'alert')} {pulse.noState === 1 ? "doesn't" : "don't"} name the maker&apos;s state, so {pulse.noState === 1 ? 'it is' : 'they are'} not on the map.
+                {tp('pulse.noState', pulse.noState)}
               </p>
             )}
           </div>
@@ -362,12 +373,12 @@ export function FeedPulse({
               <span className={cn('grid size-3.5 place-items-center rounded-[4px] border border-current', medicinesOnly && 'bg-current')} aria-hidden="true">
                 {medicinesOnly && <span className="size-1.5 rounded-[1px] bg-background" />}
               </span>
-              Medicines only
+              {tr('pulse.medicinesOnly')}
             </button>
             <span>
               {medicinesOnly
-                ? `${plural(pulse.hiddenNonMedicine, 'cosmetic or hygiene product')} left out of this picture; the list below still shows them.`
-                : `Includes ${plural(pulse.nonMedicine, 'cosmetic or hygiene product')}.`}
+                ? tp('pulse.leftOut', pulse.hiddenNonMedicine)
+                : tp('pulse.includes', pulse.nonMedicine)}
             </span>
           </div>
         )}
@@ -386,6 +397,7 @@ function Marker({ kind, className }: { kind: 'sev5' | 'peds'; className?: string
 
 /** The panel beside the map: the state or month under the pointer, else the selection, else the leaders. */
 function Readout({
+  locale,
   pulse,
   code,
   month,
@@ -393,6 +405,7 @@ function Readout({
   stOf,
   selected,
 }: {
+  locale: Locale
   pulse: ReturnType<typeof aggregate>
   code: string | null
   month: MonthTally | undefined
@@ -400,39 +413,44 @@ function Readout({
   stOf: (code: string) => StateTally
   selected: boolean
 }) {
+  const { t, tp } = useT()
+  const name = (c: string) => nameIn(locale, c)
   let title: string
   let lines: string[]
   let kicker: string
   if (month) {
-    kicker = 'Month'
-    title = formatYm(month.ym) ?? ''
+    kicker = t('pulse.month')
+    title = (locale === 'en' ? formatYm(month.ym) : formatYmLocale(locale, month.ym)) ?? ''
     const serious = month.bySeverity[3] + month.bySeverity[4]
     lines = month.total
-      ? [`${plural(month.total, 'alert')} · ${fmt(serious)} serious (4–5)`, [month.peds && `${fmt(month.peds)} Child Shield`, month.grave && `${fmt(month.grave)} spurious or toxic`].filter(Boolean).join(' · ') || 'No Child Shield or spurious cases']
-      : ['No dated alerts in Nazar’s data for this month.', 'That is a gap in the record, not a clean month.']
+      ? [
+          t('pulse.monthLine', { alerts: tp('feed.alerts', month.total), n: fmt(serious) }),
+          [month.peds && t('pulse.nPeds', { n: fmt(month.peds) }), month.grave && t('pulse.nGrave', { n: fmt(month.grave) })].filter(Boolean).join(' · ') || t('pulse.noPedsGrave'),
+        ]
+      : [t('pulse.emptyMonth1'), t('pulse.emptyMonth2')]
   } else if (code) {
     const st = stOf(code)
-    kicker = selected ? 'Showing in the list' : 'Made in'
+    kicker = selected ? t('pulse.showing') : t('pulse.madeIn')
     title = name(code)
     lines = st.total
       ? [
-          `${plural(st.total, 'alert')} · ${fmt(st.sev5)} severity 5${st.peds ? ` · ${fmt(st.peds)} Child Shield` : ''}`,
-          st.topFailure ? `Most often failed: ${failureShort(st.topFailure[0])} (${fmt(st.topFailure[1])})` : 'Reasons not itemised',
+          [tp('feed.alerts', st.total), t('pulse.nSev5', { n: fmt(st.sev5) }), st.peds && t('pulse.nPeds', { n: fmt(st.peds) })].filter(Boolean).join(' · '),
+          st.topFailure ? t('pulse.mostFailed', { what: failureName(locale, st.topFailure[0], failureShort(st.topFailure[0])), n: fmt(st.topFailure[1]) }) : t('pulse.noReasons'),
         ]
-      : ['No alerts in Nazar’s data name a maker here.', 'That is not a sign that medicines made here are safe.']
+      : [t('pulse.emptyState1'), t('pulse.emptyState2')]
   } else {
-    kicker = 'Most alerts'
-    title = top[0] && top[0].total ? name(top[0].code) : 'No alerts match'
+    kicker = t('pulse.mostAlerts')
+    title = top[0] && top[0].total ? name(top[0].code) : t('pulse.noMatch')
     lines = top[0] && top[0].total
       ? [
-          `${plural(top[0].total, 'alert')}, ${Math.round((top[0].total / Math.max(1, pulse.tally.total - pulse.noState)) * 100)}% of those with a known state`,
+          t('pulse.topLine', { alerts: tp('feed.alerts', top[0].total), pct: Math.round((top[0].total / Math.max(1, pulse.tally.total - pulse.noState)) * 100) }),
           top.slice(1, 3).filter((r) => r.total).map((r) => `${name(r.code)} ${fmt(r.total)}`).join(' · ') || ' ',
         ]
-      : ['Try fewer filters to see where alerts come from.', ' ']
+      : [t('pulse.fewerFilters'), ' ']
   }
   return (
     <div className="min-h-[5.75rem] rounded-xl border bg-background/60 px-4 py-3" data-pulse-readout>
-      <p className="text-[10px] font-bold tracking-[0.16em] text-muted-foreground uppercase">{kicker}</p>
+      <p className="text-[10px] font-bold tracking-[0.16em] text-muted-foreground uppercase hi:text-xs">{kicker}</p>
       <p className="mt-0.5 truncate text-lg leading-snug font-semibold tracking-[-0.02em]">{title}</p>
       {lines.map((l, i) => (
         <p key={i} className="text-[13px] leading-5 text-muted-foreground">{l}</p>
@@ -455,6 +473,8 @@ function Seismograph({
   focusYm: number | null
   onFocus: (ym: number | null) => void
 }) {
+  const { t, tp, locale } = useT()
+  const ymName = (ym: number) => (locale === 'en' ? formatYm(ym) : formatYmLocale(locale, ym))
   // One linear scale for both sides. The line sits where the busiest months need it, so neither
   // side wastes space; the upper side keeps a little room even when serious alerts are few.
   const upMax = Math.max(0, ...months.map((m) => m.bySeverity[3] + m.bySeverity[4]))
@@ -464,8 +484,8 @@ function Seismograph({
   const pctUp = (n: number) => `${(n / (k * shareUp)) * 100}%`
   const pctDown = (n: number) => `${(n / (k * (1 - shareUp))) * 100}%`
   const label = months.length
-    ? `Alerts per month from ${formatYm(months[0].ym)} to ${formatYm(months[months.length - 1].ym)}. Severity 4 and 5 are drawn above the line, 1 to 3 below. The table below has the numbers.`
-    : 'No dated alerts to chart.'
+    ? t('pulse.chartAria', { from: ymName(months[0].ym) ?? '', to: ymName(months[months.length - 1].ym) ?? '' })
+    : t('pulse.chartEmptyAria')
   const showLabel = (i: number) => {
     const ym = months[i].ym
     if (i === 0 || i === months.length - 1) return true
@@ -476,14 +496,14 @@ function Seismograph({
   return (
     <div className="min-w-0" data-pulse-timeline>
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs font-semibold">Alerts by month</p>
+        <p className="text-xs font-semibold">{t('pulse.byMonth')}</p>
         <p className="flex items-center gap-3 text-[11px] text-muted-foreground" aria-hidden="true">
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-[2px]" style={{ background: SEV_FILL[4] }} />↑ 4–5</span>
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-[2px]" style={{ background: SEV_FILL[1] }} />↓ 1–3</span>
         </p>
       </div>
       {months.length === 0 ? (
-        <p className="mt-2 rounded-xl bg-muted px-3 py-4 text-center text-xs text-muted-foreground">No dated alerts for this view.</p>
+        <p className="mt-2 rounded-xl bg-muted px-3 py-4 text-center text-xs text-muted-foreground">{t('pulse.noDated')}</p>
       ) : (
         <>
           <div role="img" aria-label={label} className="relative mt-2 h-32 overflow-hidden rounded-xl border bg-background/60 sm:h-36" onMouseLeave={() => onFocus(null)}>
@@ -537,24 +557,24 @@ function Seismograph({
             {months.map((m, i) => (
               <span key={m.ym} className="relative min-w-0 flex-1">
                 {showLabel(i) && (
-                  <span className={cn('absolute top-0 font-mono whitespace-nowrap', i === months.length - 1 && i > 0 ? 'right-0' : 'left-0')}>{ymShort(m.ym)}</span>
+                  <span className={cn('absolute top-0 font-mono whitespace-nowrap', i === months.length - 1 && i > 0 ? 'right-0' : 'left-0')}>{ymShort(locale, m.ym)}</span>
                 )}
               </span>
             ))}
           </div>
           <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
-            <span className="flex items-center gap-1" aria-hidden="true"><Marker kind="peds" className="text-flagged" /> Child Shield</span>
-            <span className="flex items-center gap-1" aria-hidden="true"><span className="inline-block size-[6px] rotate-45 bg-flagged" /> spurious or toxic</span>
-            {undated > 0 && <span data-pulse-undated>{plural(undated, 'alert')} with no regulator date {undated === 1 ? 'is' : 'are'} left off the timeline.</span>}
+            <span className="flex items-center gap-1" aria-hidden="true"><Marker kind="peds" className="text-flagged" /> {t('pulse.stat.peds')}</span>
+            <span className="flex items-center gap-1" aria-hidden="true"><span className="inline-block size-[6px] rotate-45 bg-flagged" /> {t('pulse.legendGrave')}</span>
+            {undated > 0 && <span data-pulse-undated>{tp('pulse.undated', undated)}</span>}
           </p>
           <table className="sr-only">
-            <caption>Alerts per month (dated alerts only)</caption>
+            <caption>{t('pulse.tableCaption')}</caption>
             <thead>
-              <tr><th scope="col">Month</th><th scope="col">Alerts</th><th scope="col">Severity 4–5</th><th scope="col">Child Shield</th></tr>
+              <tr><th scope="col">{t('pulse.thMonth')}</th><th scope="col">{t('pulse.thAlerts')}</th><th scope="col">{t('pulse.thSerious')}</th><th scope="col">{t('pulse.thPeds')}</th></tr>
             </thead>
             <tbody>
               {months.filter((m) => m.total).map((m) => (
-                <tr key={m.ym}><th scope="row">{formatYm(m.ym)}</th><td>{m.total}</td><td>{m.bySeverity[3] + m.bySeverity[4]}</td><td>{m.peds}</td></tr>
+                <tr key={m.ym}><th scope="row">{ymName(m.ym)}</th><td>{m.total}</td><td>{m.bySeverity[3] + m.bySeverity[4]}</td><td>{m.peds}</td></tr>
               ))}
             </tbody>
           </table>

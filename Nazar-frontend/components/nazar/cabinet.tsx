@@ -42,6 +42,7 @@ import {
 } from '@/lib/cabinet'
 import { serif } from '@/lib/fonts'
 import { checkBatch, type CheckResult, type ResultState } from '@/lib/source'
+import { currentLocale, translatePlural, useT, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The Cabinet tab: medicines a family keeps at home, saved in this browser only. Every
@@ -51,12 +52,16 @@ import { cn } from '@/lib/utils'
 /** Gap between re-checks, so a long cabinet never bursts the public Arkiv RPC. */
 const RECHECK_GAP_MS = 350
 
-const STATE_STYLE: Record<ResultState, { icon: typeof Search; tile: string; badge: string; label: string }> = {
-  flagged: { icon: TriangleAlert, tile: 'bg-flagged text-white dark:text-background', badge: 'bg-flagged text-white dark:text-background', label: 'Flagged' },
-  retracted: { icon: History, tile: 'bg-caution-soft text-caution', badge: 'bg-caution-soft text-caution', label: 'Retracted' },
-  no_alert: { icon: Search, tile: 'bg-quiet-soft text-quiet', badge: 'bg-quiet-soft text-quiet', label: 'No alert found' },
-  unreadable: { icon: CircleHelp, tile: 'bg-caution-soft text-caution', badge: 'bg-caution-soft text-caution', label: "Can't tell" },
+const STATE_STYLE: Record<ResultState, { icon: typeof Search; tile: string; badge: string }> = {
+  flagged: { icon: TriangleAlert, tile: 'bg-flagged text-white dark:text-background', badge: 'bg-flagged text-white dark:text-background' },
+  retracted: { icon: History, tile: 'bg-caution-soft text-caution', badge: 'bg-caution-soft text-caution' },
+  no_alert: { icon: Search, tile: 'bg-quiet-soft text-quiet', badge: 'bg-quiet-soft text-quiet' },
+  unreadable: { icon: CircleHelp, tile: 'bg-caution-soft text-caution', badge: 'bg-caution-soft text-caution' },
 }
+
+/** Errors thrown in English by the import (lib/cabinet keeps English); shown in the page's language. */
+const IMPORT_TOO_LARGE = 'That file is too large to be a Nazar cabinet.'
+const IMPORT_ERRORS: Record<string, MessageKey> = { [IMPORT_TOO_LARGE]: 'cabinet.import.tooLarge', 'No medicines found in this file': 'cabinet.import.empty' }
 
 const RANK: Record<ResultState, number> = { flagged: 0, retracted: 1, unreadable: 2, no_alert: 3 }
 
@@ -67,7 +72,8 @@ const ordered = (items: CabinetItem[]) =>
     .sort((a, b) => (RANK[a.item.last?.state ?? 'no_alert'] - RANK[b.item.last?.state ?? 'no_alert']) || a.i - b.i)
     .map((x) => x.item)
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+/** Counted phrases for toasts (outside React), in the page's current language. */
+const tpNow = (base: Parameters<typeof translatePlural>[1], n: number) => translatePlural(currentLocale(), base, n)
 
 /** On a phone the shelf is the index, so the list keeps only the cards that need a look. */
 const needsLook = (i: CabinetItem) => i.last?.state === 'flagged' || i.last?.state === 'retracted' || i.last?.state === 'unreadable'
@@ -107,10 +113,11 @@ function CabinetRow({
   onRemove: () => void
   onCheck: (batch: string) => void
 }) {
+  const { t, locale } = useT()
   const state = item.last?.state
   const s = state ? STATE_STYLE[state] : null
   const exp = expiryStatus(item.expiry, new Date(now))
-  const expLabel = formatExpiry(item.expiry)
+  const expLabel = formatExpiry(item.expiry, locale)
   const Icon = s?.icon ?? Clock
   const panelId = `cabinet-${item.id}`
 
@@ -144,28 +151,28 @@ function CabinetRow({
           </span>
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             {s ? (
-              <Pill className={s.badge} data-cabinet-state={state}>{s.label}</Pill>
+              <Pill className={s.badge} data-cabinet-state={state}>{t(`state.${state!}`)}</Pill>
             ) : (
-              <Pill className="bg-muted text-muted-foreground" data-cabinet-state="pending">{checking ? 'Checking' : 'Not checked yet'}</Pill>
+              <Pill className="bg-muted text-muted-foreground" data-cabinet-state="pending">{checking ? t('cabinet.pending.checking') : t('cabinet.pending.notYet')}</Pill>
             )}
             {exp && (
               <Pill
                 data-expiry={exp.kind}
                 className={exp.kind === 'expired' ? 'bg-caution text-white dark:text-background' : 'border border-caution-border bg-caution-soft text-caution'}
               >
-                {exp.label}
+                {exp.kind === 'expired' ? t('cabinet.expired') : t('cabinet.expiresSoon')}
               </Pill>
             )}
-            {expLabel && !exp && <span className="text-xs text-muted-foreground">Exp {expLabel}</span>}
+            {expLabel && !exp && <span className="text-xs text-muted-foreground">{t('cabinet.exp', { date: expLabel })}</span>}
             {expLabel && exp && <span className="text-xs text-muted-foreground">{expLabel}</span>}
           </span>
           <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
             {checking ? (
-              <span>Checking now…</span>
+              <span>{t('cabinet.checkingNow')}</span>
             ) : item.last ? (
-              <span data-last-checked>Last checked {timeAgo(item.last.at, now)}</span>
+              <span data-last-checked>{t('cabinet.lastChecked', { ago: timeAgo(item.last.at, now, locale) })}</span>
             ) : (
-              <span>Waiting to be checked</span>
+              <span>{t('cabinet.waiting')}</span>
             )}
             {item.last && !checking && <SourceTag source={item.last.source} />}
           </span>
@@ -174,18 +181,18 @@ function CabinetRow({
       </button>
 
       {open && (
-        <div id={panelId} role="region" aria-label={`Details for ${item.name}`} className="border-t px-3 pt-3 pb-3 sm:px-4">
+        <div id={panelId} role="region" aria-label={t('cabinet.detailsFor', { name: item.name })} className="border-t px-3 pt-3 pb-3 sm:px-4">
           {(item.composition?.length || item.maker) && (
             <dl className="mb-3 grid gap-1 rounded-xl bg-muted/50 px-3.5 py-2.5 text-[13px] leading-5" data-cabinet-details>
               {item.composition?.length ? (
                 <div className="flex flex-wrap gap-x-2">
-                  <dt className="text-muted-foreground">Composition</dt>
+                  <dt className="text-muted-foreground">{t('cabinet.composition')}</dt>
                   <dd className="min-w-0 break-words">{item.composition.join(', ')}</dd>
                 </div>
               ) : null}
               {item.maker && (
                 <div className="flex flex-wrap gap-x-2">
-                  <dt className="text-muted-foreground">Made by</dt>
+                  <dt className="text-muted-foreground">{t('cabinet.madeBy')}</dt>
                   <dd className="min-w-0 break-words">{item.maker}</dd>
                 </div>
               )}
@@ -195,7 +202,7 @@ function CabinetRow({
             <p className="mb-3 flex items-start gap-2 rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3 text-sm text-caution">
               <Clock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <span>
-                <span className="font-semibold">This pack expired at the end of {expLabel}.</span> Don&apos;t use it. Ask your chemist how to dispose of it.
+                <span className="font-semibold">{t('cabinet.expiredLead', { date: expLabel ?? '' })}</span> {t('cabinet.expiredBody')}
               </span>
             </p>
           )}
@@ -203,15 +210,15 @@ function CabinetRow({
             <ResultCard result={result} onCheck={onCheck} saveable={false} />
           ) : (
             <p className="rounded-xl bg-muted px-4 py-3 text-sm text-muted-foreground">
-              {checking ? 'Checking this batch now…' : 'The full answer appears here after the next check.'}
+              {checking ? t('cabinet.checkingBatch') : t('cabinet.fullAnswerLater')}
             </p>
           )}
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             <Button variant="outline" className="h-11 px-3.5" onClick={onEdit}>
-              <Pencil /> Edit
+              <Pencil /> {t('cabinet.edit')}
             </Button>
             <Button variant="destructive" className="h-11 px-3.5" onClick={onRemove}>
-              <Trash2 /> Remove
+              <Trash2 /> {t('cabinet.remove')}
             </Button>
           </div>
         </div>
@@ -221,6 +228,7 @@ function CabinetRow({
 }
 
 export function Cabinet() {
+  const { t, tp, locale } = useT()
   const items = useCabinet()
   const hydrated = useHydrated()
   const shell = useShell()
@@ -268,8 +276,8 @@ export function Cabinet() {
     runRef.current = null
     setProgress(null)
     setNow(Date.now())
-    if (failed) toast.error(`Couldn't check ${plural(failed, 'medicine')} right now. Try again in a minute.`)
-    else if (manual && done) toast.success(`Re-checked ${plural(done, 'medicine')}`)
+    if (failed) toast.error(tpNow('cabinet.toast.checkFailed', failed))
+    else if (manual && done) toast.success(tpNow('cabinet.toast.rechecked', done))
   }, [])
 
   const enqueue = useCallback(
@@ -330,8 +338,8 @@ export function Cabinet() {
     const index = readCabinet().findIndex((i) => i.id === item.id)
     removeItem(item.id)
     if (openId === item.id) setOpenId(null)
-    toast(`${item.name} removed from your cabinet`, {
-      action: { label: 'Undo', onClick: () => restoreItem(item, index) },
+    toast(t('cabinet.toast.removed', { name: item.name }), {
+      action: { label: t('cabinet.toast.undo'), onClick: () => restoreItem(item, index) },
     })
   }
 
@@ -362,7 +370,7 @@ export function Cabinet() {
     a.click()
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 2000)
-    toast.success('Cabinet exported. The file stays on your device.')
+    toast.success(t('cabinet.toast.exported'))
   }
 
   const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -370,13 +378,14 @@ export function Cabinet() {
     e.target.value = ''
     if (!file) return
     try {
-      if (file.size > 512 * 1024) throw new Error('That file is too large to be a Nazar cabinet.')
+      if (file.size > 512 * 1024) throw new Error(IMPORT_TOO_LARGE)
       const r = importJson(await file.text())
-      const parts = [r.added && `${plural(r.added, 'medicine')} added`, r.updated && `${r.updated} updated`, r.skipped && `${r.skipped} skipped`].filter(Boolean)
-      toast.success(`Imported: ${parts.join(', ') || 'nothing new'}`)
+      const parts = [r.added && tp('cabinet.import.added', r.added), r.updated && t('cabinet.import.updated', { n: r.updated }), r.skipped && t('cabinet.import.skipped', { n: r.skipped })].filter(Boolean)
+      toast.success(t('cabinet.import.done', { parts: parts.join(', ') || t('cabinet.import.nothing') }))
       enqueue(readCabinet())
     } catch (err) {
-      toast.error(err instanceof SyntaxError ? "That file isn't a Nazar cabinet export." : err instanceof Error ? err.message : "Couldn't import that file.")
+      const known = err instanceof Error ? IMPORT_ERRORS[err.message] : undefined
+      toast.error(err instanceof SyntaxError ? t('cabinet.import.notCabinet') : known ? t(known) : err instanceof Error ? err.message : t('cabinet.import.failed'))
     }
   }
 
@@ -385,19 +394,19 @@ export function Cabinet() {
       <div className="pt-4 md:pt-8">
         <section className="max-w-2xl">
           <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.18em] text-primary uppercase">
-            <ShieldCheck className="size-3.5" aria-hidden="true" /> Private by design
+            <ShieldCheck className="size-3.5" aria-hidden="true" /> {t('shell.private')}
           </p>
           <h2 className="mt-3 text-[clamp(2rem,6vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.045em]">
-            Your medicines, <span className={cn(serif.className, 'font-normal tracking-[-0.01em] whitespace-nowrap text-primary italic')}>kept in view.</span>
+            {t('cabinet.heroLead')}<span className={cn(locale === 'hi' ? 'font-semibold' : [serif.className, 'font-normal tracking-[-0.01em] italic'], 'whitespace-nowrap text-primary')}>{t('cabinet.heroAccent')}</span>
           </h2>
           <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-            Save the batches you keep at home. Nazar re-checks each one against regulator alerts every time you open this page. The list lives only in this browser and is never sent to any server.
+            {t('cabinet.lede')}
           </p>
         </section>
 
         <div className="mt-7 flex flex-wrap items-center gap-2">
           <Button className="h-12 flex-1 rounded-xl px-5 text-sm font-semibold sm:flex-none" onClick={() => openForm()}>
-            <Plus /> Add a medicine
+            <Plus /> {t('cabinet.add')}
           </Button>
           <Button
             variant="outline"
@@ -406,16 +415,16 @@ export function Cabinet() {
             disabled={!hydrated || !items.length || running}
             aria-busy={running}
           >
-            <RefreshCw className={cn(running && 'animate-spin motion-reduce:animate-none')} /> {running ? 'Checking…' : 'Re-check all'}
+            <RefreshCw className={cn(running && 'animate-spin motion-reduce:animate-none')} /> {running ? t('cabinet.checking') : t('cabinet.recheckAll')}
           </Button>
           <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
             <Button variant="ghost" className="h-12 flex-1 rounded-xl px-3.5 sm:flex-none" onClick={download} disabled={!hydrated || !items.length}>
-              <Download /> Export
+              <Download /> {t('cabinet.export')}
             </Button>
             <Button variant="ghost" className="h-12 flex-1 rounded-xl px-3.5 sm:flex-none" onClick={() => fileRef.current?.click()} disabled={!hydrated}>
-              <Upload /> Import
+              <Upload /> {t('cabinet.import')}
             </Button>
-            <input ref={fileRef} type="file" accept="application/json,.json" className="sr-only" tabIndex={-1} aria-label="Import a cabinet file" data-cabinet-import onChange={upload} />
+            <input ref={fileRef} type="file" accept="application/json,.json" className="sr-only" tabIndex={-1} aria-label={t('cabinet.importAria')} data-cabinet-import onChange={upload} />
           </div>
         </div>
 
@@ -442,12 +451,12 @@ export function Cabinet() {
 
             <div className={cn('mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1', !items.length && 'sr-only')}>
               <p className="text-sm" aria-live="polite" data-cabinet-count>
-                <span className="font-semibold">{plural(items.length, 'medicine')}</span>
+                <span className="font-semibold">{tp('cabinet.count', items.length)}</span>
                 <span className="text-muted-foreground">
                   {progress
-                    ? ` · checking ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
+                    ? t('cabinet.countChecking', { done: Math.min(progress.done + 1, progress.total), total: progress.total })
                     : latest
-                      ? ` · checked ${timeAgo(latest, now)}`
+                      ? t('cabinet.countChecked', { ago: timeAgo(latest, now, locale) })
                       : ''}
                 </span>
               </p>
@@ -463,7 +472,7 @@ export function Cabinet() {
 
             {items.length > 0 && (
               <>
-                <ul ref={listRef} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3" aria-label="Medicines in your cabinet" data-cabinet-list={collapsible ? (showAll ? 'all' : 'short') : 'all'}>
+                <ul ref={listRef} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3" aria-label={t('cabinet.listAria')} data-cabinet-list={collapsible ? (showAll ? 'all' : 'short') : 'all'}>
                   <AnimatePresence initial={false}>
                     {list.map((item) => (
                       <motion.li
@@ -498,12 +507,12 @@ export function Cabinet() {
                     {!showAll && (
                       <p className="text-xs leading-5 text-pretty text-muted-foreground">
                         {hiddenCount === items.length
-                          ? 'None of these needs a look right now. Tap a capsule on the shelf for its details.'
-                          : `${plural(hiddenCount, 'more medicine')} on the shelf above, with no alert found or not checked yet.`}
+                          ? t('cabinet.noneNeedsLook')
+                          : tp('cabinet.moreOnShelf', hiddenCount)}
                       </p>
                     )}
                     <Button variant="outline" className="h-11 w-full max-w-sm rounded-xl text-sm font-semibold" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
-                      {showAll ? 'Show only what needs a look' : `Show all ${plural(items.length, 'medicine')}`}
+                      {showAll ? t('cabinet.showOnlyLook') : tp('cabinet.showAll', items.length)}
                       <ChevronDown className={cn('transition-transform duration-200', showAll && 'rotate-180')} aria-hidden="true" />
                     </Button>
                   </div>
@@ -511,14 +520,14 @@ export function Cabinet() {
               </>
             )}
 
-            <section className="mt-8 flex items-start gap-3 rounded-2xl border bg-card p-5" aria-label="Privacy">
+            <section className="mt-8 flex items-start gap-3 rounded-2xl border bg-card p-5" aria-label={t('cabinet.privacyAria')}>
               <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
                 <ShieldCheck className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <h3 className="font-semibold">Never leaves this device</h3>
+                <h3 className="font-semibold">{t('cabinet.privacyTitle')}</h3>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Your cabinet is stored in this browser&apos;s local storage and is never sent to any server. A re-check looks up each batch number on its own, never the names, notes or the list. Use Export to keep a copy or move it to another phone.
+                  {t('cabinet.privacyBody')}
                 </p>
               </div>
             </section>

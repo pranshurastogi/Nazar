@@ -4,6 +4,7 @@ import { Copy } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { copy } from '@/components/nazar/result-card'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import type { Snippet } from './data'
 
@@ -42,6 +43,7 @@ export function AiSection({ id, kicker, title, intro, children, className }: { i
 }
 
 export function CodeBlock({ s, className }: { s: Snippet; className?: string }) {
+  const { t } = useT()
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-2xl border bg-card', className)} data-mcp-snippet>
       <div className="flex items-center justify-between gap-3 border-b bg-muted/40 py-1 pr-1.5 pl-4">
@@ -49,8 +51,8 @@ export function CodeBlock({ s, className }: { s: Snippet; className?: string }) 
           {s.title}
           {s.file && <code className="ml-1.5 font-mono font-medium text-foreground">{s.file}</code>}
         </p>
-        <Button variant="ghost" className="h-11 shrink-0 px-3 text-xs" onClick={() => copy(s.code, s.label)} aria-label={`Copy ${s.label}`} data-mcp-copy>
-          <Copy /> Copy
+        <Button variant="ghost" className="h-11 shrink-0 px-3 text-xs" onClick={() => copy(s.code, s.label)} aria-label={t('copy.aria', { what: s.label })} data-mcp-copy>
+          <Copy /> {t('ai.copy')}
         </Button>
       </div>
       <pre className={cn('overflow-x-auto p-4 font-mono text-[12px] leading-5', s.wrap && 'break-all whitespace-pre-wrap')} tabIndex={0} aria-label={s.file ? `${s.title} ${s.file}` : s.label}>

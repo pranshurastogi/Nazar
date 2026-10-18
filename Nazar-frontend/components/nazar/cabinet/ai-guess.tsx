@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Bot, ChevronDown, FlaskConical, Info, LoaderCircle, Lock, RotateCcw, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // Offered only when the photo read is weak (no name, a poorly read name, or no batch). It sends the
@@ -19,8 +20,6 @@ export type AiState =
   | { kind: 'disabled'; message: string }
   | { kind: 'limited'; message: string; minutes: number | null }
   | { kind: 'error'; message: string }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /** The opt-in switch: after a photo, fill missing details with AI by itself. Off until the person turns it on. */
 export const AUTOFILL_KEY = 'nazar:ai-autofill'
@@ -41,6 +40,7 @@ export function writeAutoFill(on: boolean) {
 }
 
 function AutoFillSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  const { t } = useT()
   return (
     <div className="mt-3 flex items-start gap-3 border-t border-ai-border/70 pt-3" data-ai-autofill-row>
       <button
@@ -64,10 +64,10 @@ function AutoFillSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean)
       </button>
       <span className="min-w-0 pt-0.5">
         <span id="ai-autofill-label" className="block text-sm font-semibold">
-          Use AI to fill missing details
+          {t('cabinet.ai.autoLabel')}
         </span>
         <span id="ai-autofill-hint" className="block text-xs leading-5 text-muted-foreground">
-          After each photo, when the name or batch is missing. Only the label text is sent. Saved on this device.
+          {t('cabinet.ai.autoHint')}
         </span>
       </span>
     </div>
@@ -92,6 +92,7 @@ export function AiGuessPanel({
   autoFill?: boolean
   onAutoFill?: (on: boolean) => void
 }) {
+  const { t, tp } = useT()
   const [showText, setShowText] = useState(false)
   const canSend = text.trim().length >= 3
 
@@ -100,7 +101,7 @@ export function AiGuessPanel({
       <p className="flex items-start gap-2 rounded-xl border bg-muted/50 px-3.5 py-3 text-sm leading-6 text-muted-foreground" role="status" data-ai-panel data-ai-state="disabled">
         <Info className="mt-1 size-4 shrink-0" aria-hidden="true" />
         <span>
-          {state.message} Type the missing details from the pack.
+          {state.message} {t('cabinet.ai.typeMissing')}
         </span>
       </p>
     )
@@ -117,41 +118,41 @@ export function AiGuessPanel({
     >
       <h3 id="ai-guess-title" className={cn('flex items-center gap-2 font-semibold', prominent && state.kind !== 'done' ? 'text-base' : 'text-sm')}>
         <Bot className="size-4 shrink-0 text-ai" aria-hidden="true" />
-        {state.kind === 'done' ? 'AI guess added' : state.kind === 'loading' && state.auto ? 'Filling missing details with AI' : reason}
+        {state.kind === 'done' ? t('cabinet.ai.added') : state.kind === 'loading' && state.auto ? t('cabinet.ai.filling') : reason}
       </h3>
 
       {state.kind === 'done' ? (
         <div className="mt-1 text-[13px] leading-5 text-muted-foreground" role="status" data-ai-done>
           <p>
             {state.filled
-              ? `Filled ${plural(state.filled, 'empty field')}, marked “AI guess”. Check each against the pack before you save.`
+              ? tp('cabinet.ai.filled', state.filled)
               : state.suggested
-                ? 'Nothing was changed. The AI’s suggestions are under the fields: use them only if they match the pack.'
-                : 'The AI could not add anything. Type the missing details from the pack.'}
+                ? t('cabinet.ai.nothingChanged')
+                : t('cabinet.ai.nothingAdded')}
           </p>
-          {state.filled > 0 && state.suggested > 0 && <p className="mt-1">Other suggestions sit under their fields and change nothing unless you tap Use this.</p>}
-          {state.confidence === 'low' && <p className="mt-1 font-medium text-caution">The AI was not sure about this one.</p>}
-          <p className="mt-1.5 text-xs text-ai">AI guess from the label text{state.model ? ` · ${state.model}` : ''} · not regulator data · may be wrong</p>
+          {state.filled > 0 && state.suggested > 0 && <p className="mt-1">{t('cabinet.ai.otherSuggestions')}</p>}
+          {state.confidence === 'low' && <p className="mt-1 font-medium text-caution">{t('cabinet.ai.notSure')}</p>}
+          <p className="mt-1.5 text-xs text-ai">{t('cabinet.ai.footer', { model: state.model ? ` · ${state.model}` : '' })}</p>
         </div>
       ) : (
         <>
           {canSend ? (
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {state.kind === 'loading' && state.auto
-                ? 'Your switch is on, so Nazar is asking an AI to guess the missing details from the words it read on the label.'
+                ? t('cabinet.ai.autoRunning')
                 : prominent
-                  ? 'The name is what you need most. Nazar can ask an AI to find it, and the salts, from the words it read on the label.'
-                  : 'Nazar can ask an AI to guess the missing details from the words it read on the label.'}
+                  ? t('cabinet.ai.prominent')
+                  : t('cabinet.ai.offer')}
             </p>
           ) : (
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">Almost no text could be read, so there is nothing to guess from. Try a closer, sharper photo in good light, or type the details.</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{t('cabinet.ai.noText')}</p>
           )}
 
           {(state.kind === 'limited' || state.kind === 'error') && (
             <p className="mt-2 rounded-lg border bg-card px-3 py-2 text-sm leading-6" role="alert" data-ai-error={state.kind}>
               {state.message}
-              {state.kind === 'limited' && (state.minutes ? ` Try again in ${plural(state.minutes, 'minute')}.` : ' Try again in a few minutes.')}
-              {state.kind === 'error' && ' You can try again, or type the details.'}
+              {state.kind === 'limited' && (state.minutes ? tp('cabinet.ai.retryIn', state.minutes) : t('cabinet.ai.retrySoon'))}
+              {state.kind === 'error' && t('cabinet.ai.retryOrType')}
             </p>
           )}
 
@@ -167,21 +168,21 @@ export function AiGuessPanel({
               >
                 {state.kind === 'loading' ? (
                   <>
-                    <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Guessing…
+                    <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> {t('cabinet.ai.guessing')}
                   </>
                 ) : state.kind === 'error' ? (
                   <>
-                    <RotateCcw aria-hidden="true" /> Try the AI guess again
+                    <RotateCcw aria-hidden="true" /> {t('cabinet.ai.again')}
                   </>
                 ) : (
                   <>
-                    <Sparkles aria-hidden="true" /> Guess with AI
+                    <Sparkles aria-hidden="true" /> {t('cabinet.ai.guess')}
                   </>
                 )}
               </Button>
               <p className="mt-2.5 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground" data-ai-disclosure>
                 <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                <span>Only the text read from the label is sent to Nazar&apos;s server for Gemini to guess. The photo stays on this phone.</span>
+                <span>{t('cabinet.ai.disclosure')}</span>
               </p>
               <button
                 type="button"
@@ -190,7 +191,7 @@ export function AiGuessPanel({
                 aria-controls="ai-sent-text"
                 onClick={() => setShowText((v) => !v)}
               >
-                See exactly what is sent
+                {t('cabinet.ai.seeSent')}
                 <ChevronDown className={cn('size-3.5 transition-transform motion-reduce:transition-none', showText && 'rotate-180')} aria-hidden="true" />
               </button>
               {showText && (
@@ -203,7 +204,7 @@ export function AiGuessPanel({
           )}
           {state.kind === 'loading' && (
             <p className="sr-only" role="status">
-              Asking the AI to guess from the label text…
+              {t('cabinet.ai.asking')}
             </p>
           )}
         </>
@@ -218,6 +219,7 @@ export function AiGuessPanel({
  * label text says.
  */
 export function AiDetails({ state, onRun, name }: { state: AiState; onRun: () => void; name: string }) {
+  const { t, tr } = useT()
   if (state.kind === 'disabled') return null
   if (state.kind === 'done') {
     return (
@@ -225,9 +227,9 @@ export function AiDetails({ state, onRun, name }: { state: AiState; onRun: () =>
         <Bot className="mt-0.5 size-4 shrink-0 text-ai" aria-hidden="true" />
         <span>
           {state.filled
-            ? 'Salts added from the label text, marked “AI guess”. Check them against the pack.'
-            : 'The label text did not name the salts. Type them from the pack if you want them saved.'}
-          <span className="mt-0.5 block text-xs text-ai">AI guess · not regulator data · may be wrong</span>
+            ? t('cabinet.ai.saltsAdded')
+            : t('cabinet.ai.noSalts')}
+          <span className="mt-0.5 block text-xs text-ai">{t('cabinet.ai.shortFooter')}</span>
         </span>
       </p>
     )
@@ -235,12 +237,12 @@ export function AiDetails({ state, onRun, name }: { state: AiState; onRun: () =>
   return (
     <div className="rounded-xl border border-dashed border-ai-border bg-ai-soft px-3.5 py-3" data-ai-details data-ai-details-state={state.kind} aria-busy={state.kind === 'loading' || undefined}>
       <p className="text-sm leading-6 text-muted-foreground">
-        We have the name, <span className="font-semibold text-foreground">{name}</span>, but not what is in it.
+        {tr('cabinet.ai.haveName', { name: <span className="font-semibold text-foreground">{name}</span> })}
       </p>
       {(state.kind === 'limited' || state.kind === 'error') && (
         <p className="mt-1.5 text-sm leading-6" role="alert" data-ai-details-error={state.kind}>
           {state.message}
-          {state.kind === 'limited' && ' Try again in a few minutes.'}
+          {state.kind === 'limited' && t('cabinet.ai.retrySoon')}
         </p>
       )}
       <Button
@@ -253,21 +255,21 @@ export function AiDetails({ state, onRun, name }: { state: AiState; onRun: () =>
       >
         {state.kind === 'loading' ? (
           <>
-            <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Reading the salts…
+            <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> {t('cabinet.ai.readingSalts')}
           </>
         ) : (
           <>
-            <FlaskConical aria-hidden="true" /> Get salts and details
+            <FlaskConical aria-hidden="true" /> {t('cabinet.ai.getDetails')}
           </>
         )}
       </Button>
       <p className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
         <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        <span>An AI reads the salts from the label text only. The photo stays on this phone.</span>
+        <span>{t('cabinet.ai.detailsNote')}</span>
       </p>
       {state.kind === 'loading' && (
         <p className="sr-only" role="status">
-          Asking the AI for the salts from the label text…
+          {t('cabinet.ai.askingSalts')}
         </p>
       )}
     </div>

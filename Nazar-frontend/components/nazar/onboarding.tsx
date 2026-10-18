@@ -7,40 +7,18 @@ import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { BatchArt, DotGrid, ProofArt, StatesArt, WatchArt } from '@/components/nazar/onboarding-art'
+import { useT, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 export const ONBOARDED_KEY = 'nazar:onboarded'
 
+/** Copy lives in the dictionaries (onboarding.s{i}.*); each step names its key prefix and its points. */
 const STEPS = [
-  {
-    kicker: 'Welcome',
-    title: 'An eye on every batch',
-    body: 'Har batch par nazar. Nazar checks a medicine batch against the alerts CDSCO and state drug regulators publish, in seconds.',
-    points: ['Free, no account', 'Official sources only', 'Works for chemists and families'],
-    Art: WatchArt,
-  },
-  {
-    kicker: 'Step 1',
-    title: 'Find the batch number',
-    body: 'Look for "B.No.", "Batch" or "Lot" on the strip, bottle or carton. It usually sits next to the Mfg. and Exp. dates.',
-    points: ['Strips: on the foil edge', 'Bottles: on the label or cap', 'Type it in, or scan the QR'],
-    Art: BatchArt,
-  },
-  {
-    kicker: 'Step 2',
-    title: 'Four honest answers',
-    body: 'Nazar never says a medicine is "safe". It tells you exactly what regulators have published, and nothing more.',
-    points: ['Colour, icon and words always agree', '"No alert found" is never green'],
-    Art: StatesArt,
-  },
-  {
-    kicker: 'Step 3',
-    title: 'Proof you can check',
-    body: 'Every alert links back to the regulator’s notice and its public record on Arkiv. Your own checks never leave this device.',
-    points: ['Tap "How do we know?" on any result', 'No tracking of what you check'],
-    Art: ProofArt,
-  },
-]
+  { id: 's0', points: 3, Art: WatchArt },
+  { id: 's1', points: 3, Art: BatchArt },
+  { id: 's2', points: 2, Art: StatesArt },
+  { id: 's3', points: 2, Art: ProofArt },
+] as const
 
 export function Onboarding({
   open,
@@ -51,9 +29,14 @@ export function Onboarding({
   onOpenChange: (open: boolean) => void
   onTry: (batch: string) => void
 }) {
+  const { t } = useT()
   const [[step, dir], setStep] = useState<[number, number]>([0, 1])
   const last = step === STEPS.length - 1
-  const { kicker, title, body, points, Art } = STEPS[step]
+  const { id, Art } = STEPS[step]
+  const kicker = t(`onboarding.${id}.kicker`)
+  const title = t(`onboarding.${id}.title`)
+  const body = t(`onboarding.${id}.body`)
+  const points = Array.from({ length: STEPS[step].points }, (_, i) => t(`onboarding.${id}.p${i + 1}` as MessageKey))
 
   const go = (next: number) => setStep([next, next > step ? 1 : -1])
   const finish = () => {
@@ -92,19 +75,19 @@ export function Onboarding({
           {/* Copy and controls */}
           <div className="flex min-w-0 flex-col p-6 sm:p-8">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${STEPS.length}`}>
+              <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1} aria-label={t('onboarding.progress', { n: step + 1, total: STEPS.length })}>
                 {STEPS.map((_, i) => (
                   <button
                     key={i}
                     type="button"
-                    aria-label={`Go to step ${i + 1}`}
+                    aria-label={t('onboarding.goTo', { n: i + 1 })}
                     onClick={() => go(i)}
                     className={cn('h-1.5 rounded-full transition-all duration-300', i === step ? 'w-7 bg-primary' : i < step ? 'w-3 bg-primary/40' : 'w-3 bg-border')}
                   />
                 ))}
               </div>
               <Button variant="ghost" size="sm" onClick={finish} className={cn(last && 'invisible')}>
-                Skip
+                {t('onboarding.skip')}
               </Button>
             </div>
 
@@ -117,9 +100,9 @@ export function Onboarding({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.22 }}
               >
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">{kicker}</p>
-                <DialogTitle className="mt-2 text-2xl font-semibold tracking-tight text-balance sm:text-[1.75rem]">{title}</DialogTitle>
-                <DialogDescription className="mt-3 text-[15px] leading-6 text-pretty text-muted-foreground">{body}</DialogDescription>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary hi:text-xs">{kicker}</p>
+                <DialogTitle className="mt-2 text-2xl font-semibold tracking-tight text-balance sm:text-[1.75rem] hi:leading-snug">{title}</DialogTitle>
+                <DialogDescription className="mt-3 text-[15px] leading-6 text-pretty text-muted-foreground hi:leading-7">{body}</DialogDescription>
                 <ul className="mt-5 grid gap-2.5">
                   {points.map((p) => (
                     <li key={p} className="flex items-start gap-2.5 text-sm">
@@ -135,14 +118,14 @@ export function Onboarding({
 
             <div className="mt-8 flex gap-2">
               {step > 0 && (
-                <Button variant="outline" className="h-12 px-4" onClick={() => go(step - 1)} aria-label="Previous step">
+                <Button variant="outline" className="h-12 px-4" onClick={() => go(step - 1)} aria-label={t('onboarding.previous')}>
                   <ArrowLeft />
                 </Button>
               )}
               {last ? (
                 <>
                   <Button variant="outline" className="h-12 flex-1" onClick={finish}>
-                    Start checking
+                    {t('onboarding.start')}
                   </Button>
                   <Button
                     className="h-12 flex-1"
@@ -151,12 +134,12 @@ export function Onboarding({
                       onTry('SR-13')
                     }}
                   >
-                    Try SR-13
+                    {t('onboarding.try')}
                   </Button>
                 </>
               ) : (
                 <Button className="h-12 flex-1" onClick={() => go(step + 1)}>
-                  {step === 0 ? 'Show me how' : 'Next'} <ArrowRight data-icon="inline-end" />
+                  {step === 0 ? t('onboarding.showMe') : t('onboarding.next')} <ArrowRight data-icon="inline-end" />
                 </Button>
               )}
             </div>
