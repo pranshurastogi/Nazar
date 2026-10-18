@@ -109,6 +109,9 @@ Live at `https://nazar-api-production.up.railway.app` (Railway, Singapore). How 
 | `GET /v1/check?batch=SR-13` | `flagged`, `retracted`, `no_alert` or `unreadable`, with alerts and `source` (`ledger` or `arkiv`). A printed label ("B.No. SR-13") is stripped first. A look-alike only ever returns a `suggestion`, never a flag |
 | `GET /v1/alerts?limit=&offset=&state=&minSeverity=&peds=&sinceYm=&source=&productClass=` | the feed, `{ items, total }`. `limit` 1–200; `productClass` is `medicine`, `cosmetic` or `hygiene` |
 | `GET /v1/alerts/:rid` | one alert |
+| `GET /v1/alerts.rss?…` | the same feed as RSS 2.0 for feed readers (same filters; `limit` default 50, max 200; retracted alerts left out). Items link to the site's `/b/{batch}` page (`NAZAR_SITE_URL`) |
+| `GET /v1/alerts.atom?…` | the same feed as Atom 1.0 |
+| `GET /v1/alerts.json?…` | the same feed as JSON Feed 1.1 |
 | `GET /v1/search?q=&limit=` | full-text search (FTS5) over brand, product, generic, manufacturer and reason |
 | `GET /v1/cases/:caseId` | Batch Passport: every alert in one case |
 | `GET /v1/notices?limit=` | source documents, with their Arkiv entity keys and explorer links |

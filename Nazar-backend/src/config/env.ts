@@ -95,6 +95,8 @@ const EnvSchema = z.object({
     .string()
     .default('http://localhost:3000,http://localhost:3123,http://localhost:3124')
     .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
+  /** Public web app origin, for item and channel links in the alert feeds (/v1/alerts.rss, .atom, .json). */
+  NAZAR_SITE_URL: z.url().default('https://nazar-nu.vercel.app'),
 
   // Scheduler
   NAZAR_CRON_CDSCO: z.string().default('0 */6 * * *'),

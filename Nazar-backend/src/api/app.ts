@@ -25,6 +25,7 @@ import type { EgressStatus } from '../pipeline/egress.ts'
 import { FEED_ORDER, type AlertRow, type Ledger } from '../storage/ledger.ts'
 import { alertDto, noticeDto, viewDto, type AlertDTO, type DtoContext } from './dto.ts'
 import { CACHE, CheckCache, cdnCacheHeaders } from './cache-policy.ts'
+import { FEED_CONTENT_TYPE, renderFeed, type FeedFormat } from './feeds.ts'
 import { SnapshotService, serveSnapshot } from './snapshot.ts'
 
 const log = child('api')
@@ -64,6 +65,8 @@ export interface AppDeps {
   chainId?: number
   corsOrigins?: string[]
   explorerBase?: string
+  /** Public web app origin used for links in the RSS/Atom/JSON feeds; defaults to NAZAR_SITE_URL. */
+  siteUrl?: string
   readerTimeoutMs?: number
   now?: () => Date
   /** Startup egress check (region + CDSCO reachability); see src/pipeline/egress.ts. */
@@ -228,7 +231,9 @@ export function createApp(deps: AppDeps) {
     exposeHeaders: ['Mcp-Session-Id', 'Mcp-Protocol-Version', 'Retry-After'],
     maxAge: 600,
   })
-  app.use('*', (c, next) => (c.req.path === '/mcp' ? mcpCors(c, next) : webCors(c, next)))
+  // Public, read-only feeds are open to any origin too, so browser-based feed readers can fetch them.
+  const openCors = (path: string) => path === '/mcp' || /^\/v1\/alerts\.(rss|atom|json)$/.test(path)
+  app.use('*', (c, next) => (openCors(c.req.path) ? mcpCors(c, next) : webCors(c, next)))
   // Outside etag, so tags are computed on the plain body; the snapshot ships pre-compressed and is skipped.
   const gzip = compress()
   app.use('*', (c, next) => (c.req.path === '/mcp' ? next() : gzip(c, next)))
@@ -325,6 +330,24 @@ export function createApp(deps: AppDeps) {
     const { rows, total } = listAlerts(ledger, q)
     return listJson(c, { items: rows.map((r) => alertDto(r, ctx)), total })
   })
+
+  // ---- Feeds of the same list for feed readers: RSS 2.0, Atom 1.0 and JSON Feed 1.1. Not exposed over MCP.
+  const siteUrl = (deps.siteUrl ?? e.NAZAR_SITE_URL).replace(/\/+$/, '')
+  const apiOrigin = (c: Context) => {
+    const url = new URL(c.req.url)
+    const proto = c.req.header('x-forwarded-proto')?.split(',')[0]?.trim()
+    return `${proto === 'https' || proto === 'http' ? proto : url.protocol.replace(':', '')}://${url.host}`
+  }
+  for (const format of Object.keys(FEED_CONTENT_TYPE) as FeedFormat[]) {
+    app.get(`/v1/alerts.${format}`, (c) => {
+      const filters = parse(AlertsQuery, c.req.query())
+      const { rows } = listAlerts(ledger, filters)
+      const body = renderFeed[format](rows.map((r) => alertDto(r, ctx)), { siteUrl, apiOrigin: apiOrigin(c), filters, now: now() })
+      c.header('Cache-Control', LIST_CACHE)
+      c.header('X-Content-Type-Options', 'nosniff')
+      return c.body(body, 200, { 'Content-Type': FEED_CONTENT_TYPE[format] })
+    })
+  }
 
   app.get('/v1/alerts/:rid', (c) => {
     const rid = parse(IdParam, c.req.param('rid'))
