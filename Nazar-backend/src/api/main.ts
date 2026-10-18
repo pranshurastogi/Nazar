@@ -7,6 +7,7 @@ import { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
 import { errorMessage } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
+import { egressStatus, startEgressCheck } from '../pipeline/egress.ts'
 import { pipelineStatus } from '../pipeline/status.ts'
 import { ledger as sharedLedger } from '../storage/ledger.ts'
 import { createApp } from './app.ts'
@@ -25,6 +26,7 @@ export function buildProductionApp() {
     publisher,
     mode: e.NAZAR_PUBLISH_MODE,
     chainId: e.ARKIV_CHAIN_ID,
+    egress: egressStatus,
     status: () =>
       pipelineStatus({
         ledger,
@@ -80,6 +82,8 @@ export function parseRole(v: string | undefined): Role {
  */
 export async function startRole(role: Role = parseRole(process.env.NAZAR_ROLE)) {
   log.info({ role }, 'starting')
+  // Background check: a server placed where CDSCO refuses connections must say so loudly.
+  void startEgressCheck().catch(() => {})
   if (role === 'api') return void startServer()
   const { startWorker } = await import('../pipeline/worker.ts')
   if (role === 'worker') return void (await startWorker({ ledger: sharedLedger() }))

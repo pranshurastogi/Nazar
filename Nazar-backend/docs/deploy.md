@@ -72,26 +72,42 @@ fly machine restart
 
 ## Railway
 
-`railway.toml` (Dockerfile build, `/health` check, restart on failure, one replica) is in this folder. There is no Indian region; pick **Southeast Asia (Singapore)** for the lowest latency to Indian sites, and keep `tg-dca`/`ka-dc` off.
+This is the live deploy: <https://nazar-api-production.up.railway.app>, in Singapore, `NAZAR_ROLE=all`, `NAZAR_PUBLISH_MODE=live`.
 
-1. New Project → Deploy from GitHub repo → `pranshurastogi/Nazar`.
-2. Service → Settings → **Root Directory** `Nazar-backend` (Railway then finds `railway.toml` and the `Dockerfile`).
-3. Service → **Volumes** → add a volume mounted at **`/app/data`** (1 GB is plenty).
-4. Service → **Variables**:
+> **Region must be Singapore (`asia-southeast1-eqsg3a`).** From Railway's US regions CDSCO refuses every connection, so the pipeline would silently lose all national alerts. Railway starts new services in the US by default. A region written in `railway.toml` was **not** applied to our CLI uploads, so the file has been removed.
+
+The service configuration lives in **`.railway/railway.ts`** (Railway infrastructure as code). It pins the replica *and* the volume to Singapore, sets the `/health` check and a single replica. Variables are deliberately unmanaged, so secrets never enter the repo.
+
+```bash
+cd Nazar-backend
+railway config plan     # diff against the live project; expect "already up to date"
+railway config apply    # enforce it, e.g. after recreating the service
+```
+
+The server also checks itself at startup (`src/pipeline/egress.ts`). It looks up its egress country, probes CDSCO and reports the result on `/health` (`egress`, `warnings`) and `/v1/pipeline/status`. A misplaced server logs an error rather than quietly harvesting nothing:
+
+```bash
+curl -s https://<service>.up.railway.app/health | jq '.egress, .warnings'
+# expect: country "SG", cdsco "ok", warnings []
+```
+
+**Setting it up from scratch:**
+
+1. New Project → Deploy from GitHub repo → `pranshurastogi/Nazar`. Alternatively, from `Nazar-backend/`, run `railway init` then `railway up`.
+2. Service → Settings → **Root Directory** `Nazar-backend`. The Dockerfile is detected.
+3. Service → Settings → **Regions** → **Southeast Asia (Singapore)**, with 1 replica. **Do this by hand, or run `railway config apply`.** From the CLI: `railway service scale southeast-asia=1 us-west=0`.
+4. Service → **Volumes** → mount at **`/app/data`**, in the same region.
+5. Service → **Variables**:
    - `NAZAR_ROLE=all`
    - `NAZAR_RUN_ON_START=true`
    - `NAZAR_DATA_DIR=/app/data`
    - `NAZAR_CORS_ORIGINS=https://nazar-nu.vercel.app`
    - `NAZAR_PUBLISH_MODE=dry-run`, then `live`
-   - `NAZAR_PUBLISHER_PRIVATE_KEY=0x…` (Railway variables are encrypted)
-5. Settings → Networking → **Generate Domain**; check `https://<service>.up.railway.app/health`.
-6. Set `NEXT_PUBLIC_NAZAR_API_URL` to that domain in Vercel and redeploy.
+   - `NAZAR_PUBLISHER_PRIVATE_KEY=0x…`
+6. Settings → Networking → **Generate Domain**. Check `/health`: `egress.cdsco` must be `"ok"`.
+7. Set `NEXT_PUBLIC_NAZAR_API_URL` to that domain in Vercel and redeploy.
 
-**Region note:** in our deploy (Railway CLI 5.70, 18 Oct 2026), the `multiRegionConfig` in `railway.toml` was not applied to CLI uploads. The service ran in us-west, where CDSCO refuses connections. We moved it with `railway service scale southeast-asia=1 sfo=0`, or under Service → Settings → Regions. Check the region from the box with `railway ssh -- node -e "fetch('https://ipinfo.io/json').then(r=>r.text()).then(console.log)"`.
-
-Live instance: <https://nazar-api-production.up.railway.app> (Singapore, `NAZAR_ROLE=all`, `NAZAR_PUBLISH_MODE=live`).
-
-Or use the CLI from `Nazar-backend/`: `railway init`, then `railway up`, `railway volume add --mount-path /app/data` and `railway domain`.
+On a fresh server the first run re-harvests and the publisher reconciles against Arkiv by row id. Alerts that are already published are adopted, never re-sent.
 
 ## Render
 

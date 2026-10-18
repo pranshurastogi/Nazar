@@ -11,6 +11,7 @@ import { NazarError, errorMessage } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
 import { isPublishableTier } from '../resolve/case.ts'
+import type { EgressStatus } from '../pipeline/egress.ts'
 import type { AlertRow, Ledger } from '../storage/ledger.ts'
 import { alertDto, noticeDto, viewDto, type AlertDTO, type DtoContext } from './dto.ts'
 
@@ -50,6 +51,8 @@ export interface AppDeps {
   explorerBase?: string
   readerTimeoutMs?: number
   now?: () => Date
+  /** Startup egress check (region + CDSCO reachability); see src/pipeline/egress.ts. */
+  egress?: () => EgressStatus | null
 }
 
 export type CheckState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
@@ -213,6 +216,8 @@ export function createApp(deps: AppDeps) {
       publisher: deps.publisher ?? null,
       chainId: deps.chainId ?? e.ARKIV_CHAIN_ID,
       stats: ledger.stats(),
+      egress: deps.egress?.() ?? null,
+      warnings: [deps.egress?.()?.warning].filter(Boolean),
     }),
   )
 
@@ -292,7 +297,7 @@ export function createApp(deps: AppDeps) {
   app.get('/v1/pipeline/status', async (c) => {
     if (!deps.status) throw new HttpError(503, 'UNAVAILABLE', 'pipeline status is not wired in this process')
     c.header('Cache-Control', 'no-store')
-    return c.json(await deps.status())
+    return c.json({ ...(await deps.status()), egress: deps.egress?.() ?? null })
   })
 
   return Object.assign(app, { check })
