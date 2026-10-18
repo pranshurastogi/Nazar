@@ -87,6 +87,10 @@ fly machine restart
 5. Settings → Networking → **Generate Domain**; check `https://<service>.up.railway.app/health`.
 6. Set `NEXT_PUBLIC_NAZAR_API_URL` to that domain in Vercel and redeploy.
 
+**Region note:** in our deploy (Railway CLI 5.70, 18 Oct 2026), the `multiRegionConfig` in `railway.toml` was not applied to CLI uploads. The service ran in us-west, where CDSCO refuses connections. We moved it with `railway service scale southeast-asia=1 sfo=0`, or under Service → Settings → Regions. Check the region from the box with `railway ssh -- node -e "fetch('https://ipinfo.io/json').then(r=>r.text()).then(console.log)"`.
+
+Live instance: <https://nazar-api-production.up.railway.app> (Singapore, `NAZAR_ROLE=all`, `NAZAR_PUBLISH_MODE=live`).
+
 Or use the CLI from `Nazar-backend/`: `railway init`, then `railway up`, `railway volume add --mount-path /app/data` and `railway domain`.
 
 ## Render
