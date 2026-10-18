@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Baby, ChevronDown, LoaderCircle, RotateCcw, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { useShell } from '@/components/nazar/app-shell'
 import { FeedPulse } from '@/components/nazar/feed-pulse'
+import { RssPanel, RssToggle } from '@/components/nazar/feed-rss'
+import { CheckBatchOffer, FeedSearchBox, Highlight, mentions } from '@/components/nazar/feed-search'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
 import {
@@ -21,8 +23,13 @@ import {
   type FeedFilters,
   type FeedPage,
   currentSnapshot,
+  loadSnapshot,
+  onSnapshot,
 } from '@/lib/source'
 import { feedKey, notDemo } from '@/lib/source/prefetch'
+import { batchLike, queryTerms, searchAlerts, type SearchAnswer } from '@/lib/source/search'
+import type { SnapshotIndex } from '@/lib/source/snapshot'
+import { alertEntries, alertKey, endVisit, isNew, markSeen, snapshotEntries, visitBaseline, type SeenState } from '@/lib/seen'
 import { peek, revalidate } from '@/lib/source/swr'
 import { serif } from '@/lib/fonts'
 import { cn } from '@/lib/utils'
@@ -30,6 +37,9 @@ import { cn } from '@/lib/utils'
 // The Feed tab: every alert Nazar holds, newest first, from whichever source answers
 // (Nazar API, then Arkiv, then demo data). Filters live in the URL so a filtered view can
 // be shared. Opening a row shows the same result card and proof sheet as a check.
+// A search box at the top finds alerts by medicine or maker (?q= in the URL), alerts newer than
+// the person's last visit carry a "New" pill (remembered on this device only), and the list can
+// be followed in a feed reader (RSS / Atom) with the same filters.
 
 type Filters = { serious: boolean; peds: boolean; state: string; source: string }
 const DEFAULTS: Filters = { serious: false, peds: false, state: '', source: '' }
@@ -37,24 +47,31 @@ const DEFAULTS: Filters = { serious: false, peds: false, state: '', source: '' }
 const STATES = Object.entries(STATE_NAME).sort((a, b) => a[1].localeCompare(b[1]))
 const SOURCES = Object.entries(SOURCE_NAME)
 
-function readUrl(): Filters {
+const Q_MAX = 100
+const DEBOUNCE_MS = 250
+
+function readUrl(): { filters: Filters; q: string } {
   const p = new URLSearchParams(window.location.search)
   const state = p.get('state') ?? ''
   const source = p.get('source') ?? ''
   return {
-    serious: p.get('sev') === '4',
-    peds: p.get('peds') === '1',
-    state: state in STATE_NAME ? state : '',
-    source: source in SOURCE_NAME ? source : '',
+    filters: {
+      serious: p.get('sev') === '4',
+      peds: p.get('peds') === '1',
+      state: state in STATE_NAME ? state : '',
+      source: source in SOURCE_NAME ? source : '',
+    },
+    q: (p.get('q') ?? '').slice(0, Q_MAX),
   }
 }
 
-function writeUrl(f: Filters) {
+function writeUrl(f: Filters, q: string) {
   const p = new URLSearchParams()
   if (f.serious) p.set('sev', '4')
   if (f.peds) p.set('peds', '1')
   if (f.state) p.set('state', f.state)
   if (f.source) p.set('source', f.source)
+  if (q) p.set('q', q)
   const qs = p.toString()
   window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
 }
@@ -67,6 +84,16 @@ const toQuery = (f: Filters): FeedFilters => ({
 })
 
 const isDefault = (f: Filters) => !f.serious && !f.peds && !f.state && !f.source
+
+/** The same test the feed applies to every source, used on search results so filters still count. */
+const keeps = (a: Alert, f: Filters) =>
+  !a.retraction && (!f.serious || a.severity >= 4) && (!f.peds || a.peds) && (!f.state || a.state === f.state) && (!f.source || a.sourceId === f.source)
+
+/** Short names of the filters in use, for the search and RSS notes. */
+const filterNames = (f: Filters) =>
+  [f.serious && 'Serious 4–5', f.peds && 'Child Shield only', f.state && `Made in ${STATE_NAME[f.state] ?? f.state}`, f.source && (SOURCE_NAME[f.source] ?? f.source)].filter(
+    (x): x is string => !!x,
+  )
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-IN')} ${n === 1 ? one : many}`
 
@@ -136,8 +163,11 @@ function SeverityTile({ value }: { value: number }) {
   )
 }
 
-function FeedRow({ alert, open, onToggle }: { alert: Alert; open: boolean; onToggle: () => void }) {
+function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: Alert; open: boolean; onToggle: () => void; terms?: string[]; fresh?: boolean }) {
   const made = stateName(alert.state)
+  // While searching, say where a match came from when it is not the name or batch on show.
+  const maker = terms.length && mentions(alert.manufacturer, terms) ? alert.manufacturer : null
+  const generic = terms.length && alert.drug && alert.drug !== alert.brand && mentions(alert.drug, terms) ? alert.drug : null
   return (
     <button
       onClick={onToggle}
@@ -155,7 +185,7 @@ function FeedRow({ alert, open, onToggle }: { alert: Alert; open: boolean; onTog
           {/* The name gets the width and may take two lines; the on-chain status is a small dot,
               explained once in the list header. */}
           <span className="line-clamp-2 min-w-0 text-sm leading-5 font-semibold break-words sm:text-[15px]" data-row-name>
-            {alert.brand}
+            <Highlight text={alert.brand} terms={terms} />
             {alert.entityKey && (
               <span
                 data-live-arkiv
@@ -171,11 +201,38 @@ function FeedRow({ alert, open, onToggle }: { alert: Alert; open: boolean; onTog
               <Baby className="size-3" aria-hidden="true" /> Child
             </span>
           )}
+          {fresh && (
+            <span
+              data-new-pill
+              className="mt-px inline-flex shrink-0 items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary uppercase ring-1 ring-primary/25 ring-inset dark:bg-primary/15"
+            >
+              New
+            </span>
+          )}
         </span>
         <span className="mt-0.5 block truncate text-[13px] text-foreground/85">
-          <span className="font-mono font-semibold">{alert.batch}</span>
+          <span className="font-mono font-semibold">
+            <Highlight text={alert.batch} terms={terms} />
+          </span>
           <span className="text-muted-foreground"> · {alert.failure}</span>
         </span>
+        {(maker || generic) && (
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-row-match>
+            {maker && (
+              <>
+                <span className="font-medium text-foreground/70">Maker </span>
+                <Highlight text={maker} terms={terms} />
+              </>
+            )}
+            {maker && generic && ' · '}
+            {generic && (
+              <>
+                <span className="font-medium text-foreground/70">Contains </span>
+                <Highlight text={generic} terms={terms} />
+              </>
+            )}
+          </span>
+        )}
         <span className="mt-1 block text-xs leading-5 text-muted-foreground">
           <span className="block truncate sm:inline">{alert.authority}</span>
           <span className="hidden sm:inline"> · </span>
@@ -219,19 +276,74 @@ function FeedDetail({ alert, source }: { alert: Alert; source: FeedPage['source'
   )
 }
 
+type Search = SearchAnswer & { q: string }
+
+/** "New since your last visit": the visit's baseline and the saved copy it is compared with. */
+function useSeen() {
+  // undefined until read on the device; null on a first visit (nothing is new then).
+  const [base, setBase] = useState<SeenState | null | undefined>(undefined)
+  const [snap, setSnap] = useState<SnapshotIndex | null>(null)
+  useEffect(() => {
+    let live = true
+    setBase(visitBaseline())
+    setSnap(currentSnapshot())
+    const off = onSnapshot((s) => live && setSnap(s))
+    // Shared with the pulse and the shell: no request of its own while one is loaded.
+    loadSnapshot().then((s) => live && s && setSnap(s), () => {})
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+  return { base, setBase, snap }
+}
+
 export function Feed() {
   const [filters, setFilters] = useState<Filters | null>(null)
   const [items, setItems] = useState<Alert[]>([])
   const [page, setPage] = useState<FeedPage | null>(null)
   const [loading, setLoading] = useState<'first' | 'more' | null>('first')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [text, setText] = useState('')
+  const [query, setQuery] = useState('')
+  const [search, setSearch] = useState<Search | null>(null)
+  const [rssOpen, setRssOpen] = useState(false)
   const ctrlRef = useRef<AbortController | null>(null)
+  const { base, setBase, snap } = useSeen()
 
-  useEffect(() => setFilters(readUrl()), [])
+  useEffect(() => {
+    const u = readUrl()
+    setFilters(u.filters)
+    setText(u.q)
+    setQuery(u.q.trim())
+  }, [])
+
+  // The search waits for a pause in typing, then the URL and the request follow.
+  useEffect(() => {
+    const next = text.replace(/\s+/g, ' ').trim()
+    if (next === query) return
+    const t = setTimeout(() => setQuery(next), DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [text, query])
+
+  useEffect(() => {
+    if (filters) writeUrl(filters, query)
+  }, [filters, query])
+
+  useEffect(() => {
+    setOpenId(null)
+    if (!query) return setSearch(null)
+    const ctrl = new AbortController()
+    searchAlerts(query, ctrl.signal).then(
+      (r) => !ctrl.signal.aborted && setSearch({ ...r, q: query }),
+      // searchAlerts falls back to the saved copy and demo data itself; only a cancel rejects.
+      (err) => !ctrl.signal.aborted && console.info('Nazar search unavailable', err),
+    )
+    return () => ctrl.abort()
+  }, [query])
 
   useEffect(() => {
     if (!filters) return
-    writeUrl(filters)
     ctrlRef.current?.abort()
     const ctrl = new AbortController()
     ctrlRef.current = ctrl
@@ -262,6 +374,15 @@ export function Feed() {
     return () => ctrl.abort()
   }, [filters])
 
+  // Whatever this visit has shown counts as seen next time (and clears the nav badge now).
+  // The pills on screen keep comparing with the visit's baseline until "Mark all seen".
+  const live = page && page.source !== 'demo' ? items : null
+  useEffect(() => {
+    if (base === undefined) return
+    const entries = [...(snap ? snapshotEntries(snap) : []), ...(live ? alertEntries(live) : [])]
+    if (entries.length) markSeen(entries)
+  }, [base, snap, live])
+
   const loadMore = async () => {
     if (!page?.more || loading) return
     const ctrl = ctrlRef.current
@@ -283,12 +404,55 @@ export function Feed() {
 
   const update = (patch: Partial<Filters>) => setFilters((f) => ({ ...(f ?? DEFAULTS), ...patch }))
   const f = filters ?? DEFAULTS
-  const first = loading === 'first'
-  const saved = page?.source === 'snapshot' ? currentSnapshot() : null
+
+  // Alerts newer than the visit's baseline, under the current filters: the saved copy (the whole
+  // set) plus whatever the live list holds beyond it.
+  const fresh = useMemo(() => {
+    const out = new Set<string>()
+    if (!base) return out
+    const q = toQuery(f)
+    for (const e of snap ? snapshotEntries(snap, q) : []) if (isNew(base, e)) out.add(e[0])
+    for (const e of alertEntries(items)) if (isNew(base, e)) out.add(e[0])
+    return out
+  }, [base, snap, items, f])
+  const isFresh = (a: Alert) => fresh.has(alertKey(a.batch, a.alertYm))
+  const markAllSeen = () => setBase(endVisit([...(snap ? snapshotEntries(snap) : []), ...(live ? alertEntries(live) : [])]))
+
+  const searching = query.length > 0
+  // While the next answer loads, the last one stays on screen (marked busy) instead of flashing a skeleton.
+  const results = searching ? search : null
+  const stale = searching && (!search || search.q !== query)
+  const shownQ = results?.q ?? query
+  const terms = useMemo(() => queryTerms(shownQ), [shownQ])
+  const batch = searching ? batchLike(query) : null
+  const shown = results ? results.items.filter((a) => keeps(a, f)) : []
+  const hidden = results ? results.items.length - shown.length : 0
+  const following = filterNames(f)
+
+  const first = searching ? !results : loading === 'first'
+  const source = searching ? results?.source : page?.source
+  const rows = searching ? shown : items
+  const saved = source === 'snapshot' ? currentSnapshot() : null
   const savedAt = saved ? saved.generatedAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
   const total = page?.total ?? null
-  const count = first || !page ? null : total !== null ? plural(total, 'alert') : `${plural(items.length, 'alert')}${page.more ? ' so far' : ''}`
-  const onChain = !first && items.some((a) => a.entityKey)
+  const count = searching
+    ? results && (
+        <>
+          <span className="font-semibold">{plural(shown.length, 'alert')}</span>
+          <span className="text-muted-foreground">
+            {' '}
+            {shown.length === 1 ? 'names' : 'name'} “{shownQ}”{results.capped ? ' · top matches' : ''}
+          </span>
+        </>
+      )
+    : !first &&
+      page && (
+        <>
+          <span className="font-semibold">{total !== null ? plural(total, 'alert') : `${plural(items.length, 'alert')}${page.more ? ' so far' : ''}`}</span>
+          <span className="text-muted-foreground"> · newest first</span>
+        </>
+      )
+  const onChain = !first && rows.some((a) => a.entityKey)
 
   return (
     <div className="pt-4 md:pt-8">
@@ -304,7 +468,17 @@ export function Feed() {
 
       <FeedPulse state={f.state} serious={f.serious} peds={f.peds} source={f.source} onState={(state) => update({ state })} />
 
-      <section aria-label="Filter alerts" className="mt-7 rounded-2xl border bg-card p-4 sm:p-5">
+      <FeedSearchBox
+        value={text}
+        onChange={(v) => {
+          setText(v.slice(0, Q_MAX))
+          // Clearing is immediate; typing waits for a pause.
+          if (!v.trim()) setQuery('')
+        }}
+        busy={stale}
+      />
+
+      <section aria-label="Filter alerts" className="mt-3 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] md:items-end md:gap-4">
           <div>
             <p className="mb-1.5 hidden text-xs font-semibold text-muted-foreground md:block" aria-hidden="true">Severity</p>
@@ -349,14 +523,7 @@ export function Feed() {
 
       <div className="mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
         <p className="text-sm" aria-live="polite" aria-atomic="true" data-feed-count>
-          {count ? (
-            <>
-              <span className="font-semibold">{count}</span>
-              <span className="text-muted-foreground"> · newest first</span>
-            </>
-          ) : (
-            <Skeleton className="h-4 w-36" />
-          )}
+          {count || <Skeleton className="h-4 w-36" />}
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {onChain && (
@@ -365,28 +532,70 @@ export function Feed() {
               Live on Arkiv
             </span>
           )}
-          {page && !first && <SourceTag source={page.source} />}
+          {source && !first && <SourceTag source={source} />}
           {!isDefault(f) && (
             <Button variant="ghost" className="h-11 px-3" onClick={() => setFilters(DEFAULTS)}>
               <RotateCcw /> Reset filters
             </Button>
           )}
+          {!searching && <RssToggle open={rssOpen} onToggle={() => setRssOpen((o) => !o)} />}
         </div>
       </div>
 
-      {page?.source === 'snapshot' && !first && (
+      {!searching && rssOpen && <RssPanel filters={toQuery(f)} following={following} />}
+
+      {searching && results && following.length > 0 && (
+        <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground" data-feed-search-filters>
+          Your filters still apply: <span className="font-medium text-foreground">{following.join(' · ')}</span>.
+          {hidden > 0 ? ` ${plural(hidden, 'more match', 'more matches')} hidden by them.` : ''}
+        </p>
+      )}
+
+      {source === 'snapshot' && !first && (
         <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground" data-feed-saved-copy>
-          The Nazar API and Arkiv could not answer just now, so this is Nazar&apos;s saved copy of every published alert
+          {searching
+            ? "The Nazar API could not answer just now, so these matches come from Nazar's saved copy of every published alert"
+            : "The Nazar API and Arkiv could not answer just now, so this is Nazar's saved copy of every published alert"}
           {savedAt ? `, as of ${savedAt}` : ''}. It refreshes when they are back.
         </p>
       )}
-      {page?.source === 'demo' && !first && (
+      {source === 'demo' && !first && (
         <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">
           Demo data: the Nazar API and Arkiv could not answer, so built-in sample alerts are shown.
         </p>
       )}
 
-      <div className="mt-3 rounded-2xl border bg-card px-2 py-2 sm:px-3" aria-busy={first} data-feed data-feed-source={first ? undefined : page?.source}>
+      {batch && <CheckBatchOffer batch={batch} className="mt-3" />}
+
+      {!searching && !first && fresh.size > 0 && (
+        <div className="mt-3 flex min-h-12 items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.05] py-0.5 pr-1 pl-4 text-sm dark:bg-primary/10" data-feed-new>
+          <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+          <span className="min-w-0 flex-1 leading-5 sm:flex-none">
+            <span className="font-semibold">{plural(fresh.size, 'new alert')}</span>
+            <span className="text-muted-foreground"> since your last visit</span>
+            <span className="hidden text-muted-foreground sm:inline" aria-hidden="true">
+              {' '}
+              ·
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={markAllSeen}
+            data-feed-mark-seen
+            className="min-h-11 shrink-0 rounded-lg px-3 font-semibold whitespace-nowrap text-primary underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            Mark all seen
+          </button>
+        </div>
+      )}
+
+      <div
+        className={cn('mt-3 rounded-2xl border bg-card px-2 py-2 transition-opacity sm:px-3', stale && !first && 'opacity-60')}
+        aria-busy={first || stale}
+        data-feed
+        data-feed-mode={searching ? 'search' : 'list'}
+        data-feed-source={first ? undefined : source}
+      >
         {first &&
           [0, 1, 2, 3, 4].map((i) => (
             <div key={i} className="flex min-h-[4.75rem] items-start gap-3.5 px-2.5 py-3 sm:px-3">
@@ -399,7 +608,7 @@ export function Feed() {
             </div>
           ))}
 
-        {!first && items.length === 0 && (
+        {!first && rows.length === 0 && !searching && (
           <div className="flex flex-col items-center px-6 py-12 text-center">
             <Rings className="size-24"><Search /></Rings>
             <p className="mt-4 font-semibold">No alerts match these filters</p>
@@ -412,15 +621,46 @@ export function Feed() {
           </div>
         )}
 
+        {!first && rows.length === 0 && searching && (
+          <div className="flex flex-col items-center px-6 py-12 text-center" data-feed-search-empty>
+            <Rings className="size-24"><Search /></Rings>
+            {hidden > 0 ? (
+              <>
+                <p className="mt-4 font-semibold">
+                  {plural(hidden, 'alert')} {hidden === 1 ? 'names' : 'name'} “{shownQ}”, but none match your filters
+                </p>
+                <p className="mt-1 max-w-xs text-sm text-muted-foreground">Reset the filters to see them.</p>
+                <Button variant="outline" className="mt-5 h-11" onClick={() => setFilters(DEFAULTS)}>
+                  <RotateCcw /> Reset filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 max-w-sm font-semibold text-balance">No regulator alert names “{shownQ}” in Nazar&apos;s records.</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                  This is not a safety certificate. Names are spelled many ways in notices, so try fewer letters; for an exact answer, check the batch number
+                  printed on the pack.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {!first &&
-          groupByMonth(items).map((g) => (
+          groupByMonth(rows).map((g) => (
             <section key={g.key} aria-label={g.label}>
               <h3 className="px-2.5 pt-3 pb-1 text-[11px] font-bold tracking-[0.16em] text-muted-foreground uppercase sm:px-3">{g.label}</h3>
               <ul className="divide-y divide-border/70">
                 {g.items.map((a) => (
                   <li key={a.id}>
-                    <FeedRow alert={a} open={openId === a.id} onToggle={() => setOpenId((id) => (id === a.id ? null : a.id))} />
-                    {openId === a.id && page && <FeedDetail alert={a} source={page.source} />}
+                    <FeedRow
+                      alert={a}
+                      open={openId === a.id}
+                      onToggle={() => setOpenId((id) => (id === a.id ? null : a.id))}
+                      terms={searching ? terms : undefined}
+                      fresh={isFresh(a)}
+                    />
+                    {openId === a.id && source && <FeedDetail alert={a} source={source} />}
                   </li>
                 ))}
               </ul>
@@ -428,7 +668,7 @@ export function Feed() {
           ))}
       </div>
 
-      {!first && items.length > 0 && (
+      {!first && !searching && items.length > 0 && (
         <div className="mt-4 flex flex-col items-center gap-2">
           {page?.more ? (
             <Button variant="outline" className="h-12 w-full max-w-sm text-sm font-semibold" onClick={loadMore} aria-busy={loading === 'more'} disabled={loading === 'more'}>
@@ -450,6 +690,9 @@ export function Feed() {
             </p>
           )}
         </div>
+      )}
+      {!first && searching && results?.capped && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">Showing the top matches. Add a word to narrow the search.</p>
       )}
     </div>
   )

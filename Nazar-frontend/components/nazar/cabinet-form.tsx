@@ -1,25 +1,56 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { ChevronDown, ImagePlus, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { addItem, findByBatch, NAME_MAX, NOTE_MAX, updateItem, useCabinet, type CabinetDraft, type CabinetItem } from '@/lib/cabinet'
+import { AddChooser } from '@/components/nazar/cabinet/add-chooser'
+import { AiGuessPanel, type AiState } from '@/components/nazar/cabinet/ai-guess'
+import { FieldSource, SuggestionRow } from '@/components/nazar/cabinet/field-source'
+import { PhotoReading } from '@/components/nazar/cabinet/photo-reading'
+import { applyGuess, fromPhoto, type FieldKey, type PhotoPrefill, type Sources, type Suggestion, type Values } from '@/components/nazar/cabinet/prefill'
+import {
+  addItem,
+  cleanComposition,
+  findByBatch,
+  formatExpiry,
+  MAKER_MAX,
+  NAME_MAX,
+  NOTE_MAX,
+  updateItem,
+  useCabinet,
+  type CabinetDraft,
+  type CabinetItem,
+} from '@/lib/cabinet'
+import { readPackPhoto, type PhotoStage } from '@/lib/scan/photo'
 import { validateBatch } from '@/lib/source'
+import { apiIdentifyMedicine } from '@/lib/source/api'
+import { API_URL } from '@/lib/source/config'
 import { cn } from '@/lib/utils'
 
-// Add / edit form for the cabinet, shared by the Cabinet tab and the "Save to cabinet"
-// action on every result card.
+// Add / edit form for the cabinet, shared by the Cabinet tab and the "Save to cabinet" action on
+// every result card. A new medicine from the Cabinet starts with three ways in (photo, upload,
+// type); a photo is read on the device and pre-fills the form, and nothing is saved until the
+// person confirms. Edits and saves from a result card open the form directly.
 
 const fieldCls =
   'h-12 w-full min-w-0 rounded-xl border bg-background px-3.5 text-base outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 sm:text-sm'
 
 type Errors = Partial<Record<'name' | 'batch' | 'expiry', string>>
+type Step = 'choose' | 'reading' | 'form'
+type Draft = { name: string; batch: string; expiry: string | null; note: string; composition: string; maker: string }
 
-function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: React.ReactNode }) {
+const EMPTY: Draft = { name: '', batch: '', expiry: null, note: '', composition: '', maker: '' }
+const LABEL: Record<FieldKey, string> = { name: 'Medicine name', batch: 'Batch number', expiry: 'Expiry month', composition: 'Composition', maker: 'Made by' }
+
+/** Once the server says AI guessing is off, stay quiet about it for the rest of the visit. */
+let aiOff: string | null = API_URL ? null : 'AI guessing isn’t available in this version.'
+
+function Field({ id, label, hint, error, below, children }: { id: string; label: string; hint?: string; error?: string; below?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1.5">
+    <div className="grid min-w-0 gap-1.5" data-field={id.split('-').pop()}>
       <div className="flex items-baseline justify-between gap-3">
         <label htmlFor={id} className="text-sm font-semibold">{label}</label>
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
@@ -30,9 +61,13 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
           {error}
         </p>
       )}
+      {below}
     </div>
   )
 }
+
+const toDraft = (v: Partial<Values>): Draft => ({ ...EMPTY, name: v.name ?? '', batch: v.batch ?? '', expiry: v.expiry || null, composition: v.composition ?? '', maker: v.maker ?? '' })
+const toValues = (d: Draft): Values => ({ name: d.name, batch: d.batch, expiry: d.expiry ?? '', composition: d.composition, maker: d.maker })
 
 export function CabinetFormDialog({
   open,
@@ -51,26 +86,159 @@ export function CabinetFormDialog({
 }) {
   const uid = useId()
   const items = useCabinet()
-  const [draft, setDraft] = useState<CabinetDraft>({ name: '', batch: '', expiry: null, note: '' })
+  const [step, setStep] = useState<Step>('form')
+  const [draft, setDraft] = useState<Draft>(EMPTY)
   const [errors, setErrors] = useState<Errors>({})
+  const [extra, setExtra] = useState(false)
+  // Photo flow
+  const [stage, setStage] = useState<PhotoStage>('opening')
+  const [thumb, setThumb] = useState<string | null>(null)
+  const [photo, setPhoto] = useState<PhotoPrefill | null>(null)
+  const [photoFailed, setPhotoFailed] = useState(false)
+  const [sources, setSources] = useState<Sources>({})
+  const [edited, setEdited] = useState<ReadonlySet<FieldKey>>(() => new Set())
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [ai, setAi] = useState<AiState>({ kind: 'idle' })
+  const gen = useRef(0)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const thumbRef = useRef<string | null>(null)
+
+  const setThumbUrl = (url: string | null) => {
+    if (thumbRef.current) URL.revokeObjectURL(thumbRef.current)
+    thumbRef.current = url
+    setThumb(url)
+  }
+
+  const resetPhoto = () => {
+    gen.current++
+    setPhoto(null)
+    setPhotoFailed(false)
+    setSources({})
+    setEdited(new Set())
+    setSuggestions([])
+    setAi(aiOff ? { kind: 'disabled', message: aiOff } : { kind: 'idle' })
+    setThumbUrl(null)
+  }
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      gen.current++
+      return
+    }
     setErrors({})
-    setDraft(
-      editing
-        ? { name: editing.name, batch: editing.batch, expiry: editing.expiry, note: editing.note }
-        : { name: initial?.name ?? '', batch: initial?.batch ?? '', expiry: initial?.expiry ?? null, note: initial?.note ?? '' },
-    )
-  }, [open, editing, initial?.name, initial?.batch, initial?.expiry, initial?.note])
+    resetPhoto()
+    if (editing) {
+      setDraft({ name: editing.name, batch: editing.batch, expiry: editing.expiry, note: editing.note, composition: (editing.composition ?? []).join(', '), maker: editing.maker ?? '' })
+      setExtra(!!(editing.composition?.length || editing.maker))
+      setStep('form')
+    } else if (initial) {
+      setDraft({ ...EMPTY, name: initial.name ?? '', batch: initial.batch ?? '', expiry: initial.expiry ?? null, note: initial.note ?? '' })
+      setExtra(false)
+      setStep('form')
+    } else {
+      setDraft(EMPTY)
+      setExtra(false)
+      setStep('choose')
+    }
+    // Reset only when the dialog opens or its target changes (resetPhoto is stable in effect).
+  }, [open, editing, initial?.name, initial?.batch, initial?.expiry, initial?.note, !!initial])
 
-  const set = (patch: Partial<CabinetDraft>) => {
+  useEffect(() => () => setThumbUrl(null), [])
+
+  // A rate limit lifts by itself: re-enable the button when the wait is over.
+  useEffect(() => {
+    if (ai.kind !== 'limited' || !ai.minutes) return
+    const t = setTimeout(() => setAi((a) => (a.kind === 'limited' ? { kind: 'idle' } : a)), ai.minutes * 60_000)
+    return () => clearTimeout(t)
+  }, [ai])
+
+  /** Moves focus to the step's heading, so a screen reader hears where it is and the keyboard starts there. */
+  const focusHeading = () => requestAnimationFrame(() => headingRef.current?.focus({ preventScroll: false }))
+
+  const set = (patch: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     setErrors((e) => {
       const next = { ...e }
       for (const k of Object.keys(patch)) delete next[k as keyof Errors]
       return next
     })
+    const keys = Object.keys(patch).filter((k): k is FieldKey => k in LABEL)
+    if (keys.length) {
+      // A value the person typed is theirs: it no longer shows where a read came from.
+      setSources((s) => {
+        const next = { ...s }
+        for (const k of keys) delete next[k]
+        return next
+      })
+      setEdited((e) => new Set([...e, ...keys]))
+      setSuggestions((s) => s.filter((x) => !keys.includes(x.field)))
+    }
+  }
+
+  const onPhoto = async (file: File) => {
+    resetPhoto()
+    const mine = gen.current
+    setThumbUrl(URL.createObjectURL(file))
+    setStage('opening')
+    setStep('reading')
+    focusHeading()
+    try {
+      const read = await readPackPhoto(file, (s) => mine === gen.current && setStage(s))
+      if (mine !== gen.current) return
+      const pre = fromPhoto(read)
+      setPhoto(pre)
+      setSources(pre.sources)
+      setDraft((d) => ({ ...toDraft(pre.values), note: d.note }))
+      setExtra(!!(pre.values.composition || pre.values.maker))
+    } catch {
+      if (mine !== gen.current) return
+      setPhotoFailed(true)
+    }
+    setErrors({})
+    setStep('form')
+    focusHeading()
+  }
+
+  const cancelReading = () => {
+    resetPhoto()
+    setStep('choose')
+    focusHeading()
+  }
+
+  const guess = async () => {
+    if (!photo) return
+    const mine = gen.current
+    setAi({ kind: 'loading' })
+    const r = await apiIdentifyMedicine(photo.text, photo.hints)
+    if (mine !== gen.current) return
+    if (!r.ok) {
+      if (r.kind === 'disabled') {
+        aiOff = 'AI guessing isn’t available right now.'
+        setAi({ kind: 'disabled', message: aiOff })
+      } else if (r.kind === 'limited') setAi({ kind: 'limited', message: r.message, minutes: r.retryAfterSec ? Math.max(1, Math.ceil(r.retryAfterSec / 60)) : null })
+      else setAi({ kind: 'error', message: r.message })
+      return
+    }
+    const merged = applyGuess(toValues(draft), sources, edited, r.data)
+    setDraft((d) => ({ ...d, name: merged.values.name, batch: merged.values.batch.toUpperCase(), expiry: merged.values.expiry || null, composition: merged.values.composition, maker: merged.values.maker }))
+    setSources(merged.sources)
+    setSuggestions(merged.suggestions)
+    if (merged.filled.some((k) => k === 'composition' || k === 'maker') || merged.suggestions.some((s) => s.field === 'composition' || s.field === 'maker')) setExtra(true)
+    setAi({ kind: 'done', filled: merged.filled.length, suggested: merged.suggestions.length, confidence: r.data.confidence, model: r.data.model })
+  }
+
+  const useSuggestion = (s: Suggestion) => {
+    setDraft((d) => ({ ...d, [s.field]: s.field === 'expiry' ? s.value || null : s.field === 'batch' ? s.value.toUpperCase() : s.value }))
+    setSources((src) => ({ ...src, [s.field]: { kind: 'ai', confidence: ai.kind === 'done' ? ai.confidence : 'low', ...(s.quote ? { quote: s.quote } : {}) } }))
+    setSuggestions((list) => list.filter((x) => x !== s))
+  }
+
+  const chooseBatch = (batch: string, from: 'code' | 'printed') => {
+    setDraft((d) => ({ ...d, batch }))
+    setErrors((e) => ({ ...e, batch: undefined }))
+    const codeSource = photo?.sources.batch?.kind === 'code' ? photo.sources.batch : ({ kind: 'code', from: 'qr' } as const)
+    // The printed batch disagreed with an error-corrected code, so it is shown as one to check.
+    setSources((s) => ({ ...s, batch: from === 'code' ? codeSource : { kind: 'label', confidence: 0.5 } }))
   }
 
   const submit = (e: React.FormEvent) => {
@@ -91,11 +259,19 @@ export function CabinetFormDialog({
       if (first) document.getElementById(`${uid}-${first}`)?.focus()
       return
     }
-    const clean = { name, batch: v.batch, expiry: draft.expiry || null, note: draft.note.trim() }
+    const clean: CabinetDraft = {
+      name,
+      batch: v.batch,
+      expiry: draft.expiry || null,
+      note: draft.note.trim(),
+      composition: cleanComposition(draft.composition),
+      maker: draft.maker.replace(/\s+/g, ' ').trim().slice(0, MAKER_MAX),
+    }
     if (editing) {
       updateItem(editing.id, clean)
       toast.success('Cabinet updated')
-      onSaved?.({ ...editing, ...clean }, false)
+      const { composition, maker, ...rest } = clean
+      onSaved?.({ ...editing, ...rest, ...(composition?.length ? { composition } : {}), ...(maker ? { maker } : {}) }, false)
     } else {
       const item = addItem(clean)
       toast.success(`${item.name} saved to your cabinet`)
@@ -104,79 +280,233 @@ export function CabinetFormDialog({
     onOpenChange(false)
   }
 
-  const ids = { name: `${uid}-name`, batch: `${uid}-batch`, expiry: `${uid}-expiry`, note: `${uid}-note` }
+  const ids = { name: `${uid}-name`, batch: `${uid}-batch`, expiry: `${uid}-expiry`, note: `${uid}-note`, composition: `${uid}-composition`, maker: `${uid}-maker` }
   const describe = (k: keyof Errors) => (errors[k] ? `${ids[k]}-error` : undefined)
+  const fromPhotoForm = step === 'form' && (!!photo || photoFailed)
+
+  /** The provenance chip and any AI suggestion for a field. */
+  const below = (k: FieldKey) => {
+    const src = sources[k]
+    const sug = suggestions.find((s) => s.field === k)
+    if (!src && !sug) return undefined
+    return (
+      <>
+        {src && (
+          <div className="flex flex-wrap gap-1.5">
+            <FieldSource source={src} field={LABEL[k]} />
+          </div>
+        )}
+        {sug && (
+          <SuggestionRow
+            s={sug}
+            display={k === 'expiry' ? (formatExpiry(sug.value) ?? sug.value) : sug.value}
+            onUse={() => useSuggestion(sug)}
+            onDismiss={() => setSuggestions((list) => list.filter((x) => x !== sug))}
+          />
+        )}
+      </>
+    )
+  }
+
+  const weakReason =
+    !photo?.values.name && !photo?.values.batch
+      ? 'No name or batch number was read'
+      : !photo?.values.name
+        ? 'No medicine name was read'
+        : !photo?.values.batch
+          ? 'No batch number was read'
+          : 'The label was hard to read'
+  const showAi = !!photo && photo.weak && !photo.empty
+  const head =
+    step === 'choose'
+      ? { eyebrow: 'My medicine cabinet', title: 'Add a medicine', desc: 'Saved only on this device. Nazar re-checks the batch each time you open your cabinet.' }
+      : step === 'reading'
+        ? { eyebrow: 'Reading on this phone', title: 'Reading the label…', desc: 'Looking for a code, then reading the printed text. Nothing is uploaded.' }
+        : fromPhotoForm
+          ? { eyebrow: 'From your photo', title: 'Check what we read', desc: 'Compare each detail with the pack and fix anything that differs. Nothing is saved until you tap Add to cabinet.' }
+          : { eyebrow: 'My medicine cabinet', title: editing ? 'Edit medicine' : 'Add a medicine', desc: 'Saved only on this device. Nazar re-checks the batch each time you open your cabinet.' }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto rounded-2xl p-0 sm:max-w-md">
-        <form onSubmit={submit} noValidate data-cabinet-form>
-          <div className="px-5 pt-5 pb-1">
-            <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">My medicine cabinet</p>
-            <DialogTitle className="mt-1.5 text-xl font-semibold tracking-tight">{editing ? 'Edit medicine' : 'Add a medicine'}</DialogTitle>
-            <DialogDescription className="mt-1 text-pretty">Saved only on this device. Nazar re-checks the batch each time you open your cabinet.</DialogDescription>
-          </div>
-          <div className="grid gap-4 px-5 py-4">
-            <Field id={ids.name} label="Medicine name" error={errors.name}>
-              <input
-                id={ids.name}
-                value={draft.name}
-                onChange={(e) => set({ name: e.target.value })}
-                maxLength={NAME_MAX}
-                placeholder="e.g. Crocin 650"
-                autoComplete="off"
-                aria-invalid={!!errors.name}
-                aria-describedby={describe('name')}
-                className={fieldCls}
-              />
-            </Field>
-            <Field id={ids.batch} label="Batch number" hint="After “B.No.” on the pack" error={errors.batch}>
-              <input
-                id={ids.batch}
-                value={draft.batch}
-                onChange={(e) => set({ batch: e.target.value.toUpperCase() })}
-                maxLength={24}
-                placeholder="e.g. SR-13"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                aria-invalid={!!errors.batch}
-                aria-describedby={describe('batch')}
-                className={cn(fieldCls, 'font-mono tracking-wider uppercase placeholder:font-sans placeholder:tracking-normal placeholder:normal-case')}
-              />
-            </Field>
-            <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-              <Field id={ids.expiry} label="Expiry month" hint="Optional">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-x-hidden overflow-y-auto rounded-2xl p-0 sm:max-w-md" data-cabinet-dialog data-step={step}>
+        <div className="px-5 pt-5 pb-1 pr-12">
+          <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">{head.eyebrow}</p>
+          <DialogTitle ref={headingRef} tabIndex={-1} className="mt-1.5 rounded-md text-xl font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
+            {head.title}
+          </DialogTitle>
+          <DialogDescription className="mt-1 text-pretty">{head.desc}</DialogDescription>
+        </div>
+
+        {step === 'choose' && (
+          <AddChooser
+            onPhoto={onPhoto}
+            onType={() => {
+              setStep('form')
+              requestAnimationFrame(() => document.getElementById(ids.name)?.focus())
+            }}
+          />
+        )}
+
+        {step === 'reading' && <PhotoReading stage={stage} thumb={thumb} onCancel={cancelReading} />}
+
+        {step === 'form' && (
+          <form onSubmit={submit} noValidate data-cabinet-form data-from-photo={fromPhotoForm ? '' : undefined}>
+            <div className="grid gap-4 px-5 py-4">
+              {fromPhotoForm && (
+                <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-2" data-photo-strip>
+                  {thumb ? (
+                    // A local blob: URL, so a plain <img>: the photo is never uploaded.
+                    <img src={thumb} alt="Your photo of the pack" className="size-14 shrink-0 rounded-lg border object-cover" />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {photoFailed
+                        ? 'We couldn’t read this photo.'
+                        : photo?.empty
+                          ? 'We couldn’t read any details from this photo.'
+                          : 'Read on this phone. The photo is not saved or sent.'}
+                    </p>
+                    <button
+                      type="button"
+                      className="-ml-1 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-sm font-semibold text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/40"
+                      onClick={() => (resetPhoto(), setStep('choose'), focusHeading())}
+                      data-photo-retake
+                    >
+                      <ImagePlus className="size-4" aria-hidden="true" /> Use another photo
+                    </button>
+                  </div>
+                </div>
+              )}
+              {fromPhotoForm && (photoFailed || photo?.empty) && (
+                <p className="rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3 text-sm leading-6 text-caution" role="status" data-photo-unread>
+                  Try a closer, sharper photo of the label in good light, with the B.No. line in view, or type the details below.
+                </p>
+              )}
+
+              {photo?.mismatch && (
+                <div className="rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3" role="alert" data-photo-mismatch>
+                  <p className="flex items-start gap-2 text-sm leading-6 font-semibold text-caution">
+                    <TriangleAlert className="mt-1 size-4 shrink-0" aria-hidden="true" />
+                    Label details don&apos;t match. Show this pack to your chemist.
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    The code says batch <span className="font-mono font-semibold text-foreground">{photo.mismatch.code}</span>, the printed label says{' '}
+                    <span className="font-mono font-semibold text-foreground">{photo.mismatch.printed}</span>. They should be the same. Choose the one printed after B.No.
+                  </p>
+                  <div className="mt-2 grid gap-2 min-[400px]:grid-cols-2">
+                    <Button type="button" variant="outline" className="h-11 rounded-lg bg-card" aria-pressed={draft.batch === photo.mismatch.code} onClick={() => chooseBatch(photo.mismatch!.code, 'code')}>
+                      Code: <span className="font-mono">{photo.mismatch.code}</span>
+                    </Button>
+                    <Button type="button" variant="outline" className="h-11 rounded-lg bg-card" aria-pressed={draft.batch === photo.mismatch.printed} onClick={() => chooseBatch(photo.mismatch!.printed, 'printed')}>
+                      Printed: <span className="font-mono">{photo.mismatch.printed}</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {showAi && <AiGuessPanel state={ai} text={photo.text} reason={weakReason} onGuess={guess} />}
+
+              <Field id={ids.name} label="Medicine name" error={errors.name} below={below('name')}>
                 <input
-                  id={ids.expiry}
-                  type="month"
-                  value={draft.expiry ?? ''}
-                  onChange={(e) => set({ expiry: e.target.value || null })}
-                  className={cn(fieldCls, 'scheme-light dark:scheme-dark')}
-                />
-              </Field>
-              <Field id={ids.note} label="Note" hint="Optional">
-                <input
-                  id={ids.note}
-                  value={draft.note}
-                  onChange={(e) => set({ note: e.target.value })}
-                  maxLength={NOTE_MAX}
-                  placeholder="For Dad, kids’ syrup…"
+                  id={ids.name}
+                  value={draft.name}
+                  onChange={(e) => set({ name: e.target.value })}
+                  maxLength={NAME_MAX}
+                  placeholder="e.g. Crocin 650"
                   autoComplete="off"
+                  aria-invalid={!!errors.name}
+                  aria-describedby={describe('name')}
                   className={fieldCls}
                 />
               </Field>
+              <Field id={ids.batch} label="Batch number" hint="After “B.No.” on the pack" error={errors.batch} below={below('batch')}>
+                <input
+                  id={ids.batch}
+                  value={draft.batch}
+                  onChange={(e) => set({ batch: e.target.value.toUpperCase() })}
+                  maxLength={24}
+                  placeholder="e.g. SR-13"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  aria-invalid={!!errors.batch}
+                  aria-describedby={describe('batch')}
+                  className={cn(fieldCls, 'font-mono tracking-wider uppercase placeholder:font-sans placeholder:tracking-normal placeholder:normal-case')}
+                />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+                <Field id={ids.expiry} label="Expiry month" hint="Optional" below={below('expiry')}>
+                  <input
+                    id={ids.expiry}
+                    type="month"
+                    value={draft.expiry ?? ''}
+                    onChange={(e) => set({ expiry: e.target.value || null })}
+                    className={cn(fieldCls, 'scheme-light dark:scheme-dark')}
+                  />
+                </Field>
+                <Field id={ids.note} label="Note" hint="Optional">
+                  <input
+                    id={ids.note}
+                    value={draft.note}
+                    onChange={(e) => set({ note: e.target.value })}
+                    maxLength={NOTE_MAX}
+                    placeholder="For Dad, kids’ syrup…"
+                    autoComplete="off"
+                    className={fieldCls}
+                  />
+                </Field>
+              </div>
+
+              {extra ? (
+                <div className="grid gap-4" data-cabinet-extra>
+                  <Field id={ids.composition} label="Composition" hint="Optional" below={below('composition')}>
+                    <input
+                      id={ids.composition}
+                      value={draft.composition}
+                      onChange={(e) => set({ composition: e.target.value })}
+                      maxLength={400}
+                      placeholder="e.g. Paracetamol IP 650 mg"
+                      autoComplete="off"
+                      className={fieldCls}
+                    />
+                  </Field>
+                  <Field id={ids.maker} label="Made by" hint="Optional" below={below('maker')}>
+                    <input
+                      id={ids.maker}
+                      value={draft.maker}
+                      onChange={(e) => set({ maker: e.target.value })}
+                      maxLength={MAKER_MAX}
+                      placeholder="Manufacturer on the pack"
+                      autoComplete="off"
+                      className={fieldCls}
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="-mt-1 inline-flex min-h-11 items-center gap-1.5 justify-self-start rounded-lg px-1 text-sm font-semibold text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/40"
+                  aria-expanded={false}
+                  onClick={() => {
+                    setExtra(true)
+                    requestAnimationFrame(() => document.getElementById(ids.composition)?.focus())
+                  }}
+                  data-cabinet-extra-toggle
+                >
+                  <ChevronDown className="size-4" aria-hidden="true" /> Add ingredients and maker
+                </button>
+              )}
             </div>
-          </div>
-          <div className="flex flex-col-reverse gap-2 border-t bg-muted/40 px-5 py-4 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" className="h-12 sm:h-11" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" className="h-12 font-semibold sm:h-11">
-              {editing ? 'Save changes' : 'Add to cabinet'}
-            </Button>
-          </div>
-        </form>
+            <div className="flex flex-col-reverse gap-2 border-t bg-muted/40 px-5 py-4 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" className="h-12 sm:h-11" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="h-12 font-semibold sm:h-11">
+                {editing ? 'Save changes' : 'Add to cabinet'}
+              </Button>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )

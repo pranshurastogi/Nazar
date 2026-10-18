@@ -161,13 +161,33 @@ export function parseSchedule(text: string): string | undefined {
   return undefined
 }
 
+/**
+ * A dosage form on its own, never a medicine name: "Tablet", "TABLETS", "15 Capsules", "Syrup IP",
+ * "Film-coated tablets I.P. 650 mg". A strip often prints the form on a line of its own, and a cropped
+ * camera read can see only that line, so the product name must never fall back to it.
+ */
+const FORM_ONLY = new RegExp(
+  String.raw`^(?:\d+\s*(?:[x×]\s*\d+\s*)?)?(?:(?:film|sugar|enteric)[\s-]?coated\s+|uncoated\s+|chewable\s+|dispersible\s+|effervescent\s+|oral\s+|eye\s+|ear\s+|nasal\s+|(?:soft|hard)\s+gelatin\s+|(?:sustained|extended|prolonged|modified)[\s-]release\s+)*(?:tab(?:let)?s?|cap(?:sule)?s?|caplets?|syrups?|suspensions?|injections?|inj|drops|solutions?|ointments?|creams?|gels?|lotions?|inhalers?|rotacaps?|sachets?|granules|powders?|sprays?|liquids?|elixirs?|vials?|ampoules?|medicines?|other|unknown)\.?(?:\s*${PHARMACOPOEIA})?(?:\s*\d+(?:[.,]\d+)?\s*(?:mg|mcg|g|ml|%))?[\s.]*$`,
+  'i',
+)
+
+/** True when the text is only a dosage form (see FORM_ONLY), not a name. */
+export const isBareForm = (s: string | null | undefined) => !!s && FORM_ONLY.test(s.replace(/\s+/g, ' ').trim())
+
 const LABEL_WORDS = /\b(?:composition|contains|each|mfd|mfg|manufactured|marketed|mkt|batch|b\.?\s?no|exp|expiry|m\.?r\.?p|store|keep|schedule|warning|caution|lic|regd|dosage|directions|rx|use before|price|incl|taxes)\b/i
 
 /** Product name: an early, mostly-letters line, preferring one that names a dosage form or a brand in capitals. */
 export function parseProduct(text: string): { value: string; confidence: number } | undefined {
   const lines = text.split('\n').map((l) => clean(l.replace(/^\s*(?:Rx|℞)\s+/i, ''))).filter(Boolean)
   let best: { value: string; score: number } | undefined
-  lines.slice(0, 12).forEach((line, i) => {
+  lines.slice(0, 12).forEach((raw, i, all) => {
+    let line = raw
+    // A form printed on its own line ("TABLETS") is never the name; it may finish the line above ("Paracetamol" / "Tablets IP").
+    if (isBareForm(line)) {
+      const prev = all[i - 1]
+      if (!prev || /^\d/.test(line) || isBareForm(prev) || LABEL_WORDS.test(prev) || prev.length > 40 || !/^[A-Za-z][A-Za-z0-9 .+&-]*$/.test(prev)) return
+      line = `${prev} ${line}`
+    }
     if (LABEL_WORDS.test(line) || line.length < 3 || line.length > 60) return
     const letters = line.replace(/[^a-z]/gi, '').length
     if (letters < 3 || letters / line.length < 0.5) return

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { CircleHelp, Clock, History, LoaderCircle, Plus, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Camera, CircleHelp, Clock, History, LoaderCircle, Plus, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { SentinelEye, type SentinelState } from '@/components/ui/sentinel-core'
@@ -327,9 +327,13 @@ export function EmptyShelf({ onAdd, onTry }: { onAdd: () => void; onTry: () => v
         <p className="mt-1 max-w-sm text-sm leading-6 text-pretty text-muted-foreground">
           Put the medicines you keep at home on this shelf. Nazar watches each batch and re-checks it against regulator alerts whenever you come back.
         </p>
+        <p className="mt-3 flex max-w-sm items-start gap-2 rounded-xl bg-primary/[0.07] px-3 py-2 text-left text-[13px] leading-5 text-pretty text-foreground/85" data-shelf-photo-hint>
+          <Camera className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span>Quickest way: take a photo of the pack. Nazar reads the name, batch and expiry on this phone.</span>
+        </p>
         <div className="mt-5 flex w-full flex-col items-stretch justify-center gap-2 min-[420px]:w-auto min-[420px]:flex-row min-[420px]:items-center">
           <Button className="h-12 px-5 font-semibold" onClick={onAdd} data-shelf-add>
-            <Plus /> Add your first medicine
+            <Camera /> Add your first medicine
           </Button>
           <Button variant="outline" className="h-12 px-4" onClick={onTry}>
             Try adding <span className="font-mono font-semibold">SR-13</span>

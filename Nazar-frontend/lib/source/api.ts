@@ -268,3 +268,134 @@ export async function apiExplainMedicine(q: MedicineQuery, { signal, timeoutMs =
     t.done()
   }
 }
+
+// ---- Identify a medicine from label text (opt-in; an AI guess, never regulator data)
+
+/** What the device already read, sent as hints. Text only: the photo never leaves the device. */
+export type IdentifyHints = { product?: string; batch?: string; expiry?: string; manufacturer?: string; composition?: string[] }
+
+export type IdentifyGuess = {
+  product: string | null
+  brand: string | null
+  composition: string[]
+  form: string | null
+  manufacturer: string | null
+  /** Only when printed in the text, exactly as printed. */
+  batch: string | null
+  /** YYYY-MM. */
+  expiry: string | null
+}
+
+export type IdentifyResult = {
+  guess: IdentifyGuess
+  confidence: 'high' | 'medium' | 'low'
+  /** Label text the model quoted for each field it filled. */
+  evidence: { field: string; quote: string }[]
+  aiGenerated: true
+  model: string
+  cached: boolean
+}
+
+export type IdentifyAnswer =
+  | { ok: true; data: IdentifyResult }
+  | { ok: false; kind: 'disabled' | 'limited' | 'error'; message: string; retryAfterSec?: number }
+
+export const IDENTIFY_TEXT_MIN = 3
+export const IDENTIFY_TEXT_MAX = 4000
+const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+
+const str = (v: unknown, max = 120) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim().slice(0, max) : null)
+
+/** The exact request body: `{ text, hints? }`, with empty hints left out (the server rejects unknown fields). */
+export function identifyBody(text: string, hints: IdentifyHints = {}): { text: string; hints?: IdentifyHints } {
+  const h: IdentifyHints = {}
+  const product = str(hints.product)
+  const batch = str(hints.batch, 24)
+  const manufacturer = str(hints.manufacturer)
+  const composition = (hints.composition ?? []).map((c) => str(c, 80)).filter((c): c is string => !!c).slice(0, 8)
+  if (product) h.product = product
+  if (batch) h.batch = batch
+  if (hints.expiry && YM_RE.test(hints.expiry)) h.expiry = hints.expiry
+  if (manufacturer) h.manufacturer = manufacturer
+  if (composition.length) h.composition = composition
+  const body: { text: string; hints?: IdentifyHints } = { text: text.trim().slice(0, IDENTIFY_TEXT_MAX) }
+  if (Object.keys(h).length) body.hints = h
+  return body
+}
+
+/**
+ * Asks the API to guess which medicine a label's OCR text describes. Sends only the text and the
+ * hints, never an image. Never throws: every failure becomes a state the form can show.
+ */
+export async function apiIdentifyMedicine(text: string, hints?: IdentifyHints, { signal, timeoutMs = 25_000 }: Opts = {}): Promise<IdentifyAnswer> {
+  if (!API_URL) return { ok: false, kind: 'disabled', message: 'AI guessing is not available in this version.' }
+  const body = identifyBody(text, hints)
+  if (body.text.length < IDENTIFY_TEXT_MIN) return { ok: false, kind: 'error', message: 'Too little text was read from the label to guess from.' }
+  const t = withTimeout(signal, timeoutMs)
+  try {
+    const res = await fetch(`${API_URL}/v1/medicine/identify`, {
+      method: 'POST',
+      signal: t.signal,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = (await res.json().catch(() => null)) as ({ error?: { code?: string; message?: string; retryAfterSec?: number } } & Partial<IdentifyResult>) | null
+    const code = json?.error?.code
+    if (res.status === 503 && (code === 'LLM_DISABLED' || !code)) return { ok: false, kind: 'disabled', message: 'AI guessing is turned off on the server right now.' }
+    if (res.status === 429) {
+      const retry = Number(res.headers.get('Retry-After') ?? json?.error?.retryAfterSec ?? 0) || Number(json?.error?.retryAfterSec ?? 0) || undefined
+      return { ok: false, kind: 'limited', message: code === 'DAILY_CAP' ? 'Nazar has used up today’s AI guesses.' : 'Too many guesses right now.', retryAfterSec: retry }
+    }
+    const g = json?.guess
+    if (!res.ok || !g || typeof g !== 'object') {
+      const message =
+        res.status === 413 || res.status === 400
+          ? 'The label text could not be sent as it is. Type the details instead.'
+          : 'Could not get a guess right now.'
+      return { ok: false, kind: 'error', message }
+    }
+    const evidence = (Array.isArray(json.evidence) ? json.evidence : [])
+      .filter((e): e is { field: string; quote: string } => !!e && typeof e.field === 'string' && typeof e.quote === 'string' && !!e.quote.trim())
+      .map((e) => ({ field: e.field, quote: e.quote.trim().slice(0, 200) }))
+    const expiry = str(g.expiry, 7)
+    return {
+      ok: true,
+      data: {
+        guess: {
+          product: str(g.product),
+          brand: str(g.brand, 60),
+          composition: strings(g.composition).map((c) => c.trim()).filter(Boolean).slice(0, 8),
+          form: str(g.form, 40),
+          manufacturer: str(g.manufacturer),
+          batch: str(g.batch, 24),
+          expiry: expiry && YM_RE.test(expiry) ? expiry : null,
+        },
+        confidence: json.confidence === 'high' || json.confidence === 'medium' ? json.confidence : 'low',
+        evidence,
+        aiGenerated: true,
+        model: typeof json.model === 'string' ? json.model : '',
+        cached: !!json.cached,
+      },
+    }
+  } catch {
+    if (signal?.aborted) return { ok: false, kind: 'error', message: 'Cancelled.' }
+    return { ok: false, kind: 'error', message: 'Could not reach Nazar. Check your connection.' }
+  } finally {
+    t.done()
+  }
+}
+
+// ---- Search by name (GET /v1/search: brand, product, maker and batch, prefix-matched per word)
+
+/** The API caps a search at 100 rows; the Feed asks for this many. */
+export const SEARCH_LIMIT = 50
+
+/** Alerts whose brand, product, maker or batch match every word of `q`, in the server's relevance order. */
+export async function apiSearch(q: string, limit = SEARCH_LIMIT, opts?: Opts): Promise<Alert[]> {
+  const text = q.replace(/\s+/g, ' ').trim().slice(0, 100)
+  if (!text) return []
+  const params = new URLSearchParams({ q: text, limit: String(Math.min(100, Math.max(1, limit))) })
+  const r = await getJson<{ items: AlertDTO[] }>(`/v1/search?${params}`, opts)
+  if (!r || !Array.isArray(r.items)) throw new ApiError('Unexpected /v1/search response')
+  return r.items.map(fromDto)
+}

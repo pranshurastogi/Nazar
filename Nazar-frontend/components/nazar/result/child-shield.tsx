@@ -7,9 +7,11 @@ import type { Alert } from '@/lib/source/types'
 export function ChildShield({ alert }: { alert: Alert }) {
   if (!alert.peds || !isMedicine(alert)) return null
   return (
-    <div className="mx-5 mb-4 flex items-start gap-3 rounded-xl border border-flagged-border bg-card p-3.5 sm:mx-6" data-child-shield>
-      <Baby className="mt-0.5 size-5 shrink-0 text-flagged" aria-hidden="true" />
-      <p className="text-sm">
+    <div className="mt-4 flex items-start gap-3 rounded-xl border border-flagged-border bg-card p-3.5 shadow-xs" data-child-shield>
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-flagged-soft text-flagged" aria-hidden="true">
+        <Baby className="size-4.5" />
+      </span>
+      <p className="self-center text-sm leading-5">
         <span className="font-semibold">Child Shield.</span> This is a children&apos;s formulation. If a child has taken it, contact a doctor now.
       </p>
     </div>

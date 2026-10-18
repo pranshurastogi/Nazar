@@ -1,0 +1,21 @@
+{
+  "guess": {
+    "product": "DOLO-650 Paracetamol Tablets IP 650 mg",
+    "brand": "DOLO-650",
+    "composition": ["Paracetamol IP 650 mg"],
+    "form": "tablet",
+    "manufacturer": "Micro Labs Limited",
+    "batch": "DOBS4410",
+    "expiry": "2028-04"
+  },
+  "confidence": "high",
+  "evidence": [
+    { "field": "brand", "quote": "DOLO-650" },
+    { "field": "batch", "quote": "DOBS4410" },
+    { "field": "expiry", "quote": "EXP 04/2028" },
+    { "field": "manufacturer", "quote": "Micro Labs Limited" }
+  ],
+  "aiGenerated": true,
+  "model": "gemini-2.5-flash",
+  "cached": false
+}

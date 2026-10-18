@@ -12,8 +12,10 @@ import { shareMessage, shareSummary, shareUrl, whatsappHref } from '@/lib/share'
 import { cn } from '@/lib/utils'
 import { copy, SourceTag, TONE } from './shared'
 
-/** Ghost action with its label from sm up; below sm only the icon shows and the aria-label names it. */
-const ICON_ACTION = 'h-11 w-11 px-0 sm:w-auto sm:px-3'
+/** One segment of the action bar: a 44px ghost button that shares the bar's border and rounding. */
+const SEGMENT = 'h-11 rounded-none px-3.5 first:rounded-l-[11px] last:rounded-r-[11px] hover:bg-muted/70 focus-visible:z-10'
+/** A segment with its label from sm up; below sm only the icon shows and the aria-label names it. */
+const ICON_ACTION = cn(SEGMENT, 'w-11 px-0 sm:w-auto sm:px-3.5')
 
 /**
  * "Save to cabinet" / "In cabinet". One label at every width, so the same state never reads
@@ -26,7 +28,7 @@ function SaveAction({ result }: { result: CheckResult }) {
   const saved = findByBatch(items, result.batch)
   if (saved) {
     return (
-      <Link href="/cabinet" className={cn(buttonVariants({ variant: 'ghost' }), 'h-11 px-3')} aria-label={`In your cabinet as ${saved.name}. Open cabinet`} data-in-cabinet>
+      <Link href="/cabinet" className={cn(buttonVariants({ variant: 'ghost' }), SEGMENT)} aria-label={`In your cabinet as ${saved.name}. Open cabinet`} data-in-cabinet>
         <BookmarkCheck className="text-primary" /> In cabinet
       </Link>
     )
@@ -34,7 +36,7 @@ function SaveAction({ result }: { result: CheckResult }) {
   const alert = 'alert' in result ? result.alert : undefined
   return (
     <>
-      <Button variant="ghost" className="h-11 px-3" onClick={() => setOpen(true)} data-save-cabinet>
+      <Button variant="ghost" className={SEGMENT} onClick={() => setOpen(true)} data-save-cabinet>
         <BookmarkPlus /> Save to cabinet
       </Button>
       <CabinetFormDialog open={open} onOpenChange={setOpen} initial={{ batch: result.batch, name: alert?.brand ?? '' }} />
@@ -45,7 +47,8 @@ function SaveAction({ result }: { result: CheckResult }) {
 /**
  * Save and share, placed right after "What to do" so they are not buried under the proof.
  * A share carries the public /b/BATCH link: only the batch and regulator data, never the cabinet or history.
- * Below sm, Share and WhatsApp are icon buttons so the row stays on one line at 360 px.
+ * One segmented bar, so the three read as a single toolbar; below sm, Share and WhatsApp are icon
+ * buttons so the bar stays on one line at 360 px.
  */
 export function ShareSave({ result, saveable }: { result: CheckResult; saveable: boolean }) {
   const [canShare, setCanShare] = useState(false)
@@ -66,7 +69,12 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1 bg-card/70 px-5 pb-4 sm:gap-2 sm:px-6" data-share-actions>
+    <div
+      role="group"
+      aria-label="Save and share"
+      className="mx-5 mb-5 flex w-fit max-w-[calc(100%-2.5rem)] items-stretch divide-x rounded-xl border bg-card shadow-xs sm:mx-6 sm:max-w-[calc(100%-3rem)]"
+      data-share-actions
+    >
       {saveable && <SaveAction result={result} />}
       {canShare ? (
         <Button variant="ghost" className={ICON_ACTION} onClick={share} aria-label="Share" title="Share" data-share>
@@ -92,7 +100,7 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
   )
 }
 
-/** Footer of a result card: who answered, and the proof sheet. */
+/** Footer of a result card, kept quiet: who answered (and the notice it rests on), and the proof sheet. */
 export function ResultActions({
   result,
   alert,
@@ -105,15 +113,21 @@ export function ResultActions({
   const tone = TONE[result.state]
 
   return (
-    <div className="flex flex-wrap items-center gap-2 bg-card/70 px-5 py-3 sm:px-6">
-      <div className="mr-auto min-w-0">
-        {alert && <p className="text-xs text-muted-foreground">{alert.authority}, {alert.noticeDate}</p>}
-        <SourceTag source={result.source} />
-      </div>
-      {alert && (
-        <Button variant="outline" className={cn('h-11 px-3', tone.text)} onClick={() => onProof(alert)}>
+    // Phones: source and "How do we know?" share the first line, the notice sits under them.
+    // From sm: source over notice on the left, the button centred on the right.
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-t bg-muted/35 px-5 py-1.5 sm:px-6" data-result-footer>
+      <SourceTag source={result.source} className="items-start py-1 leading-4 [&>span:first-child]:mt-[5px]" />
+      {alert ? (
+        <Button variant="ghost" className={cn('-mr-2.5 h-11 px-2.5 font-semibold sm:row-span-2', tone.text)} onClick={() => onProof(alert)}>
           How do we know? <ChevronRight data-icon="inline-end" />
         </Button>
+      ) : (
+        <span className="h-11" aria-hidden="true" />
+      )}
+      {alert && (
+        <p className="col-span-2 -mt-1.5 pb-1.5 text-xs text-muted-foreground sm:col-span-1 sm:row-start-2 sm:mt-0 sm:pb-1">
+          {alert.authority}, {alert.noticeDate}
+        </p>
       )}
     </div>
   )

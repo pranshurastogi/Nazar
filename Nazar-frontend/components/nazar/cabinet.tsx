@@ -175,6 +175,22 @@ function CabinetRow({
 
       {open && (
         <div id={panelId} role="region" aria-label={`Details for ${item.name}`} className="border-t px-3 pt-3 pb-3 sm:px-4">
+          {(item.composition?.length || item.maker) && (
+            <dl className="mb-3 grid gap-1 rounded-xl bg-muted/50 px-3.5 py-2.5 text-[13px] leading-5" data-cabinet-details>
+              {item.composition?.length ? (
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="text-muted-foreground">Composition</dt>
+                  <dd className="min-w-0 break-words">{item.composition.join(', ')}</dd>
+                </div>
+              ) : null}
+              {item.maker && (
+                <div className="flex flex-wrap gap-x-2">
+                  <dt className="text-muted-foreground">Made by</dt>
+                  <dd className="min-w-0 break-words">{item.maker}</dd>
+                </div>
+              )}
+            </dl>
+          )}
           {exp?.kind === 'expired' && (
             <p className="mb-3 flex items-start gap-2 rounded-xl border border-caution-border bg-caution-soft px-3.5 py-3 text-sm text-caution">
               <Clock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

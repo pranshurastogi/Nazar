@@ -12,6 +12,7 @@ import { BellSimple } from '@phosphor-icons/react/dist/csr/BellSimple'
 import { BookOpenText } from '@phosphor-icons/react/dist/csr/BookOpenText'
 import { Cube } from '@phosphor-icons/react/dist/csr/Cube'
 import { DotsThreeCircle } from '@phosphor-icons/react/dist/csr/DotsThreeCircle'
+import { ListChecks } from '@phosphor-icons/react/dist/csr/ListChecks'
 import { LockSimple } from '@phosphor-icons/react/dist/csr/LockSimple'
 import { MagnifyingGlass } from '@phosphor-icons/react/dist/csr/MagnifyingGlass'
 import { Moon } from '@phosphor-icons/react/dist/csr/Moon'
@@ -26,6 +27,7 @@ import { Logo } from '@/components/nazar/logo'
 import { Onboarding, ONBOARDED_KEY } from '@/components/nazar/onboarding'
 import { StatusPill } from '@/components/nazar/status-pill'
 import { PerfRuntime } from '@/components/nazar/perf/runtime'
+import { useCabinetFlagged, useUnseenAlerts } from '@/lib/badges'
 import { prefetchFor } from '@/lib/source/prefetch'
 import { loadPipelineStatus, type PipelineStatus } from '@/lib/source'
 import { cn } from '@/lib/utils'
@@ -54,6 +56,30 @@ type NavEntry = {
 
 type NavSection = { id: string; title: string; items: NavEntry[] }
 
+/** A count on a nav item: unseen alerts (quiet, primary) or flagged cabinet medicines (red). */
+type Badge = { count: number; tone: 'new' | 'flagged'; label: string }
+
+const badgeText = (n: number) => (n > 99 ? '99+' : String(n))
+
+/**
+ * The count itself. Screen readers hear it in the link's name (aria-label), so it is hidden from
+ * them, and drawn as generated content so the link's text stays its label.
+ */
+function BadgeDot({ badge, className }: { badge: Badge; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-nav-badge={badge.tone}
+      data-count={badgeText(badge.count)}
+      className={cn(
+        'pointer-events-none grid h-[1.125rem] min-w-[1.125rem] place-items-center rounded-full px-1 font-mono text-[10px] leading-none font-bold tabular-nums before:content-[attr(data-count)]',
+        badge.tone === 'flagged' ? 'bg-flagged text-white dark:text-background' : 'bg-primary text-primary-foreground',
+        className,
+      )}
+    />
+  )
+}
+
 // Desktop: four labelled groups, in the order a visitor needs them. Phone: five tabs. On-chain
 // (Arkiv) stays off the phone bar: it is a dense explorer for verifying the record, reached from
 // every result's proof link and from More, while the bar keeps the things people do on the go.
@@ -64,6 +90,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { key: 'check', href: '/', icon: MagnifyingGlass, label: 'Check', hint: 'Look up a batch number' },
       { key: 'alerts', href: '/feed', icon: BellSimple, label: 'Alerts', hint: 'Every regulator alert' },
+      // Desktop only: the phone bar keeps five tabs; on a phone Check and More link to it.
+      { key: 'sweep', href: '/sweep', icon: ListChecks, label: 'Shelf sweep', hint: 'Check many batches at once', bar: false },
     ],
   },
   {
@@ -101,6 +129,7 @@ const BAR = SECTIONS.flatMap((s) => s.items).filter((n) => n.bar !== false)
 const TITLES: Record<string, string> = {
   '/': 'Check a medicine batch',
   '/feed': 'Regulator alerts',
+  '/sweep': 'Shelf sweep',
   '/cabinet': 'My medicine cabinet',
   '/more': 'How Nazar works',
   '/arkiv': 'On-chain directory · Arkiv',
@@ -141,12 +170,13 @@ const prefetchHandlers = (href: string) => ({
   onTouchStart: () => prefetchFor(href),
 })
 
-function RailItem({ entry, active }: { entry: NavEntry; active: boolean }) {
+function RailItem({ entry, active, badge }: { entry: NavEntry; active: boolean; badge?: Badge | null }) {
   const { key, href, icon: Icon, label, hint } = entry
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
+      aria-label={badge ? `${label}, ${badge.label}` : undefined}
       aria-describedby={`nav-hint-${key}`}
       data-nav={key}
       data-label={label}
@@ -183,11 +213,12 @@ function RailItem({ entry, active }: { entry: NavEntry; active: boolean }) {
           {hint}
         </span>
       </span>
+      {badge && <BadgeDot badge={badge} className="relative ml-auto shrink-0" />}
     </Link>
   )
 }
 
-function BarItem({ entry, active }: { entry: NavEntry; active: boolean }) {
+function BarItem({ entry, active, badge }: { entry: NavEntry; active: boolean; badge?: Badge | null }) {
   const { key, href } = entry
   const bar = entry.bar || {}
   const Icon = bar.icon ?? entry.icon
@@ -196,7 +227,7 @@ function BarItem({ entry, active }: { entry: NavEntry; active: boolean }) {
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      aria-label={bar.aria}
+      aria-label={badge ? `${bar.aria ?? label}, ${badge.label}` : bar.aria}
       data-nav={key}
       data-label={label}
       className={cn(
@@ -216,6 +247,8 @@ function BarItem({ entry, active }: { entry: NavEntry; active: boolean }) {
           />
         )}
         <Icon weight={active ? 'duotone' : 'regular'} className="relative size-6" aria-hidden="true" />
+        {/* Sits on the icon's corner, inside the tab, so the 56px target and the label are untouched. */}
+        {badge && <BadgeDot badge={badge} className="absolute -top-1 right-1.5 ring-2 ring-card" />}
       </span>
       <span className="max-w-full truncate px-0.5">{label}</span>
     </Link>
@@ -302,6 +335,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const title = TITLES[pathname] ?? 'Nazar'
 
+  // Nav badges, read on the device. The Alerts count clears on the Alerts page itself, which
+  // records what is on screen as seen.
+  const unseen = useUnseenAlerts()
+  const flagged = useCabinetFlagged()
+  const badges: Record<string, Badge | null> = {
+    alerts: unseen > 0 && !isActive('/feed', pathname) ? { count: unseen, tone: 'new', label: `${unseen} new ${unseen === 1 ? 'alert' : 'alerts'}` } : null,
+    cabinet: flagged > 0 ? { count: flagged, tone: 'flagged', label: `${flagged} ${flagged === 1 ? 'medicine' : 'medicines'} flagged` } : null,
+  }
+
   return (
     <ShellContext.Provider value={shell}>
       <div className="min-h-dvh bg-background text-foreground">
@@ -329,7 +371,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <ul className="flex flex-col gap-0.5" aria-labelledby={`nav-${section.id}`}>
                     {section.items.map((n) => (
                       <li key={n.key}>
-                        <RailItem entry={n} active={isActive(n.href, pathname)} />
+                        <RailItem entry={n} active={isActive(n.href, pathname)} badge={badges[n.key]} />
                       </li>
                     ))}
                   </ul>
@@ -419,7 +461,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-10 mx-auto flex max-w-md gap-0.5 rounded-[1.375rem] border border-border/70 bg-card/80 p-1 shadow-[0_8px_30px_-12px_rgb(15_23_42/0.25)] backdrop-blur-xl backdrop-saturate-150 lg:hidden dark:border-white/[0.08] dark:bg-card/75 dark:shadow-[0_10px_34px_-10px_rgb(0_0_0/0.7)]"
           >
             {BAR.map((n) => (
-              <BarItem key={n.key} entry={n} active={isActive(n.href, pathname)} />
+              <BarItem key={n.key} entry={n} active={isActive(n.href, pathname)} badge={badges[n.key]} />
             ))}
           </nav>
         </MotionConfig>

@@ -11,6 +11,10 @@ const CHANGE_EVENT = 'nazar:cabinet-change'
 
 export const NAME_MAX = 60
 export const NOTE_MAX = 80
+/** Optional label details (from a photo of the pack, or typed). Older saved items have none. */
+export const MAKER_MAX = 80
+export const INGREDIENT_MAX = 80
+export const INGREDIENTS_MAX = 8
 
 /** What the last re-check said, kept so the list renders before the next one lands. */
 export type LastCheck = { state: ResultState; source: Answerer; at: number; brand?: string }
@@ -22,11 +26,28 @@ export type CabinetItem = {
   /** Expiry month printed on the pack, YYYY-MM. */
   expiry: string | null
   note: string
+  /** Active ingredients as printed, e.g. "Paracetamol IP 650 mg". Optional. */
+  composition?: string[]
+  /** Manufacturer as printed on the pack. Optional. */
+  maker?: string
   addedAt: number
   last: LastCheck | null
 }
 
-export type CabinetDraft = Pick<CabinetItem, 'name' | 'batch' | 'expiry' | 'note'>
+export type CabinetDraft = Pick<CabinetItem, 'name' | 'batch' | 'expiry' | 'note'> & Partial<Pick<CabinetItem, 'composition' | 'maker'>>
+
+/** Cleans a typed or read ingredient list: trimmed, de-duplicated, at most INGREDIENTS_MAX entries. */
+export function cleanComposition(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/[\n,;]+/) : []
+  const out: string[] = []
+  for (const x of list) {
+    if (typeof x !== 'string') continue
+    const v = x.replace(/\s+/g, ' ').trim().slice(0, INGREDIENT_MAX)
+    if (v && !out.some((o) => o.toLowerCase() === v.toLowerCase())) out.push(v)
+    if (out.length >= INGREDIENTS_MAX) break
+  }
+  return out
+}
 
 const STATES = new Set<ResultState>(['flagged', 'retracted', 'no_alert', 'unreadable'])
 const ANSWERERS = new Set<Answerer>(['api', 'arkiv', 'demo', 'local', 'snapshot'])
@@ -47,12 +68,17 @@ function clean(raw: unknown): CabinetItem | null {
     l && STATES.has(l.state as ResultState) && ANSWERERS.has(l.source as Answerer) && typeof l.at === 'number'
       ? { state: l.state as ResultState, source: l.source as Answerer, at: l.at, ...(typeof l.brand === 'string' ? { brand: l.brand } : {}) }
       : null
+  const composition = cleanComposition(o.composition)
+  const maker = typeof o.maker === 'string' ? o.maker.replace(/\s+/g, ' ').trim().slice(0, MAKER_MAX) : ''
   return {
     id: typeof o.id === 'string' && o.id ? o.id.slice(0, 64) : newId(),
     name,
     batch: v.batch,
     expiry: typeof o.expiry === 'string' && YM.test(o.expiry) ? o.expiry : null,
     note: typeof o.note === 'string' ? o.note.trim().slice(0, NOTE_MAX) : '',
+    // Optional fields are only written when present, so older items round-trip unchanged.
+    ...(composition.length ? { composition } : {}),
+    ...(maker ? { maker } : {}),
     addedAt: typeof o.addedAt === 'number' ? o.addedAt : Date.now(),
     last,
   }

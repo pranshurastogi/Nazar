@@ -1,0 +1,20 @@
+/* "Add from a photo": the reading beam. A soft line sweeps the photo card while the label is read;
+   with reduced motion it is not drawn at all (the steps list still shows progress). */
+.cab-read-beam {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 2.5rem;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--primary) 16%, transparent), transparent);
+  animation: cab-read-sweep 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes cab-read-sweep {
+  from { transform: translateY(-1.5rem); }
+  to { transform: translateY(11rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cab-read-beam { display: none; }
+}

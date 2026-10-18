@@ -1,4 +1,4 @@
-import type { PackLabel } from '@/lib/scan/pack'
+import { isBareForm, type PackLabel } from '@/lib/scan/pack'
 import type { MedicineQuery } from '@/lib/source/api'
 import type { Alert, CheckResult } from '@/lib/source'
 
@@ -10,17 +10,31 @@ const clip = (s: string | undefined, n: number) => {
   return v ? v.slice(0, n) : undefined
 }
 
+/**
+ * A usable medicine name, or undefined. A dosage form on its own ("Tablet", "Capsules IP") is not a
+ * name: a camera read of one strip line can see only that word, and "general notes about Tablet"
+ * would be wrong.
+ */
+export const realName = (v: string | undefined | null) => (v && /[a-z]{3}/i.test(v) && !isBareForm(v) ? v : undefined)
+
+/** The name to show and ask about: brand/product first, else the first ingredient; null when the label named no medicine. */
+export const nameOf = (q: MedicineQuery) => realName(q.product) ?? realName(q.brand) ?? realName(q.composition?.[0]) ?? null
+
 export function queryFromPack(pack: PackLabel | null | undefined, batch?: string): MedicineQuery | null {
   if (!pack) return null
   const composition = pack.composition.map((c) => clip(c.value, 150)!).filter(Boolean).slice(0, 8)
-  const product = clip(pack.product?.value, 110)
-  if (!product && !composition.length) return null
-  return { product, composition: composition.length ? composition : undefined, form: clip(pack.form?.value, 40), manufacturer: clip(pack.manufacturer?.value, 190), batch: clip(batch, 40) }
+  const product = realName(clip(pack.product?.value, 110))
+  const rest = { form: clip(pack.form?.value, 40), manufacturer: clip(pack.manufacturer?.value, 190), batch: clip(batch, 40) }
+  if (!product && !composition.length) {
+    // The label was read but names no medicine (only "Tablet", say): the card asks the person for the name first.
+    return pack.product || pack.form ? rest : null
+  }
+  return { product, composition: composition.length ? composition : undefined, ...rest }
 }
 
 function queryFromAlert(a: Alert): MedicineQuery | null {
-  const brand = a.brand && !/^unnamed product$/i.test(a.brand) ? clip(a.brand, 110) : undefined
-  const generic = clip(a.drug, 150)
+  const brand = a.brand && !/^unnamed product$/i.test(a.brand) ? realName(clip(a.brand, 110)) : undefined
+  const generic = realName(clip(a.drug, 150))
   if (!brand && !generic) return null
   const form = a.form && a.form.toLowerCase() !== 'other' ? clip(a.form.toLowerCase(), 40) : undefined
   return { product: brand, composition: generic && generic !== brand ? [generic] : undefined, form, batch: clip(a.batch, 40) }

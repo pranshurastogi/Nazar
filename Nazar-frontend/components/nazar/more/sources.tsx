@@ -1,6 +1,7 @@
 'use client'
 
-import { ExternalLink } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, ExternalLink, ListChecks } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
 import { timeAgo } from '@/components/nazar/status-pill'
@@ -83,6 +84,20 @@ export function Sources({ list, now }: { list: SourceList | null; now: number })
           )
         })}
       </ul>
+      <Link
+        href="/sweep"
+        className={cn(panel, 'group mt-4 flex items-center gap-4 p-4 transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:p-5')}
+        data-sweep-card
+      >
+        <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <ListChecks className="size-5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Shelf sweep: check a whole stock list against these sources</span>
+          <span className="mt-0.5 block text-[13px] leading-5 text-muted-foreground">For chemists, pharmacies and NGOs. Paste or upload up to 500 batches; the list is processed on your device and exports as CSV.</span>
+        </span>
+        <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+      </Link>
     </Section>
   )
 }

@@ -16,6 +16,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -316,6 +317,13 @@ export default function Page() {
                 <kbd className="rounded border px-1.5 font-mono">/</kbd> to focus
               </span>
             </div>
+            <Link
+              href="/sweep"
+              className="-mb-2 inline-flex min-h-11 items-center gap-1 rounded-md text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              data-sweep-link
+            >
+              Checking many batches? Try Shelf sweep <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
           </div>
         </section>
 
@@ -327,15 +335,25 @@ export default function Page() {
               // The confirming badge floats over the card, so the live answer never moves the layout.
               <div className="relative mt-8" data-confirming={confirming ? 'true' : 'false'}>
                 <ResultCard key={result.batch} result={result} onCheck={(b) => runCheck(b)} pack={pack} />
-                {confirming && (
-                  <span
-                    role="status"
-                    className="pointer-events-none absolute -top-3 right-4 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm"
-                  >
-                    <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                    Confirming with the live record…
-                  </span>
-                )}
+                {/* Cross-fades out when the live answer lands; MotionConfig makes it instant under reduced motion. */}
+                <MotionConfig reducedMotion="user">
+                  <AnimatePresence initial={false}>
+                    {confirming && (
+                      <motion.span
+                        key="confirming"
+                        role="status"
+                        initial={{ opacity: 0, y: 2 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -2 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        className="pointer-events-none absolute -top-3 right-4 z-10 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm"
+                      >
+                        <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                        Confirming with the live record…
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </MotionConfig>
               </div>
             )
           )}

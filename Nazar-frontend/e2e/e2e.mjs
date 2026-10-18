@@ -108,6 +108,13 @@ let mockResponse = function mockResponse(url) {
   }
   if (u.pathname === '/v1/snapshot') return mock.snapshot ? SNAPSHOT_FIXTURE : null
   if (u.pathname === '/v1/notices') return { items: [{ sha: 'a'.repeat(64), entityKey: NOTICE_KEY, title: 'Notice' }] }
+  if (u.pathname === '/v1/search') {
+    // Like the real server (FTS5 over batch, brand, product, manufacturer, reason): every word must start a word; { items }, at most `limit`.
+    const words = (v) => String(v ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+    const terms = words(u.searchParams.get('q')); const limit = Math.min(100, Number(u.searchParams.get('limit') || 25))
+    const hits = [...(mock.feedNew || []), ...FEED_TOP, ...FEED_EXTRA].filter(a => terms.length && terms.every(t => [a.batch, a.brand, a.product, a.manufacturer, a.reason].flatMap(words).some(w => w.startsWith(t))))
+    return { items: hits.slice(0, limit) }
+  }
   if (u.pathname === '/v1/check') {
     const b = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     const asOf = new Date().toISOString()
@@ -119,8 +126,16 @@ let mockResponse = function mockResponse(url) {
 }
 /** Fallback-mode switches: serve the site's saved copy, and how long its 404 takes otherwise. */
 const fb = { savedCopy: false, staticDelayMs: 700 }
-const mock = { apiDown: false, arkiv429: false, arkivHits: 0, medicine: 'ok', medicineBodies: [], snapshot: false, checkDelayMs: 0 }
+const mock = { apiDown: false, arkiv429: false, arkivHits: 0, medicine: 'ok', medicineBodies: [], snapshot: false, checkDelayMs: 0, identify: 'ok', identifyBodies: [] }
 const MEDICINE_FIXTURE = JSON.parse(fs.readFileSync(new globalThis.URL('./fixtures/medicine-explain.json', import.meta.url), 'utf8'))
+const IDENTIFY_FIXTURE = JSON.parse(fs.readFileSync(new globalThis.URL('./fixtures/medicine-identify.json', import.meta.url), 'utf8'))
+/** POST /v1/medicine/identify answers by mode: ok, limited (429 + Retry-After), failed (502), disabled (503). */
+const IDENTIFY_REPLY = {
+  ok: [200, IDENTIFY_FIXTURE, []],
+  limited: [429, { error: { code: 'RATE_LIMITED', message: 'Too many requests', retryAfterSec: 180 } }, [{ name: 'Retry-After', value: '180' }]],
+  failed: [502, { error: { code: 'LLM_FAILED', message: 'The model did not answer' } }, []],
+  disabled: [503, { error: { code: 'LLM_DISABLED', message: 'AI is not configured on this server' } }, []],
+}
 const CORS = [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: 'content-type' }, { name: 'Access-Control-Allow-Methods', value: 'POST, OPTIONS' }, { name: 'Access-Control-Expose-Headers', value: 'Retry-After' }]
 if (MODE === 'mock') {
   await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }, { urlPattern: ARKIV_RPC + '*' }] })
@@ -139,6 +154,11 @@ if (MODE === 'mock') {
       mock.medicineBodies.push(request.postData || '')
       const [code, data] = mock.medicine === 'disabled' ? [503, { error: { code: 'LLM_DISABLED', message: 'Medicine information is not available on this server.' } }] : [200, MEDICINE_FIXTURE]
       return send('Fetch.fulfillRequest', { requestId, responseCode: code, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, ...CORS], body: Buffer.from(JSON.stringify(data)).toString('base64') })
+    }
+    if (new globalThis.URL(request.url).pathname === '/v1/medicine/identify') {
+      mock.identifyBodies.push(request.postData || '')
+      const [code, data, extra] = IDENTIFY_REPLY[mock.identify]
+      return send('Fetch.fulfillRequest', { requestId, responseCode: code, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, ...CORS, ...extra], body: Buffer.from(JSON.stringify(data)).toString('base64') })
     }
     if (mock.checkDelayMs && new globalThis.URL(request.url).pathname === '/v1/check') await wait(mock.checkDelayMs)
     const data = mockResponse(m.params.request.url)
@@ -279,6 +299,9 @@ if (MODE === 'fallback') {
   await typeBatch('SR-13')
   ok('share row fits on one line at 360 (Share and WhatsApp as named icon buttons)', await js(`(() => { const r = document.querySelector('section[data-state] [data-share-actions]'); if (!r) return false; const kids = [...r.children].filter(c => c.offsetParent); const tops = new Set(kids.map(c => Math.round(c.getBoundingClientRect().top))); return tops.size === 1 && kids.length >= 3 && !!r.querySelector('[data-whatsapp][aria-label="Share on WhatsApp"]') && kids.every(k => k.getBoundingClientRect().height >= 44) && r.getBoundingClientRect().right <= innerWidth })()`))
   await js(`document.querySelector('[data-share-actions]').scrollIntoView({ block: 'center' })`); await shot('mobile-360-share-row')
+  await typeBatch('AB1234')
+  ok('360: no-alert action bar is one toolbar on one line (Save, Share, WhatsApp), every action named and 44px', await js(`(() => { const r = document.querySelector('section[data-state="no_alert"] [data-share-actions]'); if (!r || r.getAttribute('role') !== 'group') return false; const kids = [...r.children].filter(c => c.offsetParent); const tops = new Set(kids.map(c => Math.round(c.getBoundingClientRect().top))); return tops.size === 1 && kids.length === 3 && kids.every(k => k.getBoundingClientRect().height >= 44 && (k.getAttribute('aria-label') || k.textContent.trim())) && r.getBoundingClientRect().right <= innerWidth - 16 && document.documentElement.scrollWidth <= 360 })()`))
+  await typeBatch('SR-13')
   await clickHas('How do we know'); await wait(900)
   ok('proof drawer fits 360 without horizontal scroll', (await js(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.scrollWidth <= d.clientWidth + 1 })()`)))
   await shot('mobile-360-proof'); await escape()
@@ -359,8 +382,10 @@ if (MODE === 'fallback') {
   const itemText = b => js(`document.querySelector('[data-cabinet-item][data-batch="${b}"]')?.textContent || ''`)
   const cabinetIdle = () => waitFor(`!document.querySelector('[data-cabinet-state="pending"]') && ![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true' && b.textContent.includes('Checking'))`, 30000)
   const formOpen = () => js(`!!document.querySelector('[data-cabinet-form]')`)
-  const fill = async (f) => { await js(`(() => { const ins = [...document.querySelectorAll('[data-cabinet-form] input')]; const v = ${JSON.stringify(f)}; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; [['name',0],['batch',1],['expiry',2],['note',3]].forEach(([k,i]) => { if (v[k] === undefined) return; set.call(ins[i], v[k]); ins[i].dispatchEvent(new Event('input', { bubbles: true })) }) })()`); await wait(100) }
-  const submit = async () => { await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(500) }
+  /** "Add a medicine" opens a chooser (photo, upload, type) first; the typed-form tests take "Type it in". */
+  const typeIt = async () => { if (await js(`!!document.querySelector('[data-add-type]')`)) { await js(`document.querySelector('[data-add-type]').click()`); await wait(300) } }
+  const fill = async (f) => { await typeIt(); await js(`(() => { const ins = [...document.querySelectorAll('[data-cabinet-form] input')]; const v = ${JSON.stringify(f)}; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; [['name',0],['batch',1],['expiry',2],['note',3]].forEach(([k,i]) => { if (v[k] === undefined) return; set.call(ins[i], v[k]); ins[i].dispatchEvent(new Event('input', { bubbles: true })) }) })()`); await wait(100) }
+  const submit = async () => { await typeIt(); await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(500) }
   const ym = (offsetMonths) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + offsetMonths); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
   /** Toasts sit over the header; screenshots wait for them to leave. */
   const noToasts = () => waitFor(`!document.querySelector('[data-sonner-toast]')`, 8000)
@@ -375,7 +400,7 @@ if (MODE === 'fallback') {
   ok('cabinet: empty state with ring motif and SR-13 hint', await js(`!!document.querySelector('[data-cabinet-empty] svg circle')`) && (await body()).includes('Your cabinet is empty') && (await js(`[...document.querySelectorAll('[data-cabinet-empty] button')].some(b => b.textContent.replace(/\\s+/g, ' ').trim() === 'Try adding SR-13')`)))
   ok('cabinet: says it is private and never sent to a server', (await body()).includes('never sent to any server'))
   await click('Add a medicine'); await wait(500)
-  ok('cabinet: Add opens the form', await formOpen())
+  ok('cabinet: Add offers a photo, an upload or typing; "Type it in" opens the form', (await js(`[...document.querySelectorAll('[data-cabinet-choose] button')].map(b => b.textContent.trim()).join('|')`)) === 'Take a photo of the packNazar reads the name, batch and expiry for you|Upload a photo|Type it in' && !(await formOpen()) && (await typeIt(), await formOpen()) && (await js(`document.activeElement?.closest('[data-field]')?.dataset.field`)) === 'name')
   await submit()
   ok('cabinet: empty form shows name and batch errors', (await js(`document.querySelectorAll('[data-cabinet-form] [aria-invalid="true"]').length`)) === 2 && await formOpen())
   await fill({ name: 'Bad batch', batch: 'AB#12' }); await submit()
@@ -531,7 +556,7 @@ if (MODE === 'fallback') {
   ok('shell: "Skip to content" is the first focusable element and targets main#content', (await js(`(() => { const a = document.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'); return a?.textContent.trim() + '|' + a?.getAttribute('href') + '|' + document.getElementById('content')?.tagName })()`)) === 'Skip to content|#content|MAIN')
   ok('more: the hero headline is the only h1 (the shell title is not a heading)', (await js(`[...document.querySelectorAll('h1')].map(h => h.id).join()`)) === 'more-hero-title')
   ok('ai nav: footer links to /ai', (await js(`document.querySelector('footer a[data-mcp-link]')?.getAttribute('href')`)) === '/ai')
-  ok('ai nav: the desktop rail has AI assistant right after On-chain', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a')].map(a => a.dataset.label).join()`)) === 'Check,Alerts,My cabinet,On-chain,AI assistant,How it works')
+  ok('ai nav: the desktop rail has AI assistant right after On-chain', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a')].map(a => a.dataset.label).join()`)) === 'Check,Alerts,Shelf sweep,My cabinet,On-chain,AI assistant,How it works')
   ok('ai nav: no link still points at /more#mcp', !(await js(`[...document.querySelectorAll('a')].some(a => a.getAttribute('href') === '/more#mcp')`)))
   await send('Page.navigate', { url: new globalThis.URL('/more#mcp', URL).href }); await wait(1500)
   await waitFor(`!!document.getElementById('mcp-title')`)
@@ -687,7 +712,7 @@ if (MODE === 'fallback') {
   await js(`localStorage.setItem('nazar:cabinet', '[]')`); await send('Page.reload'); await wait(1200)
   ok('shelf: empty cabinet shows an empty shelf, "Add your first medicine" and the on-device promise', (await js(`!!document.querySelector('[data-shelf-empty] [data-sentinel]')`)) && (await js(`!!document.querySelector('[data-shelf-add]')`)) && (await js(`document.querySelector('[data-shelf-privacy]')?.innerText || ''`)).includes('Saved only on this phone'))
   await js(`document.querySelector('[data-shelf-add]').click()`); await wait(500)
-  ok('shelf: "Add your first medicine" opens the form', await formOpen())
+  ok('shelf: "Add your first medicine" opens the add chooser, photo first', (await js(`document.querySelector('[data-cabinet-choose] button')?.hasAttribute('data-add-camera-btn')`)) === true && (await typeIt(), await formOpen()))
   await escape()
   ok('shelf: empty shelf fits 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
   await vp(1440, 900, false, true); await send('Page.navigate', { url: URL + 'more' }); await wait(1500)
@@ -738,15 +763,16 @@ if (MODE === 'mock' || MODE === 'live') {
     await shot('mock-proof-machine-read'); await escape()
     // ---- About this medicine: opt-in AI card, kept apart from (and after) the official verdict.
     const med = `document.querySelector('[data-medicine]')`
-    ok('medicine: opt-in prompt below the verdict, nothing fetched until asked', (await js(`${med}?.dataset.medicine`)) === 'idle' && (await js(`${med}.innerText`)).includes('Want to know what this medicine is for?') && mock.medicineBodies.length === 0, String(mock.medicineBodies.length))
+    ok('medicine: opt-in prompt below the verdict, nothing fetched until asked', (await js(`${med}?.dataset.medicine`)) === 'idle' && /general information/i.test(await js(`${med}.querySelector('[data-medicine-prompt]')?.innerText || ''`)) && (await js(`${med}.querySelector('[data-medicine-name]')?.innerText`)) === 'About COLDRIF' && mock.medicineBodies.length === 0, String(mock.medicineBodies.length))
     ok('medicine: verdict is labelled official and sits before the AI card, which is outside it', (await js(`document.querySelector('section[data-state] [data-official-label]')?.innerText || ''`)).toLowerCase().includes('official · from regulator notices, verified on arkiv') && (await js(`!!(document.querySelector('section[data-state]').compareDocumentPosition(${med}) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.querySelector('section[data-state]').contains(${med})`)))
     ok('medicine: flagged result leads with the official alert before any info', (await js(`${med}.innerText`)).startsWith("This batch has an official alert – don't use it."))
-    ok('medicine: AI label at the top of the card', (await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)).includes('AI-generated general information · not from a regulator · may be wrong'))
+    ok('medicine: AI label at the top of the card: an "AI-generated" badge and "Not from a regulator · may be wrong"', /AI-generated/i.test(await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)) && (await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)).includes('Not from a regulator · may be wrong') && /general information/i.test(await js(`${med}.getAttribute('aria-label') || ''`)))
     await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').click()`); await wait(200)
     ok('medicine: info button explains where the text comes from', (await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').getAttribute('aria-expanded')`)) === 'true' && (await js(`${med}.querySelector('[role="note"]')?.innerText || ''`)).includes('not part of any regulator notice'))
     await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').click()`)
     await js(`[...${med}.querySelectorAll('button')].find(b => b.textContent.includes('Show general information')).click()`)
     await waitFor(`!!document.querySelector('[data-medicine-card]')`, 8000); await wait(500)
+    ok('medicine: opens with a height animation and ends fully open (wrapper fits the story cards, content opaque)', await js(`(() => { const a = document.querySelector('[data-medicine] [data-auto-height]'); const c = document.querySelector('[data-medicine-card]'); return !!a && a.dataset.autoHeight === 'rest' && Math.abs(a.getBoundingClientRect().height - a.firstElementChild.offsetHeight) <= 1 && getComputedStyle(c.parentElement).opacity === '1' && c.getBoundingClientRect().bottom <= document.querySelector('[data-medicine-footer]').getBoundingClientRect().top + 1 })()`))
     const medText = await js(`${med}.innerText`)
     const sent = JSON.parse(mock.medicineBodies[0] || '{}')
     ok('medicine: one request with the name and ingredients only', mock.medicineBodies.length === 1 && sent.product === 'COLDRIF' && Object.keys(sent).every(k => ['product', 'brand', 'composition', 'form', 'manufacturer', 'batch'].includes(k)), mock.medicineBodies[0])
@@ -784,6 +810,14 @@ if (MODE === 'mock' || MODE === 'live') {
     ok('medicine: LLM_DISABLED hides the card and leaves one quiet note', (await js(`document.querySelectorAll('[data-medicine-card], [data-medicine-stories]').length`)) === 0 && (await js(`document.querySelector('[data-medicine="disabled"]')?.innerText || ''`)).includes("isn't available right now") && (await body()).includes('This batch failed a government quality test'))
     await js(`window.scrollTo(0, document.querySelector('[data-medicine]').getBoundingClientRect().top + scrollY - 420)`); await shot('medicine-360-dark-disabled')
     mock.medicine = 'ok'
+
+    // Reduced motion: "Show general information" shows the story cards at once, with no height or fade animation.
+    await vp(390, 844, false, true); await fresh(); await click('Skip'); await wait(600); await typeBatch('SR-13')
+    await js(`[...document.querySelectorAll('[data-medicine] button')].find(b => b.textContent.includes('Show general information')).click()`)
+    await waitFor(`!!document.querySelector('[data-medicine-card]')`, 8000)
+    const rm = await js(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => { const a = document.querySelector('[data-medicine] [data-auto-height]'); const c = document.querySelector('[data-medicine-card]'); r({ state: a?.dataset.autoHeight, fit: Math.abs(a.getBoundingClientRect().height - a.firstElementChild.offsetHeight) <= 1, opacity: getComputedStyle(c.parentElement).opacity, transform: getComputedStyle(c.parentElement).transform }) })))`)
+    ok('reduced motion: general information shows immediately (full height, opaque, no slide)', rm.fit && rm.opacity === '1' && (rm.transform === 'none' || /matrix\(1, 0, 0, 1, 0, 0\)/.test(rm.transform)), JSON.stringify(rm))
+    await vp(390, 844, false)
   }
 }
 
@@ -817,7 +851,151 @@ if (MODE === 'mock') {
   const sentScan = JSON.parse(mock.medicineBodies[before] || '{}')
   ok('pack: scanner "About this medicine" asks with the label read on the device (no image)', sentScan.product === 'Paracetamol Tablets IP 650 mg' && (sentScan.composition || []).some(c => /Paracetamol/.test(c)) && !JSON.stringify(sentScan).includes('data:image'), mock.medicineBodies[before])
   await js(`document.querySelector('[data-scanner] [data-medicine]').scrollIntoView({ block: 'start' })`); await shot('scan-pack-360-dark-medicine')
+
+  // The name bug: a label that names only the form ("Tablet") must never become "About Tablet". The card says
+  // "this medicine" and asks for the name before anything is sent.
+  const editField = async (k, v) => { await js(`(() => { const el = document.querySelector('[data-pack-field="${k}"] input, [data-pack-field="${k}"] textarea'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })()`); await wait(250) }
+  const scanMed = `document.querySelector('[data-scanner] [data-medicine]')`
+  await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Edit').click()`); await wait(250)
+  await editField('product', 'Tablet'); await editField('composition', '')
+  await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Done').click()`); await wait(400)
+  const askText = await js(`${scanMed}?.innerText || ''`)
+  ok('name: a label read as only "Tablet" says "About this medicine" and asks for the name, never "about Tablet"', (await js(`${scanMed}?.dataset.medicine`)) === 'idle' && (await js(`${scanMed}.querySelector('[data-medicine-name]')?.innerText`)) === 'About this medicine' && (await js(`!!${scanMed}.querySelector('[data-medicine-confirm-name] input')`)) && !/about tablet/i.test(askText), askText.slice(0, 200))
+  const sentBefore = mock.medicineBodies.length
+  await js(`[...${scanMed}.querySelectorAll('button')].find(b => b.textContent.includes('Show general information')).click()`); await wait(400)
+  ok('name: nothing is sent to the AI until a name is typed', mock.medicineBodies.length === sentBefore && (await js(`document.activeElement === ${scanMed}.querySelector('[data-medicine-confirm-name] input')`)))
+  await js(`(() => { const i = ${scanMed}.querySelector('[data-medicine-confirm-name] input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'Dolo 650'); i.dispatchEvent(new Event('input', { bubbles: true })) })()`); await wait(150)
+  await js(`[...${scanMed}.querySelectorAll('button')].find(b => b.textContent.includes('Show general information')).click()`)
+  await waitFor(`!!document.querySelector('[data-scanner] [data-medicine-card]')`, 8000); await wait(300)
+  ok('name: the typed name is what the AI is asked about', JSON.parse(mock.medicineBodies[sentBefore] || '{}').product === 'Dolo 650', mock.medicineBodies[sentBefore])
+  // Put the label back as read, then check: the result card's AI panel names the product.
+  await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Edit').click()`); await wait(250)
+  await editField('product', 'Paracetamol Tablets IP 650 mg'); await editField('composition', 'Paracetamol IP 650 mg')
+  await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Done').click()`); await wait(300)
+  await js(`document.querySelector('[data-scan-result] button[type="submit"]').click()`); await waitIdle(); await wait(500)
+  const resMed = `document.querySelector('[data-confirming] [data-medicine]')`
+  const resText = await js(`${resMed}?.innerText || ''`)
+  ok('name: after a scan (form "tablet", product "Paracetamol Tablets IP 650 mg") the AI panel names the product, never "about Tablet"', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && (await js(`${resMed}?.querySelector('[data-medicine-name]')?.innerText`)) === 'About Paracetamol Tablets IP 650 mg' && !/about tablets?\b/i.test(resText), resText.slice(0, 200))
+  // The collapsed panel: badge, caveats and (i) on top; icon, "General information", name and one line; the button; the footer.
+  const panel = await js(`(() => { const m = ${resMed}; const r = sel => m.querySelector(sel)?.getBoundingClientRect(); const badge = r('[data-medicine-ai-label] span'); const tile = r('[data-medicine-prompt] span[aria-hidden]'); const btn = [...m.querySelectorAll('button')].find(b => b.textContent.includes('Show general information')).getBoundingClientRect(); const foot = r('[data-medicine-footer]'); const name = r('[data-medicine-name]'); return { order: badge.top < name.top && name.top < btn.top && btn.bottom <= foot.top, aligned: Math.abs(badge.left - tile.left) <= 1 && Math.abs(tile.left - btn.left) <= 1, btn44: btn.height >= 44, info44: m.querySelector('[aria-label="Why this is marked AI-generated"]').getBoundingClientRect().height >= 44, eyebrow: /general information/i.test(m.querySelector('[data-medicine-prompt]').innerText) && m.querySelector('[data-medicine-prompt]').innerText.includes("What it's for, side effects, when to get help."), label: m.querySelector('[data-medicine-ai-label]').innerText.replace(/\\s+/g, ' '), footer: m.querySelector('[data-medicine-footer]').innerText.includes('Not medical advice. Ask your doctor or pharmacist.'), fits: m.getBoundingClientRect().right <= innerWidth && document.documentElement.scrollWidth <= innerWidth } })()`)
+  ok('medicine panel (collapsed): badge, caveats, name, one line, a 44px button and the footer, stacked and left-aligned', panel.order && panel.aligned && panel.btn44 && panel.info44 && panel.eyebrow && /AI-generated/i.test(panel.label) && panel.label.includes('Not from a regulator · may be wrong') && panel.footer && panel.fits, JSON.stringify(panel))
+  // No green and no "safe" anywhere in the verdict or the AI panel (dark mode).
+  const greenAny = await js(`(() => { const nodes = [...document.querySelectorAll('[data-confirming], [data-confirming] *')]; return nodes.some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderTopColor].some(v => { const m = v.match(/\\d+(\\.\\d+)?/g); if (!m) return false; const [r, g, b] = m.map(Number); return g > r + 40 && g > b + 40 }) }) })()`)
+  ok('no alert after a scan: no green in the card or the AI panel (dark)', greenAny === false)
+  ok('no alert after a scan: never says "safe", "genuine" or "approved"', !/\b(safe|genuine|approved)\b/i.test((await js(`document.querySelector('[data-confirming]').innerText`)).replace(/not a safety certificate/gi, '')))
+  await js(`document.querySelector('[data-confirming]').scrollIntoView({ block: 'start' })`); await shot('scan-result-360-dark-ai-panel')
+}
+
+// ---- Cabinet: add a medicine from a photo (mock). Read on the device and pre-filled with where each value came from;
+// "Guess with AI" only on a weak read, sending the label text and hints, never the photo; nothing saves until confirmed.
+if (MODE === 'mock') {
+  const dlgText = () => js(`document.querySelector('[data-cabinet-dialog]')?.innerText || ''`)
+  const cabStored = () => js(`JSON.parse(localStorage.getItem('nazar:cabinet') || '[]')`)
+  const step = () => js(`document.querySelector('[data-cabinet-dialog]')?.dataset.step || null`)
+  const val = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] input')?.value ?? null`)
+  const src = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] [data-field-source]')?.dataset.fieldSource || ''`)
+  const srcText = k => js(`document.querySelector('[data-cabinet-form] [data-field="${k}"] [data-field-source]')?.innerText || ''`)
+  const setAddFile = async (file, sel = 'input[data-add-upload]') => {
+    const doc = await send('DOM.getDocument', { depth: -1, pierce: true })
+    const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: sel })
+    return send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] })
+  }
+  const packImage = async (name, lines) => {
+    const png = await js(`(() => { const c = document.createElement('canvas'); c.width = 1000; c.height = 120 + ${lines.length} * 75; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.fillStyle = '#111'; ${JSON.stringify(lines)}.forEach(([f, t], i) => { x.font = f; x.fillText(t, 50, 90 + i * 75) }); return c.toDataURL('image/png') })()`)
+    const file = `${OUT}/${name}.png`; fs.writeFileSync(file, Buffer.from(png.split(',')[1], 'base64')); return file
+  }
+  const waitRead = () => waitFor(`!!document.querySelector('[data-cabinet-form][data-from-photo]')`, 90000)
+  const setField = (k, v) => js(`(() => { const i = document.querySelector('[data-cabinet-form] [data-field="${k}"] input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(v)}); i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  const openChooser = async () => { await js(`(document.querySelector('[data-shelf-add]') || [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add a medicine')).click()`); await waitFor(`!!document.querySelector('[data-cabinet-choose]')`, 5000); await wait(300) }
+
+  const goodPack = await packImage('cabphoto-good', [['bold 56px Arial', 'DOLO-650'], ['38px Arial', 'Paracetamol Tablets IP 650 mg'], ['34px Arial', 'Each uncoated tablet contains:'], ['34px Arial', 'Paracetamol IP 650 mg'], ['32px Arial', 'Mfd. by: Micro Labs Limited, Hosur 635126,'], ['32px Arial', 'Tamil Nadu'], ['34px Arial', 'B.No.: DOBS3975   Exp: 05/2028']])
+  // No "B.No." label before the batch, so the device cannot tell which code is the batch: a weak read.
+  const weakPack = await packImage('cabphoto-weak', [['bold 56px Arial', 'DOLO-650'], ['38px Arial', 'Paracetamol Tablets IP 650 mg'], ['32px Arial', 'Micro Labs Limited'], ['36px Arial', 'DOBS4410     EXP 04/2028']])
+
+  await vp(390, 844, false); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1200)
+  await js(`localStorage.clear(); localStorage.setItem('theme', 'light'); localStorage.setItem('nazar:onboarded', '1')`); await send('Page.reload'); await wait(1500)
+  ok('cabinet photo: the empty shelf invites a photo of the pack', (await js(`!!document.querySelector('[data-shelf-photo-hint]')`)) && (await js(`document.querySelector('[data-shelf-add]')?.textContent.trim()`)) === 'Add your first medicine')
+  await openChooser()
+  const tiles = await js(`[...document.querySelectorAll('[data-cabinet-choose] button')].map(b => ({ t: b.textContent.trim(), h: Math.round(b.getBoundingClientRect().height), bg: getComputedStyle(b).backgroundColor }))`)
+  ok('cabinet photo: chooser offers take a photo (primary, rear camera), upload and type', tiles.length === 3 && tiles[0].t.startsWith('Take a photo of the pack') && tiles[1].t === 'Upload a photo' && tiles[2].t === 'Type it in' && tiles[0].bg !== tiles[1].bg && tiles[0].h > tiles[1].h && (await js(`document.querySelector('input[data-add-camera]').getAttribute('capture')`)) === 'environment' && !(await js(`document.querySelector('input[data-add-upload]').hasAttribute('capture')`)), JSON.stringify(tiles))
+  ok('cabinet photo: focus starts inside the dialog, on the photo option', (await js(`document.activeElement?.hasAttribute('data-add-camera-btn')`)) === true)
+  ok('cabinet photo: chooser says photos never leave the device', (await dlgText()).includes('Photos are read on this device and never uploaded'))
+  await shot('cabphoto-chooser-390')
+
+  await setAddFile(goodPack)
+  ok('cabinet photo: reading shows progress with the scanning eye', await waitFor(`!!document.querySelector('[data-cabinet-reading] [data-sentinel][data-state="scanning"]')`, 5000))
+  await shot('cabphoto-reading-390', 150)
+  ok('cabinet photo: the label is read and the form pre-filled', await waitRead(), await dlgText())
+  ok('cabinet photo: name, batch and expiry pre-filled from the label', /Paracetamol Tablets IP 650 mg|DOLO-650/.test(await val('name')) && (await val('batch')) === 'DOBS3975' && (await val('expiry')) === '2028-05', `${await val('name')} | ${await val('batch')} | ${await val('expiry')}`)
+  ok('cabinet photo: each pre-filled field says "Read from the label · N%"', (await Promise.all(['name', 'batch', 'expiry'].map(srcText))).every(t => /^Read from the label · \d{1,3}%/.test(t)), (await Promise.all(['name', 'batch', 'expiry'].map(srcText))).join(' | '))
+  ok('cabinet photo: composition and maker pre-filled as optional fields', /Paracetamol IP 650 mg/.test(await val('composition')) && /Micro Labs/.test(await val('maker')))
+  ok('cabinet photo: a clear read offers no AI guess and sends nothing', !(await js(`!!document.querySelector('[data-ai-guess]')`)) && mock.identifyBodies.length === 0)
+  ok('cabinet photo: focus moves to the "Check what we read" heading', (await js(`document.activeElement?.textContent`)) === 'Check what we read')
+  ok('cabinet photo: nothing is saved before confirming', (await cabStored()).length === 0)
+  await shot('cabphoto-prefilled-390')
+  await setField('name', 'Dolo 650')
+  ok('cabinet photo: fields stay editable; an edited field drops its source chip', (await val('name')) === 'Dolo 650' && !(await src('name')) && (await src('batch')) === 'label')
+  await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(800)
+  const saved1 = (await cabStored())[0] || {}
+  ok('cabinet photo: confirming saves the item with its composition and maker', saved1.name === 'Dolo 650' && saved1.batch === 'DOBS3975' && saved1.expiry === '2028-05' && /Paracetamol/.test((saved1.composition || []).join()) && /Micro Labs/.test(saved1.maker || ''), JSON.stringify(saved1))
+  ok('cabinet photo: the saved item appears on the shelf', await waitFor(`!!document.querySelector('[data-shelf-batch="DOBS3975"]')`, 5000))
+  await js(`document.querySelector('[data-cabinet-item][data-batch="DOBS3975"] button[aria-expanded]').click()`); await wait(300)
+  ok('cabinet photo: the open row shows composition and maker', /Paracetamol IP 650 mg/.test(await js(`document.querySelector('[data-batch="DOBS3975"] [data-cabinet-details]')?.innerText || ''`)))
+
+  // Weak read at 360 dark: Guess with AI, its error states, then a successful guess.
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark')`); await send('Page.reload'); await wait(1500)
+  await openChooser(); await setAddFile(weakPack); await waitRead(); await wait(300)
+  ok('cabinet photo: weak read (no batch) offers "Guess with AI" and says only the text is sent', (await val('batch')) === '' && (await js(`!!document.querySelector('[data-ai-guess]')`)) && (await js(`document.querySelector('[data-ai-disclosure]')?.innerText || ''`)) === "Only the text read from the label is sent to Nazar's server for Gemini to guess. The photo stays on this phone.", await dlgText())
+  ok('cabinet photo: nothing is sent until the person asks', mock.identifyBodies.length === 0)
+  mock.identify = 'limited'
+  await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-error="limited"]')`, 8000)
+  ok('cabinet photo: rate limited says the wait in minutes; the form stays usable', /Try again in 3 minutes/.test(await js(`document.querySelector('[data-ai-error]')?.innerText || ''`)) && (await js(`document.querySelector('[data-ai-guess]').disabled`)) && !(await js(`document.querySelector('[data-cabinet-form] [data-field="name"] input').disabled`)), await js(`document.querySelector('[data-ai-panel]')?.innerText`))
+  await js(`document.querySelector('[data-photo-retake]').click()`); await wait(300); await setAddFile(weakPack); await waitRead(); await wait(300)
+  mock.identify = 'failed'
+  await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-error="error"]')`, 8000)
+  ok('cabinet photo: a failed guess is explained politely with a retry', /Could not get a guess right now/.test(await js(`document.querySelector('[data-ai-error]')?.innerText || ''`)) && /Try the AI guess again/.test(await js(`document.querySelector('[data-ai-guess]')?.innerText || ''`)))
+  mock.identify = 'ok'
+  const sentBefore = mock.identifyBodies.length
+  await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-done]')`, 8000); await wait(300)
+  const sentRaw = mock.identifyBodies[sentBefore] || '{}'; const sent = JSON.parse(sentRaw)
+  ok('cabinet photo: the AI request is only { text, hints }, with no image or data: URL', Object.keys(sent).every(k => k === 'text' || k === 'hints') && typeof sent.text === 'string' && /DOBS4410/.test(sent.text) && Object.keys(sent.hints || {}).every(k => ['product', 'batch', 'expiry', 'manufacturer', 'composition'].includes(k)) && !/data:|base64|image/i.test(sentRaw), sentRaw.slice(0, 300))
+  ok('cabinet photo: AI fills only the empty fields and marks them "AI guess · check this"', (await val('batch')) === 'DOBS4410' && (await src('batch')) === 'ai' && (await srcText('batch')) === 'AI guess · check this' && (await src('maker')) === 'ai' && (await src('composition')) === 'ai', `${await val('batch')} ${await src('batch')} ${await src('maker')} ${await src('composition')}`)
+  ok('cabinet photo: a well-read name is not overwritten; the AI name is a suggestion to accept', /Paracetamol Tablets IP 650 mg/.test(await val('name')) && (await src('name')) === 'label' && (await js(`document.querySelector('[data-ai-suggestion="name"]')?.innerText || ''`)).includes('DOLO-650'))
+  ok('cabinet photo: the AI answer is labelled as an AI guess, not regulator data', /not regulator data/.test(await js(`document.querySelector('[data-ai-done]')?.innerText || ''`)))
+  await js(`document.querySelector('[data-cabinet-form] [data-field="batch"] [data-field-source="ai"]').click()`); await waitFor(`!!document.querySelector('[data-ai-evidence]')`, 3000); await wait(250)
+  ok('cabinet photo: the AI chip opens the evidence, quoting the label text', /DOBS4410/.test(await js(`document.querySelector('[data-ai-evidence]')?.innerText || ''`)) && /not regulator data/.test(await js(`document.querySelector('[data-ai-evidence]')?.innerText || ''`)))
+  await shot('cabphoto-ai-evidence-360-dark')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(400)
+  ok('cabinet photo: Escape closes the evidence, not the form', !(await js(`!!document.querySelector('[data-ai-evidence]')`)) && (await step()) === 'form')
+  await js(`[...document.querySelectorAll('[data-ai-suggestion="name"] button')].find(b => b.textContent.trim() === 'Use this').click()`); await wait(200)
+  ok('cabinet photo: accepting a suggestion fills it as an AI guess', (await val('name')) === 'DOLO-650' && (await src('name')) === 'ai')
+  ok('cabinet photo: no horizontal overflow at 360 with the AI guess open', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const d = document.querySelector('[data-cabinet-dialog]'); return d.scrollWidth <= d.clientWidth + 1 && d.getBoundingClientRect().right <= 360 })()`)))
+  ok('cabinet photo: nothing is saved by the AI guess; no batch check ran for it', (await cabStored()).length === 1 && !requests.some(u => /\/v1\/check\?batch=DOBS4410/.test(u)))
+  await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(800)
+  const saved2 = (await cabStored()).find(i => i.batch === 'DOBS4410') || {}
+  ok('cabinet photo: the confirmed AI-assisted item is saved and on the shelf', saved2.name === 'DOLO-650' && saved2.maker === 'Micro Labs Limited' && (await waitFor(`!!document.querySelector('[data-shelf-batch="DOBS4410"]')`, 5000)), JSON.stringify(saved2))
+  ok('cabinet photo: after saving, the usual re-check runs', (await waitFor(`document.querySelector('[data-shelf-batch="DOBS4410"]')?.dataset.shelfState !== 'pending'`, 15000)) && requests.some(u => /\/v1\/check\?batch=DOBS4410/.test(u)))
+  ok('cabinet photo: 360 cabinet has no horizontal overflow', (await js(`document.documentElement.scrollWidth`)) <= 360)
+
+  // A GS1 QR (SR-13, exp Apr 2027) next to a printed "B.No.: SR-14": the code wins, and the mismatch is called out.
+  const QR_PNG = 'data:image/png;base64,' + fs.readFileSync(decodeURIComponent(new globalThis.URL('./fixtures/scan-gs1-qr.png', import.meta.url).pathname)).toString('base64')
+  const qrMixPng = await js(`(async () => { const img = new Image(); img.src = ${JSON.stringify(QR_PNG)}; await img.decode(); const c = document.createElement('canvas'); c.width = 1000; c.height = 420; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 420); x.drawImage(img, 30, 100); x.fillStyle = '#111'; x.font = 'bold 44px Arial'; x.fillText('COLDRIF Syrup', 320, 120); x.font = '42px Arial'; x.fillText('B.No.: SR-14', 320, 210); x.fillText('Exp: 04/2027', 320, 290); return c.toDataURL('image/png') })()`)
+  const qrMix = `${OUT}/cabphoto-qr-mismatch.png`; fs.writeFileSync(qrMix, Buffer.from(qrMixPng.split(',')[1], 'base64'))
+  await openChooser(); await setAddFile(qrMix); await waitRead(); await wait(300)
+  ok('cabinet photo: a GS1 code is preferred (batch and expiry, high confidence)', (await val('batch')) === 'SR-13' && (await val('expiry')) === '2027-04' && (await srcText('batch')) === 'From the QR code · high confidence', `${await val('batch')} ${await val('expiry')} ${await srcText('batch')}`)
+  ok('cabinet photo: a printed batch that disagrees with the code shows the mismatch warning', /Label details don.t match/.test(await js(`document.querySelector('[data-photo-mismatch]')?.innerText || ''`)) && /SR-14/.test(await js(`document.querySelector('[data-photo-mismatch]').innerText`)))
   await escape()
+
+  // LLM switched off on the server: the button goes away with a note, and stays away for the visit.
+  await openChooser(); await setAddFile(weakPack); await waitRead(); await wait(300)
+  mock.identify = 'disabled'
+  await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`document.querySelector('[data-ai-panel]')?.dataset.aiState === 'disabled'`, 8000)
+  ok('cabinet photo: LLM_DISABLED hides the AI button and leaves a note', !(await js(`!!document.querySelector('[data-ai-guess]')`)) && /AI guessing isn.t available right now/.test(await js(`document.querySelector('[data-ai-panel]')?.innerText || ''`)) && !(await js(`document.querySelector('[data-cabinet-form] [data-field="batch"] input').disabled`)))
+  await js(`document.querySelector('[data-photo-retake]').click()`); await wait(300); await setAddFile(weakPack); await waitRead(); await wait(300)
+  ok('cabinet photo: after LLM_DISABLED the next weak read shows the note, not the button', (await js(`document.querySelector('[data-ai-panel]')?.dataset.aiState`)) === 'disabled' && !(await js(`!!document.querySelector('[data-ai-guess]')`)))
+  await escape()
+  ok('cabinet photo: closing without confirming saves nothing', (await cabStored()).length === 2)
+  mock.identify = 'ok'
 }
 
 // ---- Feed against the API (mock contract or the real backend)
@@ -884,6 +1062,138 @@ if (MODE === 'mock' || MODE === 'live') {
   await shot(`${MODE}-feed-360-dark`)
 }
 
+// ---- Alerts: search by name, RSS link, "New since your last visit" and the nav badges (mock API)
+if (MODE === 'mock') {
+  // mock.feedNew: alerts published since the last visit, at the top of the unfiltered list (and in search).
+  const mockBeforeNew = mockResponse
+  mockResponse = (url) => {
+    const r = mockBeforeNew(url); const q = new globalThis.URL(url).searchParams
+    if (!r || new globalThis.URL(url).pathname !== '/v1/alerts' || !mock.feedNew?.length || ['offset', 'state', 'minSeverity', 'peds'].some(k => q.get(k))) return r
+    return { items: [...mock.feedNew, ...r.items].slice(0, Number(q.get('limit') || 50)), total: r.total + mock.feedNew.length }
+  }
+  const searchFor = async (q) => {
+    await js(`(() => { const i = document.getElementById('feed-q'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(q)}); i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+    await wait(450); await waitFor(`document.querySelector('[data-feed]')?.dataset.feedMode === ${JSON.stringify(q ? 'search' : 'list')}`); await feedIdle(); await wait(150)
+  }
+  const searchRequests = () => requests.filter(u => u.startsWith('http://localhost:8787/v1/search'))
+  const rssUrl = () => js(`document.querySelector('[data-rss-url]')?.value || ''`)
+  const seen = () => js(`JSON.parse(localStorage.getItem('nazar:seen') || 'null')`)
+  const noSafe = (t) => !/\bsafe\b|genuine|approved/i.test(t)
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  await openFeed()
+
+  // RSS: built from the current filters, absolute, with copy and open.
+  ok('rss: Subscribe (RSS) is offered when the build has an API', await js(`!!document.querySelector('[data-rss-toggle]')`))
+  await press('Serious 4–5'); await pick('feed-state', 'IN-TN')
+  await js(`document.querySelector('[data-rss-toggle]').click()`); await wait(300)
+  {
+    const u = new globalThis.URL(await rssUrl())
+    ok('rss: the feed URL follows the filters (Serious 4–5, Made in Tamil Nadu)', u.origin + u.pathname === 'http://localhost:8787/v1/alerts.rss' && u.searchParams.get('minSeverity') === '4' && u.searchParams.get('state') === 'IN-TN' && [...u.searchParams.keys()].length === 2, u.href)
+    ok('rss: Open links to the same feed; the panel names the filters', (await js(`document.querySelector('[data-rss-open]').href`)) === u.href && (await js(`document.querySelector('[data-rss-panel]').innerText`)).includes('Serious 4–5 · Made in Tamil Nadu'))
+    await js(`[...document.querySelectorAll('[data-rss-panel] button')].find(b => b.textContent.trim() === 'Atom').click()`); await wait(200)
+    ok('rss: Atom gives the .atom feed with the same filters', (await rssUrl()) === u.href.replace('/v1/alerts.rss', '/v1/alerts.atom'))
+    await js(`[...document.querySelectorAll('[data-rss-panel] button')].find(b => b.textContent.trim() === 'RSS').click()`); await wait(200)
+    await press('Child Shield only'); await pick('feed-source', 'who-mpa')
+    const u2 = new globalThis.URL(await rssUrl())
+    ok('rss: Child Shield and source are passed as peds=1 and source', u2.searchParams.get('peds') === '1' && u2.searchParams.get('source') === 'who-mpa' && u2.searchParams.get('minSeverity') === '4', u2.href)
+  }
+  await press('Reset filters')
+  ok('rss: with no filters the feed is every alert', (await rssUrl()) === 'http://localhost:8787/v1/alerts.rss' && (await js(`document.querySelector('[data-rss-panel]').innerText`)).includes('This feed has every alert'))
+  await js(`document.querySelector('[data-rss-panel]')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -120)`); await shot('feat1-rss-desktop')
+  await js(`document.querySelector('[data-rss-toggle]').click()`); await wait(200)
+
+  // Search, answered by the API: debounced, in the URL, words highlighted.
+  const before = searchRequests().length
+  for (const q of ['m', 'ma', 'mah', 'maha']) { await js(`(() => { const i = document.getElementById('feed-q'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(q)}); i.dispatchEvent(new Event('input', { bubbles: true })) })()`); await wait(60) }
+  await searchFor('mahacef')
+  const asked = searchRequests().slice(before)
+  ok('search: typing is debounced (one request for the word, none per letter)', asked.length === 1 && asked[0].includes('q=mahacef'), asked.join(' '))
+  ok('search: answered by the API and labelled Live · Nazar API', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'api' && (await js(`[...document.querySelectorAll('[data-source]')].some(e => e.innerText === 'Live · Nazar API')`)))
+  ok('search: finds the Mahacef rows and says what it searched', (await feedRows()) === MH_ROWS && (await feedCount()).startsWith(`${MH_ROWS} alerts name “mahacef”`), `${await feedRows()} · ${await feedCount()}`)
+  ok('search: the matched word is highlighted in every row', await js(`[...document.querySelectorAll('[data-alert-row]')].every(r => [...r.querySelectorAll('mark[data-hl]')].some(m => m.textContent.toLowerCase() === 'mahacef'))`))
+  ok('search: the query is in the URL (?q=)', (await js(`location.search`)) === '?q=mahacef')
+  await js(`document.getElementById('feed-q').scrollIntoView({ block: 'start' }); window.scrollBy(0, -120)`); await shot('feat1-search-desktop')
+  await press('Serious 4–5')
+  ok('search: filters still apply and the empty state says so', (await feedRows()) === 0 && (await js(`document.querySelector('[data-feed-search-empty]')?.innerText || ''`)).includes(`${MH_ROWS} alerts name “mahacef”, but none match your filters`) && (await js(`location.search`)) === '?sev=4&q=mahacef' && (await js(`document.querySelector('[data-feed-search-filters]')?.innerText || ''`)).includes('Serious 4–5'))
+  await press('Reset filters')
+  ok('search: Reset filters brings the matches back', (await feedRows()) === MH_ROWS && (await js(`location.search`)) === '?q=mahacef')
+  await searchFor('Sres')
+  ok('search: a maker search shows and highlights the maker line', (await feedRows()) > 0 && (await js(`[...document.querySelectorAll('[data-row-match]')].length > 0 && [...document.querySelectorAll('[data-row-match] mark[data-hl]')].every(m => m.textContent === 'Sres')`)))
+  await searchFor('zzqx')
+  {
+    const e = await js(`document.querySelector('[data-feed-search-empty]')?.innerText || ''`)
+    ok('search: no match says no regulator alert names it, and that this is not a safety certificate', e.includes('No regulator alert names “zzqx” in Nazar\'s records.') && e.includes('This is not a safety certificate.') && noSafe(e.replace('safety certificate', '')), e)
+    ok('search: a word query offers no batch check', !(await js(`!!document.querySelector('[data-feed-check-batch]')`)))
+  }
+  await js(`document.querySelector('#feed-q')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -120)`); await shot('feat1-search-empty-desktop')
+  await searchFor('SR-13')
+  ok('search: a batch-like query offers "Check this batch" to /?batch=', (await js(`document.querySelector('[data-feed-check-batch]')?.getAttribute('href')`)) === '/?batch=SR-13' && (await rowTexts()).some(t => t.includes('SR-13')))
+  await js(`document.querySelector('[data-feed-check-batch]').click()`); await wait(400); await waitIdle(); await wait(400)
+  ok('search: Check this batch runs the check on the Check page', (await js(`location.pathname`)) === '/' && (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged')
+  await openFeed()
+  ok('search: back on Alerts the list is unfiltered again', (await js(`document.querySelector('[data-feed]').dataset.feedMode`)) === 'list' && (await js(`document.getElementById('feed-q').value`)) === '')
+
+  // Search when the API is down: Nazar's saved copy answers, labelled as such. Deep link with ?q=.
+  mock.apiDown = true
+  await send('Page.navigate', { url: new globalThis.URL('/feed?q=coldrif', URL).href }); await wait(1500)
+  await waitFor(`document.querySelector('[data-feed]')?.dataset.feedSource === 'snapshot'`, 15000)
+  ok('search: ?q= deep link fills the box and searches', (await js(`document.getElementById('feed-q').value`)) === 'coldrif' && (await js(`document.querySelector('[data-feed]').dataset.feedMode`)) === 'search')
+  ok("search: with the API down the saved copy answers, and says so", (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'snapshot' && (await js(`document.querySelector('[data-feed-saved-copy]')?.innerText || ''`)).includes("these matches come from Nazar's saved copy") && (await rowTexts()).length > 0 && (await rowTexts()).every(t => /coldrif/i.test(t)))
+  ok('search: saved-copy matches are highlighted too', await js(`[...document.querySelectorAll('[data-alert-row]')].every(r => [...r.querySelectorAll('mark[data-hl]')].some(m => m.textContent.toLowerCase() === 'coldrif'))`))
+  mock.apiDown = false
+  await js(`document.querySelector('[data-feed-search-clear]').click()`); await wait(300); await feedIdle()
+  ok('search: Clear search returns to the list and drops ?q=', (await js(`document.querySelector('[data-feed]').dataset.feedMode`)) === 'list' && (await js(`location.search`)) === '')
+
+  // "New since your last visit", across two visits (a visit = a browser tab session).
+  await js(`localStorage.clear(); sessionStorage.clear(); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('theme', 'light')`)
+  await send('Page.navigate', { url: new globalThis.URL('/feed', URL).href }); await wait(1500); await feedIdle()
+  await waitFor(`!!localStorage.getItem('nazar:seen')`, 10000); await wait(600)
+  ok('new: a first visit marks nothing as new', !(await js(`!!document.querySelector('[data-new-pill], [data-feed-new]')`)) && !!(await seen()))
+  const ym = (await seen()).ym
+  mock.feedNew = [dto({ entityKey: KEY2, rid: 'r-new1', caseId: 'cn1', batch: 'NW-26', batchKey: 'nw26', brand: 'Fresh Batch Syrup', product: 'Fresh Batch Syrup', peds: false, severity: 4, alertYm: ym, noticeDate: null, dateKnown: false, sourceId: 'mh-fda', state: 'IN-MH' })]
+  await js(`sessionStorage.clear()`); await send('Page.reload'); await wait(1500); await feedIdle(); await wait(500)
+  const pills = () => js(`[...document.querySelectorAll('[data-alert-row]')].filter(r => r.querySelector('[data-new-pill]')).map(r => r.dataset.alertRow)`)
+  ok('new: on the next visit the new (undated, first-seen) alert carries a New pill', JSON.stringify(await pills()) === '["r-new1"]', JSON.stringify(await pills()))
+  ok('new: the header says how many are new, with Mark all seen', /^1 new alert since your last visit\s*·\s*Mark all seen$/.test((await js(`document.querySelector('[data-feed-new]')?.innerText || ''`)).replace(/\s+/g, ' ').trim()), await js(`document.querySelector('[data-feed-new]')?.innerText`))
+  await js(`document.querySelector('[data-feed-new]')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -120)`); await shot('feat1-new-desktop')
+  await send('Page.reload'); await wait(1500); await feedIdle(); await wait(400)
+  ok('new: the pill stays for the rest of the visit (reload)', JSON.stringify(await pills()) === '["r-new1"]')
+  await js(`document.querySelector('[data-feed-mark-seen]').click()`); await wait(300)
+  ok('new: Mark all seen clears the pills and the header', (await pills()).length === 0 && !(await js(`!!document.querySelector('[data-feed-new]')`)))
+  await js(`sessionStorage.clear()`); await send('Page.reload'); await wait(1500); await feedIdle(); await wait(400)
+  ok('new: a later visit has nothing new', (await pills()).length === 0 && !(await js(`!!document.querySelector('[data-feed-new]')`)))
+  mock.feedNew = []
+
+  // Nav badge for Alerts: unseen alerts in the saved copy, cleared by visiting Alerts.
+  await js(`(() => { const s = JSON.parse(localStorage.getItem('nazar:seen')); s.keys = s.keys.slice(3); localStorage.setItem('nazar:seen', JSON.stringify(s)); sessionStorage.clear() })()`)
+  await send('Page.navigate', { url: URL }); await wait(1500); await settle()
+  await waitFor(`!!document.querySelector('nav[aria-label="Main navigation"] [data-nav="alerts"] [data-nav-badge]')`, 10000)
+  ok('badge: Alerts shows the unseen count, in its accessible name', (await js(`document.querySelector('nav[aria-label="Main navigation"] [data-nav="alerts"] [data-nav-badge="new"]')?.dataset.count`)) === '3' && (await js(`document.querySelector('nav[aria-label="Main navigation"] [data-nav="alerts"]').getAttribute('aria-label')`)) === 'Alerts, 3 new alerts')
+  await shot('feat1-badges-desktop')
+  await openFeed(); await wait(600)
+  ok('badge: visiting Alerts clears it; the page lists them as new', !(await js(`!!document.querySelector('[data-nav="alerts"] [data-nav-badge]')`)) && (await js(`document.querySelector('[data-feed-new]')?.innerText || ''`)).startsWith('3 new alerts since your last visit'))
+  await navTo('Check'); await wait(400)
+  ok('badge: and it stays cleared after leaving Alerts', !(await js(`!!document.querySelector('[data-nav="alerts"] [data-nav-badge]')`)))
+
+  // Nav badge for the cabinet: medicines whose last check was flagged, read from the device.
+  const item = (batch, state) => ({ id: 'b-' + batch, name: 'Med ' + batch, batch, expiry: null, note: '', addedAt: 1, last: { state, source: 'api', at: Date.now() } })
+  await js(`localStorage.setItem('nazar:cabinet', ${JSON.stringify(JSON.stringify([item('SR-13', 'flagged'), item('AX-77', 'flagged'), item('AB-12', 'no_alert'), item('CD-34', 'unreadable')]))})`)
+  await send('Page.reload'); await wait(1500); await settle()
+  ok('badge: My cabinet shows 2 flagged medicines in red, in its accessible name', (await js(`document.querySelector('nav[aria-label="Main navigation"] [data-nav="cabinet"] [data-nav-badge="flagged"]')?.dataset.count`)) === '2' && (await js(`document.querySelector('nav[aria-label="Main navigation"] [data-nav="cabinet"]').getAttribute('aria-label')`)) === 'My cabinet, 2 medicines flagged' && (await js(`(() => { const c = getComputedStyle(document.querySelector('[data-nav="cabinet"] [data-nav-badge]')).backgroundColor.match(/[\\d.]+/g).map(Number); return c[0] > c[1] + 60 && c[0] > c[2] + 60 })()`)))
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark')`)
+  await js(`(() => { const s = JSON.parse(localStorage.getItem('nazar:seen')); s.keys = s.keys.slice(12); localStorage.setItem('nazar:seen', JSON.stringify(s)); sessionStorage.clear() })()`)
+  await send('Page.reload'); await wait(1500); await settle()
+  await waitFor(`!!document.querySelector('nav[aria-label="Mobile navigation"] [data-nav="alerts"] [data-nav-badge]')`, 10000)
+  {
+    const bar = await js(`(() => { const nav = document.querySelector('nav[aria-label="Mobile navigation"]'); const tabs = [...nav.querySelectorAll('a')]; const r = (e) => e.getBoundingClientRect(); return { n: tabs.length, min: Math.min(...tabs.map(t => Math.min(r(t).width, r(t).height))), inside: [...nav.querySelectorAll('[data-nav-badge]')].every(b => { const p = r(b.closest('a')); const q = r(b); return q.left >= p.left && q.right <= p.right && q.top >= p.top && q.bottom <= p.bottom }), alerts: nav.querySelector('[data-nav="alerts"]').getAttribute('aria-label'), cab: nav.querySelector('[data-nav="cabinet"]').getAttribute('aria-label'), badges: [...nav.querySelectorAll('[data-nav-badge]')].map(b => b.dataset.count).join(), text: tabs.map(t => t.textContent.trim()).join() } })()`)
+    ok('badge 360: five tabs, both badges inside their 44px+ tabs, named for screen readers', bar.n === 5 && bar.min >= 44 && bar.inside && bar.badges === '12,2' && bar.text === 'Check,Alerts,Cabinet,AI,More' && bar.alerts === 'Alerts, 12 new alerts' && bar.cab === 'My cabinet, 2 medicines flagged', JSON.stringify(bar))
+    ok('badge 360: no horizontal overflow', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  }
+  await shot('feat1-badges-360-dark')
+  await js(`localStorage.removeItem('nazar:cabinet')`)
+  await vp(1440, 1000, false); await js(`localStorage.setItem('theme', 'light')`)
+}
+
 // ---- More › Sources from the API (mock)
 if (MODE === 'mock') {
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
@@ -920,6 +1230,17 @@ if (MODE === 'mock') {
   // to the full chain (entity keys are not in the snapshot), well under the 0.1 "good" CLS line.
   ok('snapshot: live answer lands with minimal layout shift (CLS < 0.05)', cls < 0.05, String(cls.toFixed?.(4) ?? cls))
   ok('snapshot: confirming badge is gone; proof now links the entity', !(await js(`!!document.querySelector('[data-confirming="true"]')`)) && (await js(`document.querySelector('section[data-state="flagged"] [data-onchain-proof]')?.dataset.onchainProof`)) === 'published')
+  // On a phone the instant answer and the live one have the same shape: the card keeps its top and height
+  // (the proof is one line either way, and the severity rule's line is held while it loads).
+  await vp(390, 844, false); await typeBatch('AB1234'); await wait(300)
+  const card = `(() => { const s = document.querySelector('section[data-state]'); if (!s) return null; const b = s.getBoundingClientRect(); return { top: Math.round(b.top + scrollY), h: Math.round(b.height), src: s.querySelector('[data-source]')?.dataset.source, confirming: !!document.querySelector('[data-confirming="true"] [role="status"]') } })()`
+  await js(`(() => { const i = document.getElementById('batch'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'SR-13'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })()`)
+  await waitFor(`document.querySelector('section[data-state] [data-source]')?.dataset.source === 'snapshot'`, 3000); await wait(450)
+  const instantBox = await js(card)
+  await waitFor(`document.querySelector('section[data-state] [data-source]')?.dataset.source === 'api'`, 6000); await wait(500)
+  const liveBox = await js(card)
+  ok('snapshot 390: the card does not jump when the instant answer is confirmed live (same top and height)', !!instantBox && instantBox.confirming && !!liveBox && !liveBox.confirming && Math.abs(instantBox.top - liveBox.top) <= 1 && Math.abs(instantBox.h - liveBox.h) <= 1, `${JSON.stringify(instantBox)} -> ${JSON.stringify(liveBox)}`)
+  await vp(1440, 1000, false)
   mock.checkDelayMs = 0
 
   // Offline: the snapshot (saved in IndexedDB) answers every state, and the app says it is offline.
@@ -1441,6 +1762,239 @@ if (MODE === 'fallback') {
   fb.savedCopy = false
 }
 // ======== end Saved copy ========
+
+// ======== Alerts search and "New since your last visit" on the saved copy (fallback): the API is refused,
+// so Nazar's saved copy (/data/snapshot.json) answers searches, and new alerts are counted against it. ========
+if (MODE === 'fallback') {
+  fb.savedCopy = true
+  const searchFor = async (q) => {
+    await js(`(() => { const i = document.getElementById('feed-q'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(q)}); i.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+    await wait(450); await waitFor(`document.querySelector('[data-feed]')?.dataset.feedMode === ${JSON.stringify(q ? 'search' : 'list')}`); await feedIdle(); await wait(150)
+  }
+  await vp(390, 844, true)
+  await send('Page.navigate', { url: new globalThis.URL('/feed', URL).href }); await wait(1200)
+  await js(`localStorage.clear(); sessionStorage.clear(); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('theme', 'dark')`)
+  await send('Page.reload'); await wait(1500)
+  await waitFor(`document.querySelector('[data-feed]')?.dataset.feedSource === 'snapshot'`, 15000); await waitFor(`!!localStorage.getItem('nazar:seen')`, 8000); await wait(400)
+  ok('saved search: first visit on the saved copy marks nothing new', !(await js(`!!document.querySelector('[data-new-pill], [data-feed-new]')`)))
+  await searchFor('Levcon')
+  ok('saved search: "Levcon" finds TG25-2281A in the saved copy, labelled as the saved copy', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'snapshot' && (await rowTexts()).some(t => t.includes('TG25-2281A')) && !!(await js(`document.querySelector('[data-feed-saved-copy]')?.innerText`)) && (await js(`[...document.querySelectorAll('[data-source]')].some(e => e.dataset.source === 'snapshot')`)))
+  ok('saved search: "Levcon" is highlighted', await js(`[...document.querySelectorAll('[data-alert-row]')].every(r => [...r.querySelectorAll('mark[data-hl]')].some(m => m.textContent.toLowerCase() === 'levcon'))`))
+  await searchFor('Sresan')
+  ok('saved search: a maker finds its alerts, with the maker line highlighted', (await feedRows()) > 0 && (await rowTexts()).some(t => t.includes('COLDRIF')) && (await js(`[...document.querySelectorAll('[data-row-match] mark[data-hl]')].some(m => m.textContent === 'Sresan')`)))
+  ok('saved search: ?q= follows the box', (await js(`location.search`)) === '?q=Sresan')
+  ok('saved search: no horizontal overflow at 390 with results', (await js(`document.documentElement.scrollWidth`)) <= 390)
+  await js(`window.scrollTo(0, document.getElementById('feed-q').getBoundingClientRect().top + scrollY - 70)`); await shot('feat1-search-390-dark')
+  await searchFor('TG25-2281A')
+  ok('saved search: a batch query offers Check this batch', (await js(`document.querySelector('[data-feed-check-batch]')?.getAttribute('href')`)) === '/?batch=TG25-2281A')
+  await searchFor('qqzzx')
+  {
+    const e = await js(`document.querySelector('[data-feed-search-empty]')?.innerText || ''`)
+    ok('saved search: no match is not a safety claim', e.includes('No regulator alert names “qqzzx” in Nazar\'s records.') && e.includes('This is not a safety certificate.') && !/\bsafe\b|genuine|approved/i.test(e.replace('safety certificate', '')), e)
+    const green = await js(`(() => { const x = document.createElement('canvas').getContext('2d'); const rgb = v => { x.clearRect(0, 0, 1, 1); x.fillStyle = '#000'; x.fillStyle = v; x.fillRect(0, 0, 1, 1); return x.getImageData(0, 0, 1, 1).data }; const el = document.querySelector('[data-feed-search-empty]'); return [el, ...el.querySelectorAll('*')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor].some(v => { const [r, g, b, a] = rgb(v); return a > 0 && g > r + 40 && g > b + 40 }) }) })()`)
+    ok('saved search: the empty result has no green', green === false)
+  }
+  await js(`document.querySelector('[data-feed-search-clear]').click()`); await wait(300); await feedIdle()
+
+  // Next visit: the alerts on the first three rows were not here last time (their keys are dropped from the device's record).
+  const dropped = await js(`fetch('/data/snapshot.json').then(r => r.json()).then(f => { const keyOf = (id) => { const m = /^snap-(.+)-(\\d+)$/.exec(id); const r = f.alerts[m[1]][Number(m[2])]; return (r[0] ?? m[1]).toLowerCase().replace(/[^a-z0-9]/g, '') + '|' + r[16] }; const ids = [...document.querySelectorAll('[data-alert-row]')].map(r => r.dataset.alertRow); const keys = [...new Set(ids.map(keyOf))].slice(0, 3); const s = JSON.parse(localStorage.getItem('nazar:seen')); s.keys = s.keys.filter(k => !keys.includes(k)); localStorage.setItem('nazar:seen', JSON.stringify(s)); sessionStorage.clear(); return { keys, rows: ids.filter(id => keys.includes(keyOf(id))).length } })`)
+  await send('Page.navigate', { url: URL }); await wait(1500); await settle()
+  await waitFor(`!!document.querySelector('nav[aria-label="Mobile navigation"] [data-nav="alerts"] [data-nav-badge]')`, 10000)
+  ok('saved new: the Alerts tab counts 3 unseen alerts', (await js(`document.querySelector('nav[aria-label="Mobile navigation"] [data-nav="alerts"] [data-nav-badge]')?.dataset.count`)) === '3' && (await js(`document.querySelector('nav[aria-label="Mobile navigation"] [data-nav="alerts"]').getAttribute('aria-label')`)) === 'Alerts, 3 new alerts')
+  await openFeed(); await waitFor(`document.querySelector('[data-feed]')?.dataset.feedSource === 'snapshot'`, 15000); await wait(500)
+  const newRows = await js(`[...document.querySelectorAll('[data-alert-row]')].filter(r => r.querySelector('[data-new-pill]')).length`)
+  ok('saved new: those rows carry New pills and the header counts 3 new alerts', newRows === dropped.rows && newRows >= 3 && (await js(`document.querySelector('[data-feed-new]')?.innerText || ''`)).startsWith('3 new alerts since your last visit'), `${newRows} · ${JSON.stringify(dropped)}`)
+  ok('saved new: the Alerts badge clears on the Alerts page', !(await js(`!!document.querySelector('[data-nav="alerts"] [data-nav-badge]')`)))
+  ok('saved new: no horizontal overflow at 390 with New pills', (await js(`document.documentElement.scrollWidth`)) <= 390)
+  await js(`document.querySelector('[data-feed-new]').scrollIntoView({ block: 'start' }); window.scrollBy(0, -80)`); await shot('feat1-new-390-dark')
+  await js(`document.querySelector('[data-rss-toggle]').click()`); await wait(300)
+  await js(`document.querySelector('[data-rss-panel]').scrollIntoView({ block: 'center' })`); await shot('feat1-rss-390-dark')
+  await vp(360, 800, true); await wait(500)
+  ok('360: Alerts fits with search box, RSS panel, New pills and the badge bar', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const p = document.querySelector('[data-rss-panel]'); return p.scrollWidth <= p.clientWidth + 1 && p.getBoundingClientRect().right <= 360 })()`)))
+  const t360 = await js(`Math.min(...[...document.querySelectorAll('[data-feed-search], [data-rss-toggle], [data-rss-panel] button, [data-rss-panel] a, [data-feed-mark-seen]')].filter(e => e.offsetParent).map(e => Math.round(e.getBoundingClientRect().height)))`)
+  ok('360: search, RSS and Mark all seen controls are at least 44px tall', t360 >= 44, String(t360))
+  await js(`document.querySelector('[data-feed-mark-seen]').click()`); await wait(300)
+  ok('saved new: Mark all seen clears them', !(await js(`!!document.querySelector('[data-new-pill], [data-feed-new]')`)))
+  await searchFor('coldrif')
+  ok('360: search results fit', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await feedRows()) > 0)
+  await js(`document.querySelector('[data-feed-search-clear]').click()`); await wait(300)
+  await vp(390, 844, false)
+  fb.savedCopy = false
+}
+// ======== end Alerts search on the saved copy ========
+
+// ======== Shelf sweep (/sweep): bulk batch check for chemists. Fallback runs it on the site's saved copy
+// (no live source), then without any copy; mock has the API confirm only the flagged and look-alike rows. ========
+if (MODE === 'fallback' || MODE === 'mock') {
+  const SW = MODE === 'fallback' ? 'sweep (saved copy)' : 'sweep (mock)'
+  const SHOTS = process.env.SWEEP_SHOTS || OUT
+  fs.mkdirSync(SHOTS, { recursive: true })
+  const swShot = async (name, delay = 400) => { await wait(delay); const r = await send('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(`${SHOTS}/${MODE}-${name}.png`, Buffer.from(r.result.data, 'base64')) }
+  const swType = async v => { await js(`(() => { const t = document.getElementById('sweep-input'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(t, ${JSON.stringify(v)}); t.dispatchEvent(new Event('input', { bubbles: true })) })()`); await wait(250) }
+  const swPreview = () => js(`document.querySelector('[data-sweep-preview]')?.innerText || ''`)
+  const swDone = () => waitFor(`document.querySelector('[data-sweep]')?.dataset.sweepPhase === 'done'`, 20000)
+  const swRows = () => js(`[...document.querySelectorAll('[data-sweep-row]')].map(r => ({ batch: r.dataset.batch, state: r.dataset.state, source: r.dataset.source, confirmed: r.dataset.confirmed, text: r.innerText }))`)
+  const swClickAt = async sel => { const p = await js(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })()`); if (!p) return false; for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1 }); await wait(350); return true }
+  const swGreen = scope => js(`(() => { const x = document.createElement('canvas').getContext('2d'); const rgb = v => { x.clearRect(0, 0, 1, 1); x.fillStyle = '#000'; x.fillStyle = v; x.fillRect(0, 0, 1, 1); return x.getImageData(0, 0, 1, 1).data }; return [...document.querySelectorAll(${JSON.stringify(scope)})].some(el => [el, ...el.querySelectorAll('*')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderTopColor].some(v => { const [r, g, b, a] = rgb(v); return a > 0 && g > r + 40 && g > b + 40 }) })) })()`)
+  const RANK = { flagged: 0, retracted: 1, unreadable: 2, no_alert: 3 }
+  const plainMock = mockResponse
+  const checkCalls = () => requests.filter(u => u.startsWith('http://localhost:8787/v1/check'))
+  if (MODE === 'fallback') fb.savedCopy = true
+  if (MODE === 'mock') {
+    // The live record agrees with the snapshot for the sample's other flagged batches.
+    const extra = { tg252281a: { batch: 'TG25-2281A', batchKey: 'tg252281a', brand: 'Levcon-M', product: 'Levcon-M', peds: false, state: 'IN-HP', authority: 'CDSCO', noticeTitle: 'CDSCO NSQ list', category: 'spurious' }, r01gl2523: { batch: 'R01GL2523', batchKey: 'r01gl2523', brand: 'Respifresh TR', product: 'Respifresh TR', state: 'IN-GJ', authority: 'CDSCO', noticeTitle: 'CDSCO alert' } }
+    mockResponse = url => { const u = new globalThis.URL(url); const k = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (u.pathname === '/v1/check' && extra[k]) return { state: 'flagged', batch: extra[k].batch, asOf: new Date().toISOString(), alerts: [{ ...MOCK_ALERTS[0], ...extra[k] }], source: 'ledger' }; return plainMock(url) }
+  }
+
+  await vp(1440, 900, false)
+  await send('Page.navigate', { url: URL }); await wait(1200)
+  await js(`localStorage.clear(); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('theme', 'light'); new Promise((r) => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
+  await send('Page.reload'); await wait(1500); await settle()
+  // The way in from Check, next to the Try chips.
+  ok(`${SW}: Check links to Shelf sweep beside the Try chips`, await js(`(() => { const a = document.querySelector('a[data-sweep-link]'); return !!a && a.getAttribute('href') === '/sweep' && /Checking many batches\\? Try Shelf sweep/.test(a.innerText) && a.getBoundingClientRect().height >= 44 && !!a.closest('div')?.querySelector('[data-try-chip]') })()`))
+  await js(`window.__spa = 1; document.querySelector('a[data-sweep-link]').click()`); await wait(1500)
+  ok(`${SW}: the link opens /sweep in the app (title "Shelf sweep · Nazar", serif headline)`, (await js(`location.pathname`)) === '/sweep' && (await js(`window.__spa`)) === 1 && (await js(`document.title`)) === 'Shelf sweep · Nazar' && (await js(`document.querySelector('h1[data-sweep-hero]')?.innerText.replace(/\\s+/g, ' ').trim()`)) === 'Check a whole shelf, in one go.')
+  ok(`${SW}: says the list is processed on the device and only batch numbers go to the API`, /Processed on this device/.test(await body()) && /Only the flagged and look-alike batch numbers go to Nazar.s API/.test(await body()) && /Nothing is uploaded/.test(await body()))
+  await wait(1500)
+
+  // Paste parsing: one per line, commas and semicolons; pack labels stripped; duplicates merged by match key.
+  await swType('SR-13\nsr13, AB1234\nB.No. SR-13\n??\n\nTG25-2281A;AB-1234')
+  ok(`${SW}: paste counts batches, unreadable lines and merged duplicates`, (await swPreview()) === '3 batches · 1 unreadable · 3 duplicates merged', await swPreview())
+  await swType('Batch No\nSR-13\nAB1234')
+  ok(`${SW}: a pasted header word ("Batch No") is not read as a batch`, (await swPreview()) === '2 batches', await swPreview())
+  await swType(Array.from({ length: 520 }, (_, i) => `ZX-${1000 + i}`).join('\n'))
+  ok(`${SW}: at most 500 rows; the rest are named as left out`, (await swPreview()) === '500 batches' && /Only the first 500 are checked; 20 more batches left out/.test(await js(`document.querySelector('[data-sweep-over]')?.innerText || ''`)))
+
+  // CSV upload with a header row: the batch column is found, product/qty/expiry kept as context.
+  const csv = 'Item Name,Batch No.,Qty,Expiry\n"COLDRIF Syrup, 60 ml",SR-13,12,04/2027\nLevcon-M,TG25-2281A,30,11/2027\nCrocin 500,AB1234,5,01/2028\nDuplicate,sr 13,1,\n'
+  await js(`(() => { const i = document.querySelector('input[data-sweep-file]'); const dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(csv)}], 'stock.csv', { type: 'text/csv' })); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })) })()`); await wait(500)
+  ok(`${SW}: CSV upload finds the batch column and keeps product, qty and expiry`, (await swPreview()) === '3 batches · 1 duplicate merged' && /stock\.csv/.test(await js(`document.querySelector('[data-sweep-file-info]')?.innerText || ''`)) && (await js(`document.querySelector('[data-sweep-columns]')?.innerText || ''`)) === 'Batch column: “Batch No.” · also kept: Item Name, Qty, Expiry', await js(`document.querySelector('[data-sweep-file-info]')?.innerText || ''`))
+  await js(`[...document.querySelectorAll('button')].find(b => b.dataset.sweepCheck !== undefined)?.click()`); await swDone(); await wait(300)
+  {
+    const rows = await swRows()
+    const sr = rows.find(r => r.batch === 'SR-13')
+    ok(`${SW}: the file's context shows on the row (quoted product with a comma, qty, ×2 lines)`, !!sr && sr.text.includes('COLDRIF Syrup, 60 ml · Qty 12 · Exp 04/2027') && sr.text.includes('×2 lines'), sr?.text)
+  }
+  await swShot('desktop-light-csv', 200)
+
+  // Empty page, then the sample.
+  await js(`document.querySelector('[data-sweep-reset]').click()`); await wait(400)
+  ok(`${SW}: New sweep clears the results`, !(await js(`!!document.querySelector('[data-sweep-results]')`)) && (await js(`document.getElementById('sweep-input').value`)) === '')
+  await js(`window.scrollTo(0, 0)`); await swShot('desktop-light-empty')
+
+  if (MODE === 'mock') mock.checkDelayMs = 1200
+  const callsBefore = checkCalls().length
+  const t0 = await js(`performance.now()`)
+  await js(`document.querySelector('[data-sweep-sample]').click()`)
+  const instant = await js(`new Promise(resolve => { const t = performance.now(); const tick = () => { const r = document.querySelector('[data-sweep-row][data-batch="SR-13"]'); if (r && r.dataset.state === 'flagged') return resolve({ ms: Math.round(performance.now() - t), source: r.dataset.source, confirming: !!r.querySelector('[data-confirming]') }); if (performance.now() - t > 4000) return resolve(null); requestAnimationFrame(tick) }; tick() })`)
+  ok(`${SW}: Try a sample fills the box (5 batches · 2 unreadable · 1 duplicate merged)`, (await swPreview()) === '5 batches · 2 unreadable · 1 duplicate merged', await swPreview())
+  ok(`${SW}: answers instantly from the on-device snapshot (< 400 ms)`, !!instant && instant.source === 'snapshot' && instant.ms < 400, JSON.stringify(instant))
+  if (MODE === 'mock') {
+    ok(`${SW}: flagged rows say they are being confirmed, with a progress bar`, !!instant?.confirming && (await js(`!!document.querySelector('[data-sweep-progress="confirming"] [role="progressbar"]')`)))
+    await swShot('desktop-light-confirming', 0)
+  }
+  ok(`${SW}: the sentinel eye scans while checking`, MODE === 'fallback' || (await js(`document.querySelector('[data-sweep] [data-sentinel]')?.dataset.state`)) === 'scanning')
+  await swDone(); await wait(400)
+  mock.checkDelayMs = 0
+  const rows = await swRows()
+  const by = b => rows.find(r => r.batch === b)
+  ok(`${SW}: every row answered (5 batches + 2 unreadable lines)`, rows.length === 7 && rows.every(r => r.state !== 'pending'), rows.map(r => `${r.batch}:${r.state}`).join(' '))
+  ok(`${SW}: flagged first, then Can't tell, then no alert`, rows.every((r, i) => i === 0 || RANK[rows[i - 1].state] <= RANK[r.state]) && rows[0].state === 'flagged', rows.map(r => r.state).join(','))
+  ok(`${SW}: SR-13 and TG25-2281A are flagged (and R01GL2523)`, by('SR-13')?.state === 'flagged' && by('TG25-2281A')?.state === 'flagged' && by('R01GL2523')?.state === 'flagged' && by('SR-13').text.includes('COLDRIF') && by('TG25-2281A').text.includes('Levcon-M'))
+  ok(`${SW}: 5R-13 is Can't tell with "did you mean SR-13", never a flag`, by('5R-13')?.state === 'unreadable' && /Did you mean\s*SR-13\s*\?/.test(by('5R-13').text) && !/Flagged/.test(by('5R-13').text), by('5R-13')?.text)
+  ok(`${SW}: unreadable lines are Can't tell, answered on the device`, by('??')?.state === 'unreadable' && by('smudged #')?.state === 'unreadable' && by('??').source === 'local' && /Couldn.t read this batch number/.test(by('??').text))
+  ok(`${SW}: AB1234 is No alert found (slate), with no green anywhere`, by('AB1234')?.state === 'no_alert' && !(await swGreen('[data-sweep-results]')))
+  ok(`${SW}: chips count each answer; "No alert found" says it is not a safety certificate`, (await js(`[...document.querySelectorAll('[data-sweep-chip]')].map(c => c.dataset.sweepChip + '=' + c.dataset.count).join(',')`)) === 'flagged=3,retracted=0,unreadable=3,no_alert=1' && /Not a safety certificate/.test(await js(`document.querySelector('[data-sweep-chip="no_alert"]').innerText`)) && /1 look-alike/.test(await js(`document.querySelector('[data-sweep-chip="unreadable"]').innerText`)))
+  ok(`${SW}: Child Shield marks SR-13 (a children's syrup)`, !!(await js(`!!document.querySelector('[data-sweep-row][data-batch="SR-13"] [data-child-shield]')`)) && !(await js(`!!document.querySelector('[data-sweep-row][data-batch="TG25-2281A"] [data-child-shield]')`)))
+  ok(`${SW}: rows link the regulator notice and View /b/BATCH`, (await js(`document.querySelector('[data-sweep-row][data-batch="SR-13"] a[data-link="notice"]')?.href || ''`)).startsWith('http') && (await js(`document.querySelector('[data-sweep-row][data-batch="SR-13"] a[data-link="view"]')?.getAttribute('href')`)) === '/b/SR-13')
+  ok(`${SW}: at 1440 the table fits without sideways scrolling (View links visible)`, await js(`(() => { const t = document.querySelector('[data-sweep-table]'); return !!t && t.scrollWidth <= t.clientWidth + 1 })()`), String(await js(`(() => { const t = document.querySelector('[data-sweep-table]'); return t ? t.scrollWidth + '/' + t.clientWidth : '' })()`)))
+  ok(`${SW}: the sentinel eye turns to flagged`, (await js(`document.querySelector('[data-sweep] [data-sentinel]')?.dataset.state`)) === 'flagged')
+  ok(`${SW}: never says safe, genuine or approved`, !/\b(safe|genuine|approved)\b/i.test((await body()).replace(/not a safety certificate|never certifies a medicine as safe/gi, '')))
+  if (MODE === 'fallback') {
+    ok(`${SW}: no live source, so the saved copy's answers stand (no Arkiv proof without an entity key)`, ['SR-13', 'TG25-2281A', 'R01GL2523'].every(b => by(b).source === 'snapshot' && by(b).confirmed === 'false') && !(await js(`!!document.querySelector('[data-sweep-row] a[data-link="arkiv"]')`)))
+  } else {
+    const calls = checkCalls().slice(callsBefore).map(u => decodeURIComponent(new globalThis.URL(u).searchParams.get('batch') || ''))
+    ok(`${SW}: only the flagged and look-alike batches went to the API (AB1234 and unreadable lines never left)`, calls.length === 4 && ['SR-13', 'TG25-2281A', 'R01GL2523', '5R-13'].every(b => calls.includes(b)) && !calls.includes('AB1234'), calls.join(','))
+    ok(`${SW}: the API confirmed the flagged rows`, ['SR-13', 'TG25-2281A', 'R01GL2523'].every(b => by(b).source === 'api' && by(b).confirmed === 'true') && by('5R-13').source === 'api')
+    ok(`${SW}: a confirmed row links its Arkiv proof (entity key from the API)`, (await js(`document.querySelector('[data-sweep-row][data-batch="SR-13"] a[data-link="arkiv"]')?.href || ''`)).includes(KEY1))
+  }
+  await js(`window.scrollTo(0, 0)`); await swShot('desktop-light-results', 300)
+  await js(`document.querySelector('[data-sweep-results]').scrollIntoView({ block: 'start' })`); await swShot('desktop-light-results-table', 200)
+
+  // Filter by state, and search within the results.
+  await js(`document.querySelector('[data-sweep-chip="flagged"]').click()`); await wait(250)
+  ok(`${SW}: the Flagged chip filters to flagged rows`, (await swRows()).length === 3 && (await swRows()).every(r => r.state === 'flagged') && (await js(`document.querySelector('[data-sweep-chip="flagged"]').getAttribute('aria-pressed')`)) === 'true')
+  await js(`document.querySelector('[data-sweep-chip="flagged"]').click()`); await wait(250)
+  await js(`(() => { const i = document.querySelector('[data-sweep-search]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'levcon'); i.dispatchEvent(new Event('input', { bubbles: true })) })()`); await wait(350)
+  ok(`${SW}: search finds a row by product`, (await swRows()).length === 1 && (await swRows())[0].batch === 'TG25-2281A')
+  await js(`(() => { const i = document.querySelector('[data-sweep-search]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })) })()`); await wait(350)
+
+  // Export: the CSV is a Blob made in the browser; the flagged list goes to the clipboard; Print prints the counter sheet.
+  await send('Page.setDownloadBehavior', { behavior: 'deny' }).catch(() => {})
+  await js(`window.__blobs = []; window.__urlHook ??= URL.createObjectURL; URL.createObjectURL = b => { window.__blobs.push(b); return window.__urlHook.call(URL, b) }; window.__copied = null; navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve() }; window.__printed = 0; window.print = () => { window.__printed++ }`)
+  await swClickAt('[data-sweep-export]')
+  ok(`${SW}: Export opens a menu (CSV, copy flagged, print)`, await waitFor(`!!document.querySelector('[data-sweep-export-menu] [data-export="csv"]') && !!document.querySelector('[data-export="copy"]') && !!document.querySelector('[data-export="print"]')`, 3000))
+  await swShot('desktop-light-export-menu', 300)
+  await swClickAt('[data-export="csv"]')
+  const csvOut = await js(`(async () => { const b = window.__blobs.at(-1); return b ? { type: b.type, text: await b.text(), bom: [...new Uint8Array(await b.slice(0, 3).arrayBuffer())].join() } : null })()`)
+  {
+    const lines = (csvOut?.text || '').replace(/^\uFEFF/, '').trim().split(/\r\n/)
+    const head = lines[0]?.split(',') || []
+    const col = name => head.indexOf(name)
+    const cells = l => { const out = []; let cur = '', q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (q) { if (c === '"' && l[i + 1] === '"') { cur += '"'; i++ } else if (c === '"') q = false; else cur += c } else if (c === '"') q = true; else if (c === ',') { out.push(cur); cur = '' } else cur += c } out.push(cur); return out }
+    const data = lines.slice(1).map(cells)
+    const row = b => data.find(r => r[col('batch')] === b)
+    ok(`${SW}: CSV export is generated in the browser with every row and the required columns`, !!csvOut && csvOut.type.startsWith('text/csv') && csvOut.bom === '239,187,191' && data.length === 7 && ['state', 'product', 'regulator', 'notice_url', 'severity', 'child_shield', 'arkiv_entity_url', 'checked_at', 'checked_at_ist'].every(c => col(c) >= 0), head.join(','))
+    ok(`${SW}: CSV is flagged first; SR-13 row has the product, regulator, severity and Child Shield`, data[0]?.[col('state')] === 'Flagged' && row('SR-13')?.[col('state')] === 'Flagged' && /COLDRIF/.test(row('SR-13')?.[col('product')] || '') && !!row('SR-13')?.[col('regulator')] && row('SR-13')?.[col('severity')] === '5' && row('SR-13')?.[col('child_shield')] === 'yes' && /^https?:/.test(row('SR-13')?.[col('notice_url')] || ''))
+    ok(`${SW}: CSV checked_at is ISO, with the same moment in IST`, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(row('AB1234')?.[col('checked_at')] || '') && /IST$/.test(row('AB1234')?.[col('checked_at_ist')] || ''))
+    ok(`${SW}: CSV says "No alert found" (not a safety certificate) and keeps the look-alike as Can't tell`, row('AB1234')?.[col('state')] === 'No alert found' && /not a safety certificate/i.test(row('AB1234')?.join(' ') || '') && row('5R-13')?.[col('state')] === "Can't tell" && row('5R-13')?.[col('did_you_mean')] === 'SR-13')
+    ok(`${SW}: CSV arkiv_entity_url ${MODE === 'mock' ? 'links the confirmed entity' : 'is empty without an entity key'}`, MODE === 'mock' ? (row('SR-13')?.[col('arkiv_entity_url')] || '').includes(KEY1) : data.every(r => !r[col('arkiv_entity_url')]))
+    ok(`${SW}: CSV never says safe`, !/\bsafe\b/i.test(csvOut?.text || ''))
+  }
+  await swClickAt('[data-sweep-export]'); await swClickAt('[data-export="copy"]')
+  {
+    const copied = await js(`window.__copied || ''`)
+    ok(`${SW}: Copy flagged list copies the flagged batches as text, with links`, /^Flagged batches \(3\)/.test(copied) && copied.includes('SR-13') && copied.includes('TG25-2281A') && !copied.includes('AB1234') && !copied.includes('5R-13') && copied.includes('/b/SR-13'), copied.slice(0, 160))
+  }
+  await swClickAt('[data-sweep-export]'); await swClickAt('[data-export="print"]'); await wait(200)
+  ok(`${SW}: Print opens the print dialog`, (await js(`window.__printed`)) === 1)
+  await send('Emulation.setEmulatedMedia', { media: 'print' })
+  ok(`${SW}: printing shows only the counter sheet (flagged first), not the app or the form`, await js(`(() => { const p = document.querySelector('[data-sweep-print]'); const vis = e => !!e && getComputedStyle(e).display !== 'none'; return vis(p) && !vis(document.querySelector('[data-sweep-results]')) && !vis(document.querySelector('[data-sweep-privacy]')?.parentElement) && !vis(document.querySelector('aside')) && !vis(document.querySelector('nav')) && p.querySelectorAll('tbody tr').length === 7 && p.querySelector('tbody tr').dataset.printState === 'flagged' })()`))
+  await vp(1440, 900, false)
+
+  // Phones: cards instead of the table, no sideways scroll at 360; dark screenshots at 390.
+  await vp(360, 800, true); await wait(500)
+  ok(`${SW}: at 360 the results are cards, not a table, with no overflow`, (await js(`!!document.querySelector('[data-sweep-cards]') && !document.querySelector('[data-sweep-table]')`)) && (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+  ok(`${SW}: at 360 the row links are 44px targets`, await js(`[...document.querySelectorAll('[data-sweep-cards] a[data-link]')].every(a => a.getBoundingClientRect().height >= 44)`))
+  await js(`localStorage.setItem('theme', 'dark'); document.documentElement.classList.add('dark'); document.documentElement.style.colorScheme = 'dark'`)
+  await vp(390, 844, true); await wait(500)
+  await js(`document.querySelectorAll('[data-sonner-toast]').forEach(t => t.remove())`)
+  await js(`document.querySelector('[data-sweep-results]').scrollIntoView({ block: 'start' })`); await swShot('mobile-dark-results', 300)
+  await js(`window.scrollBy(0, 640)`); await swShot('mobile-dark-cards', 200)
+  ok(`${SW}: no green in dark mode either`, !(await swGreen('[data-sweep-results]')))
+  await js(`window.scrollTo(0, 0)`)
+  await swClickAt('[data-sweep-export]'); await swShot('mobile-dark-export-menu', 300)
+  await escape()
+  await js(`document.querySelector('[data-sweep-reset]').click()`); await wait(300); await js(`window.scrollTo(0, 0)`); await swShot('mobile-dark-empty')
+  await js(`localStorage.setItem('theme', 'light'); document.documentElement.classList.remove('dark'); document.documentElement.style.colorScheme = ''`)
+
+  if (MODE === 'fallback') {
+    // No snapshot at all (the saved copy 404s, the API is refused): never a guess, every batch is Can't tell with Try again.
+    fb.savedCopy = false
+    await vp(1440, 900, false)
+    await js(`new Promise((r) => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
+    await send('Page.reload'); await wait(1500)
+    await swType('SR-13\nAB1234\nTG25-2281A')
+    await js(`document.querySelector('[data-sweep-check]').click()`); await swDone(); await wait(300)
+    const r2 = await swRows()
+    ok("sweep (no copy, no API): every batch is Can't tell, never flagged or no alert", r2.length === 3 && r2.every(r => r.state === 'unreadable' && /Couldn.t reach the live record/.test(r.text)), r2.map(r => `${r.batch}:${r.state}`).join(' '))
+    ok('sweep (no copy, no API): offers Try again for the unchecked batches', /3 batches couldn.t be checked/.test(await js(`document.querySelector('[data-sweep-unchecked]')?.innerText || ''`)) && (await js(`!!document.querySelector('[data-sweep-retry]')`)))
+  }
+  if (MODE === 'mock') mockResponse = plainMock
+  fb.savedCopy = false
+  await js(`new Promise((r) => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
+}
+// ======== end Shelf sweep ========
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))

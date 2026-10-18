@@ -133,7 +133,7 @@ test('Confusable characters are flagged, not changed', () => {
 })
 
 // ---- Whole-label grammar (pack.ts)
-import { detectForm, parseComposition, parseLicence, parseMrp, parsePackLabel, parsePackSize, parseSchedule, stateOf } from './pack.ts'
+import { detectForm, isBareForm, parseComposition, parseLicence, parseMrp, parsePackLabel, parsePackSize, parseProduct, parseSchedule, stateOf } from './pack.ts'
 
 const DOLO = `Rx
 DOLO-650
@@ -233,4 +233,16 @@ test('Pack label: noise yields no invented fields', () => {
   assert.equal(p.product, undefined)
   assert.equal(p.manufacturer, undefined)
   assert.equal(p.licence, undefined)
+})
+
+test('a dosage form alone is never the product name', () => {
+  for (const f of ['Tablet', 'TABLETS', 'Capsule', 'Syrup', '15 Tablets', 'Tablets IP', 'Film-coated tablets I.P.', 'Tablet 650 mg', 'Oral Suspension']) assert.equal(isBareForm(f), true, f)
+  for (const n of ['Paracetamol Tablets IP 650 mg', 'DOLO-650', 'Coldrif Syrup', 'Crocin', 'Paracetamol IP 500 mg']) assert.equal(isBareForm(n), false, n)
+  // A strip that prints the form in capitals on its own top line: the name still wins.
+  assert.equal(parseProduct('TABLETS\nParacetamol Tablets IP 650 mg\nEach uncoated tablet contains:')?.value, 'Paracetamol Tablets IP 650 mg')
+  // A cropped read that sees only the form line has no product at all.
+  assert.equal(parseProduct('Tablet\nB.No. DOBS3975'), undefined)
+  assert.equal(parsePackLabel('Tablet\nB.No. DOBS3975').product, undefined)
+  // The name split over two lines is joined back.
+  assert.equal(parseProduct('Paracetamol\nTablets IP\nComposition: Paracetamol IP 500 mg')?.value, 'Paracetamol Tablets IP')
 })
