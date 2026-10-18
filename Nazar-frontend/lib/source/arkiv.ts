@@ -164,9 +164,6 @@ export function decodeAlert(e: RawEntity): ArkivAlert {
     confidence: (n(a.conf) ?? 0) / 100,
     method: s(a.method) ?? 'text',
     tier: s(a.tier) ?? 'auto',
-    noticeKey: s(a.notice),
-    expiresAtBlock: typeof e.expiresAt === 'bigint' ? e.expiresAt.toString() : null,
-    flags: e.creationFlags ? { readonly: !!e.creationFlags.readonly, permissionlessExtension: !!e.creationFlags.permissionlessExtension } : null,
     payload: payloadOf(e),
   }
 }
