@@ -37,4 +37,8 @@ export class ConfigError extends NazarError {
   }
 }
 
-export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
+/** Strips secrets that libraries echo into error text (viem puts the full RPC URL, including an Arkiv key, in its messages). */
+export const redactSecrets = (s: string) =>
+  s.replace(/ark_live_[A-Za-z0-9]+/g, 'ark_live_***').replace(/0x[0-9a-fA-F]{64}(?=\b)/g, (m) => (/private|key=/i.test(s) ? '0x***' : m))
+
+export const errorMessage = (err: unknown) => redactSecrets(err instanceof Error ? err.message : String(err))

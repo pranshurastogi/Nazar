@@ -8,7 +8,7 @@ import { DirectoryError, EntitiesQuery, type ArkivDirectory } from '../arkiv/dir
 import type { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
 import { BATCH_SHAPE, confusionKey, matchKey } from '../domain/batch.ts'
-import { NazarError, errorMessage } from '../lib/errors.ts'
+import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
 import { isPublishableTier } from '../resolve/case.ts'
@@ -199,11 +199,11 @@ export function createApp(deps: AppDeps) {
   app.use('/v1/*', etag({ weak: true }))
 
   app.onError((err, c) => {
-    if (err instanceof HttpError) return c.json({ error: { code: err.code, message: err.message, details: err.details } }, err.status)
+    if (err instanceof HttpError) return c.json({ error: { code: err.code, message: redactSecrets(err.message), details: err.details } }, err.status)
     if (err instanceof DirectoryError) {
       if (err.retryAfterSec) c.header('Retry-After', String(err.retryAfterSec))
       c.header('Cache-Control', 'no-store')
-      return c.json({ error: { code: err.code, message: err.message } }, err.code === 'CURSOR_EXPIRED' ? 410 : 503)
+      return c.json({ error: { code: err.code, message: redactSecrets(err.message) } }, err.code === 'CURSOR_EXPIRED' ? 410 : 503)
     }
     log.error({ err: errorMessage(err), path: c.req.path }, 'unhandled error')
     const code = err instanceof NazarError ? err.code : 'INTERNAL'

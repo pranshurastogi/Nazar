@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 import { matchKey } from '../domain/batch.ts'
 import { CATEGORIES, DOSAGE_FORMS, FAILURES } from '../domain/vocab.ts'
-import { NazarError, errorMessage } from '../lib/errors.ts'
+import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
 import { MAX_PAGE, type ArkivRead } from './reader.ts'
 import { PROJECT } from './schema.ts'
@@ -494,7 +494,7 @@ export class ArkivDirectory {
       })
       .catch((err) => {
         const e = classify(err)
-        this.lastError = { at: this.now(), message: e.message }
+        this.lastError = { at: this.now(), message: redactSecrets(e.message) }
         log.warn({ err: errorMessage(err), code: e.code }, 'arkiv summary refresh failed')
         throw e
       })

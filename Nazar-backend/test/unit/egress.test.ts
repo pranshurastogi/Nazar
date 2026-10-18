@@ -40,3 +40,12 @@ describe('checkEgress', () => {
     expect(s.warning).toMatch(/this region/)
   })
 })
+
+describe('redactSecrets', () => {
+  it('scrubs Arkiv keys that viem echoes in error URLs', async () => {
+    const { errorMessage, redactSecrets } = await import('../../src/lib/errors.ts')
+    const msg = 'HTTP request failed. URL: https://rpc.tiramisu.db-chain.testnet.arkiv.network/ark_live_AbC123xyz Status: 429'
+    expect(redactSecrets(msg)).not.toMatch(/AbC123xyz/)
+    expect(errorMessage(new Error(msg))).toContain('ark_live_***')
+  })
+})
