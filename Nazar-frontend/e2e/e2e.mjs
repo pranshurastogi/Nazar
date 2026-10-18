@@ -1996,6 +1996,75 @@ if (MODE === 'fallback' || MODE === 'mock') {
 }
 // ======== end Shelf sweep ========
 
+// ---- Hindi (हिन्दी), phase 1 (mock): the header switch, the four states in Hindi, Alerts chrome, and the choice saved on the device.
+// Regulator data (product names, reasons, notices) stays as published; the product rules hold in Hindi too.
+if (MODE === 'mock') {
+  const HI = 'hindi'
+  const verdict = () => js(`document.querySelector('section[data-state]')?.innerText || ''`)
+  const headlineText = () => js(`document.querySelector('[data-verdict-headline]')?.textContent || ''`)
+  const chipText = () => js(`document.querySelector('[data-state-chip]')?.textContent || ''`)
+  const barLabels = () => js(`[...document.querySelectorAll('nav a[data-nav]')].filter(a => a.offsetParent).map(a => a.dataset.label).join('|')`)
+  const noClaim = (t) => !/सुरक्षित|असली|स्वीकृत/.test(t)
+  await vp(390, 844, false); await fresh()
+  await js(`localStorage.setItem('nazar:onboarded', '1')`); await send('Page.reload'); await wait(1200); await settle()
+  ok(`${HI}: English by default (html lang="en", English nav)`, (await js(`document.documentElement.lang`)) === 'en' && (await barLabels()).startsWith('Check|Alerts'), await barLabels())
+  ok(`${HI}: the header switch reads EN | हिं, is 44px tall and named "Language / भाषा"`, await js(`(() => { const b = document.querySelector('[data-lang-toggle]'); return !!b && b.getAttribute('aria-label') === 'Language / भाषा' && b.getBoundingClientRect().height >= 44 && b.innerText.replace(/\\s+/g, ' ').trim() === 'EN | हिं' })()`))
+
+  await js(`document.querySelector('[data-lang-toggle]').click()`); await wait(500)
+  ok(`${HI}: switching to हिं sets <html lang="hi"> and data-lang`, (await js(`document.documentElement.lang`)) === 'hi' && (await js(`document.documentElement.dataset.lang`)) === 'hi' && (await js(`localStorage.getItem('nazar:lang')`)) === 'hi')
+  ok(`${HI}: nav labels in Hindi`, (await barLabels()) === 'जाँचें|चेतावनियाँ|दवाएँ|AI|और', await barLabels())
+  ok(`${HI}: the Check page in Hindi (tagline, hero, button, placeholder)`, (await body()).includes('हर बैच पर नज़र') && (await body()).includes('बैच जाँचें,') && (await js(`document.getElementById('batch').placeholder`)) === 'जैसे SR-13')
+  await click('बैच जाँचें'); await wait(200)
+  ok(`${HI}: an empty check asks for the batch number in Hindi`, (await js(`document.getElementById('batch-empty').innerText`)) === 'पैक पर लिखा बैच नंबर (B.No.) डालें')
+
+  await typeBatch('SR-13'); await wait(300)
+  ok(`${HI}: SR-13 flagged: chip and headline in Hindi`, (await chipText()) === 'चेतावनी जारी' && (await headlineText()) === 'यह बैच सरकारी गुणवत्ता जाँच में फ़ेल हुआ है', `${await chipText()} / ${await headlineText()}`)
+  ok(`${HI}: SR-13 what to do: four steps in Hindi`, (await js(`(() => { const t = document.querySelector('section[data-state]').innerText; return ['अब क्या करें', 'इसका इस्तेमाल बंद करें।', 'पैक संभालकर रखें।', 'इसे अपने केमिस्ट को लौटा दें।', 'अगर दवा ले ली है, तो डॉक्टर से बात करें।'].every(s => t.includes(s)) })()`)))
+  ok(`${HI}: Child Shield banner in Hindi`, (await verdict()).includes('यह बच्चों की दवा है'))
+  ok(`${HI}: regulator data stays as published (COLDRIF, Diethylene glycol), with the as-published note`, (await verdict()).includes('COLDRIF') && (await verdict()).includes('Diethylene glycol') && (await verdict()).includes('सरकारी नोटिस जैसे जारी हुए'))
+  ok(`${HI}: the batch number stays in the mono face`, /JetBrains Mono/.test(await js(`getComputedStyle(document.querySelector('[data-batch-pill] .font-mono')).fontFamily`)))
+  await js(`document.fonts.ready`)
+  ok(`${HI}: Noto Sans Devanagari is in the stack and loaded`, /Noto Sans Devanagari/.test(await js(`getComputedStyle(document.querySelector('[data-verdict-headline]')).fontFamily`)) && (await js(`[...document.fonts].some(f => /Noto Sans Devanagari/.test(f.family) && f.status === 'loaded')`)))
+  ok(`${HI}: no tracking on Devanagari text`, (await js(`getComputedStyle(document.querySelector('[data-state-chip]')).letterSpacing`)) === 'normal')
+
+  await typeBatch('AB1234'); await wait(300)
+  ok(`${HI}: AB1234 no alert: chip, headline with an Indian (hi-IN) date`, (await chipText()) === 'कोई चेतावनी नहीं मिली' && /^\d{1,2} [ऀ-ॿ]+, \d{1,2}:\d{2}\s[ap]m\sIST तक इस बैच पर कोई सरकारी चेतावनी नहीं मिली$/.test(await headlineText()), await headlineText())
+  ok(`${HI}: AB1234 says it is not a safety certificate`, (await js(`document.querySelector('[data-key-message]')?.innerText || ''`)).startsWith('यह सुरक्षा प्रमाणपत्र नहीं है।'))
+  ok(`${HI}: never सुरक्षित / असली / स्वीकृत as a claim anywhere on the page`, noClaim(await body()))
+
+  await typeBatch('5R-13'); await wait(300)
+  ok(`${HI}: 5R-13 asks "did you mean" in Hindi, amber, never flagged`, (await headlineText()) === 'क्या आपका मतलब SR-13 है?' && (await chipText()) === 'पक्का नहीं कह सकते' && (await js(`document.querySelector('[data-lookalike-check]')?.innerText.replace(/\\s+/g, ' ').trim()`)) === 'SR-13 जाँचें')
+
+  await vp(360, 800, false); await wait(500)
+  ok(`${HI}: no sideways overflow at 360 (Check with a result)`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+  ok(`${HI}: bar labels fit their tabs at 360`, await js(`[...document.querySelectorAll('nav[aria-label] a[data-nav] span.truncate')].filter(s => s.offsetParent).every(s => s.scrollWidth <= s.clientWidth + 1)`))
+  ok(`${HI}: the header fits at 360 (switch visible inside the viewport)`, await js(`(() => { const r = document.querySelector('[data-lang-toggle]').getBoundingClientRect(); return r.right <= 360 && r.width > 0 })()`))
+  {
+    const spa = await navTo('चेतावनियाँ'); await feedIdle()
+    ok(`${HI}: Alerts reached from the Hindi nav (client-side)`, spa && (await js(`location.pathname`)) === '/feed')
+    const b = await body()
+    ok(`${HI}: Alerts chrome in Hindi (hero, search, filters, count)`, b.includes('हर चेतावनी,') && b.includes('दवा या कंपनी के नाम से खोजें') && b.includes('गंभीर 4–5') && b.includes('सिर्फ़ चाइल्ड शील्ड') && /चेतावनि/.test(await feedCount()), await feedCount())
+    ok(`${HI}: Alerts keeps regulator data as published`, (await rowTexts()).some(t => t.includes('COLDRIF')))
+    ok(`${HI}: no sideways overflow at 360 (Alerts)`, (await js(`document.documentElement.scrollWidth`)) <= 360, String(await js(`document.documentElement.scrollWidth`)))
+  }
+
+  await send('Page.reload'); await wait(1500); await settle()
+  ok(`${HI}: the choice survives a reload (lang, nav, no pending veil)`, (await js(`document.documentElement.lang`)) === 'hi' && (await barLabels()).startsWith('जाँचें|चेतावनियाँ') && !(await js(`document.documentElement.hasAttribute('data-i18n-pending')`)) && (await js(`getComputedStyle(document.body).opacity`)) === '1')
+  await send('Page.navigate', { url: URL + 'b/SR-13' }); await wait(1500)
+  ok(`${HI}: the share page answers in the saved language`, (await body()).includes('अपना बैच जाँचें') && (await js(`document.documentElement.lang`)) === 'hi')
+  await send('Page.navigate', { url: URL + 'more' }); await wait(1500)
+  ok(`${HI}: More › Settings offers English / हिन्दी, हिन्दी checked`, (await js(`document.querySelector('[data-lang-option="hi"]')?.getAttribute('aria-checked')`)) === 'true' && (await js(`document.querySelector('[data-lang-option="en"]')?.getAttribute('aria-checked')`)) === 'false')
+
+  await js(`document.querySelector('[data-lang-option="en"]').click()`); await wait(400)
+  ok(`${HI}: switching back from Settings restores English`, (await js(`document.documentElement.lang`)) === 'en' && (await js(`localStorage.getItem('nazar:lang')`)) === 'en')
+  await vp(390, 844, false); await send('Page.navigate', { url: URL }); await wait(1500); await settle()
+  await js(`document.querySelector('[data-lang-toggle]').click()`); await wait(300); await js(`document.querySelector('[data-lang-toggle]').click()`); await wait(300)
+  await typeBatch('SR-13')
+  ok(`${HI}: back in English, text is exactly as before`, (await barLabels()).startsWith('Check|Alerts') && (await headlineText()) === 'This batch failed a government quality test' && (await chipText()) === 'Flagged' && !(await body()).includes('सरकारी नोटिस जैसे जारी हुए'))
+  await js(`localStorage.removeItem('nazar:lang')`)
+}
+// ======== end Hindi ========
+
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))
 console.log(`\n[${MODE}] ${results.filter(r => r[0] === 'PASS').length}/${results.length} passed`)

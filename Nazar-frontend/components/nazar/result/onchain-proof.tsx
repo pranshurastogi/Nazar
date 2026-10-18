@@ -5,6 +5,7 @@ import { BadgeCheck, Boxes, ExternalLink, FileText, Fingerprint, Infinity as Kee
 
 import { buttonVariants } from '@/components/ui/button'
 import { estimateExpiry, EXPLORER_URL, explorerAddress, noticeKeyFor, PUBLISHER, type Alert } from '@/lib/source'
+import { formatDay, useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { CopyButton, IconLink, shorten } from './shared'
 
@@ -67,6 +68,7 @@ function Mono({ value }: { value: string }) {
 }
 
 function ExpiryLine({ block }: { block: string }) {
+  const { t, tr, locale, intl } = useT()
   const [date, setDate] = useState<Date | null>(null)
   useEffect(() => {
     const ctrl = new AbortController()
@@ -75,8 +77,10 @@ function ExpiryLine({ block }: { block: string }) {
   }, [block])
   return (
     <span data-entity-expiry>
-      Stays on Arkiv until {date ? `about ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'block'}{' '}
-      <span className="font-mono">#{Number(block).toLocaleString('en-IN')}</span>
+      {tr(date ? 'proof.expiryDate' : 'proof.expiryBlock', {
+        date: date ? formatDay(locale, date) : '',
+        block: <span className="font-mono">#{Number(block).toLocaleString(intl)}</span>,
+      })}
     </span>
   )
 }
@@ -106,6 +110,7 @@ function useNoticeKey(alert: Alert) {
  * full version in the "How do we know?" sheet, with the transaction as its own row.
  */
 export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; variant?: 'card' | 'sheet' }) {
+  const { t, locale } = useT()
   const sheet = variant === 'sheet'
   const published = !!alert.entityKey
   const official = !!alert.creator && alert.creator.toLowerCase() === PUBLISHER.toLowerCase()
@@ -117,36 +122,36 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
     {
       key: 'document',
       icon: FileText,
-      label: 'Regulator document',
+      label: t('proof.document'),
       value: (
         <>
           <span className="block truncate" title={alert.notice}>{alert.notice}</span>
           <span className="block text-xs font-normal text-muted-foreground">{alert.authority}</span>
         </>
       ),
-      actions: alert.noticeUrl ? <IconLink href={alert.noticeUrl} label="Open the regulator document" /> : undefined,
+      actions: alert.noticeUrl ? <IconLink href={alert.noticeUrl} label={t('proof.openDocument')} /> : undefined,
     },
     {
       key: 'sha',
       icon: Fingerprint,
-      label: sheet ? 'Source SHA-256' : 'SHA-256 fingerprint',
-      value: alert.sourceSha ? <Mono value={alert.sourceSha} /> : <span className="text-muted-foreground">Not recorded</span>,
-      actions: alert.sourceSha ? <CopyButton value={alert.sourceSha} what="source SHA-256" /> : undefined,
+      label: sheet ? t('proof.sourceSha') : t('proof.shaFingerprint'),
+      value: alert.sourceSha ? <Mono value={alert.sourceSha} /> : <span className="text-muted-foreground">{t('proof.notRecorded')}</span>,
+      actions: alert.sourceSha ? <CopyButton value={alert.sourceSha} what={t('proof.what.sha')} /> : undefined,
       missing: !alert.sourceSha,
     },
     {
       key: 'notice',
       icon: Boxes,
-      label: 'Arkiv notice entity',
+      label: t('proof.noticeEntity'),
       value: notice.key ? (
         <span data-notice-key={notice.key}><Mono value={notice.key} /></span>
       ) : (
-        <span className="text-muted-foreground">{!published ? 'Not on Arkiv' : notice.looking ? 'Looking up…' : 'Named in the alert entity'}</span>
+        <span className="text-muted-foreground">{!published ? t('proof.notOnArkiv') : notice.looking ? t('proof.lookingUp') : t('proof.namedInAlert')}</span>
       ),
       actions: notice.key ? (
         <>
-          <CopyButton value={notice.key} what="notice entity key" />
-          <IconLink href={ENTITY_URL(notice.key)} label="Open notice entity in the Arkiv explorer" />
+          <CopyButton value={notice.key} what={t('proof.what.noticeKey')} />
+          <IconLink href={ENTITY_URL(notice.key)} label={t('proof.openInExplorer', { what: t('proof.what.notice') })} />
         </>
       ) : undefined,
       missing: !notice.key,
@@ -154,16 +159,16 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
     {
       key: 'alert',
       icon: Link2,
-      label: sheet ? 'Arkiv entity' : 'This alert entity',
+      label: sheet ? t('proof.arkivEntity') : t('proof.thisAlertEntity'),
       value: alert.entityKey ? (
         <Mono value={alert.entityKey} />
       ) : (
-        <span className="text-muted-foreground">{alert.demo ? 'Not published (demo record)' : 'Not yet published'}</span>
+        <span className="text-muted-foreground">{alert.demo ? t('proof.notPublishedDemo') : t('proof.notYetPublished')}</span>
       ),
       actions: alert.entityKey ? (
         <>
-          <CopyButton value={alert.entityKey} what="entity key" />
-          {entityHref && <IconLink href={entityHref} label="Open entity key in the Arkiv explorer" />}
+          <CopyButton value={alert.entityKey} what={t('proof.what.entityKey')} />
+          {entityHref && <IconLink href={entityHref} label={t('proof.openInExplorer', { what: t('proof.what.entityKey') })} />}
         </>
       ) : undefined,
       missing: !alert.entityKey,
@@ -173,28 +178,28 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
   return (
     <div data-onchain-proof={published ? 'published' : 'unpublished'} className={cn(!sheet && 'border-t bg-card/70 px-5 py-4 sm:px-6')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">On-chain proof</p>
+        <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">{t('proof.onchain')}</p>
         {published ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-            <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" /> Live on Arkiv
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" /> {t('proof.live')}
           </span>
         ) : alert.fromSnapshot && alert.savedCopyFinal ? (
           <span data-proof-saved className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
-            <Unlink className="size-3" aria-hidden="true" /> From Nazar&apos;s saved copy
+            <Unlink className="size-3" aria-hidden="true" /> {t('proof.saved')}
           </span>
         ) : alert.fromSnapshot ? (
           <span data-proof-pending className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-            <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden="true" /> Confirming on Arkiv…
+            <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden="true" /> {t('proof.pending')}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
-            <Unlink className="size-3" aria-hidden="true" /> Not yet on Arkiv
+            <Unlink className="size-3" aria-hidden="true" /> {t('proof.unpublished')}
           </span>
         )}
       </div>
 
       {(sheet || published) && (
-        <ol className={cn('mt-3', !sheet && 'sm:grid sm:grid-cols-4 sm:gap-3')} aria-label="Chain of custody">
+        <ol className={cn('mt-3', !sheet && 'sm:grid sm:grid-cols-4 sm:gap-3')} aria-label={t('proof.chain')}>
           {nodes.map((n, i) => (
             <ChainNode key={n.key} node={n} last={i === nodes.length - 1} row={!sheet} sheet={sheet} />
           ))}
@@ -205,57 +210,57 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
         <div className="mt-4 grid gap-3">
           {alert.creator && (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
-              <span className="text-muted-foreground">{sheet ? 'Creator wallet' : 'Signed by'}</span>
+              <span className="text-muted-foreground">{sheet ? t('proof.creatorWallet') : t('proof.signedBy')}</span>
               <span className="font-mono text-xs" title={alert.creator}>{shorten(alert.creator)}</span>
               {official ? (
                 <span data-publisher-check="official" className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                  <BadgeCheck className="size-3.5" aria-hidden="true" /> Official Nazar publisher
+                  <BadgeCheck className="size-3.5" aria-hidden="true" /> {t('proof.officialPublisher')}
                 </span>
               ) : (
                 <span data-publisher-check="unlisted" className="inline-flex items-center gap-1 rounded-full bg-caution-soft px-2 py-0.5 text-[11px] font-bold text-caution">
-                  <ShieldAlert className="size-3.5" aria-hidden="true" /> Not from a listed publisher
+                  <ShieldAlert className="size-3.5" aria-hidden="true" /> {t('proof.unlistedPublisher')}
                 </span>
               )}
               <span className="-my-1 ml-auto flex items-center">
-                <CopyButton value={alert.creator} what="creator wallet" />
-                <IconLink href={alert.explorer.creator ?? explorerAddress(alert.creator)} label="Open creator wallet in the Arkiv explorer" />
+                <CopyButton value={alert.creator} what={t('proof.what.creator')} />
+                <IconLink href={alert.explorer.creator ?? explorerAddress(alert.creator)} label={t('proof.openInExplorer', { what: t('proof.what.creator') })} />
               </span>
             </div>
           )}
           {sheet && alert.txHash && (
             <div className="flex items-center gap-2 text-[13px]">
-              <span className="text-muted-foreground">Transaction</span>
+              <span className="text-muted-foreground">{t('proof.transaction')}</span>
               <span className="ml-auto font-mono text-xs" title={alert.txHash}>{shorten(alert.txHash)}</span>
-              <CopyButton value={alert.txHash} what="transaction hash" className="-my-1" />
-              {alert.explorer.tx && <IconLink href={alert.explorer.tx} label="Open transaction hash in the Arkiv explorer" className="-my-1" />}
+              <CopyButton value={alert.txHash} what={t('proof.what.tx')} className="-my-1" />
+              {alert.explorer.tx && <IconLink href={alert.explorer.tx} label={t('proof.openInExplorer', { what: t('proof.what.tx') })} className="-my-1" />}
             </div>
           )}
           {(flags || alert.expiresAtBlock || alert.publishedAt) && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               {flags?.readonly && (
                 <span className="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-semibold text-foreground/80" data-flag="readonly">
-                  <Lock className="size-3" aria-hidden="true" /> Read-only
+                  <Lock className="size-3" aria-hidden="true" /> {t('proof.readonly')}
                 </span>
               )}
               {flags?.permissionlessExtension && (
-                <span className="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-semibold text-foreground/80" data-flag="extend" title="Any wallet can extend this alert's lifetime while the batch may still be on shelves">
-                  <KeepAlive className="size-3" aria-hidden="true" /> Anyone can keep alive
+                <span className="inline-flex h-6 items-center gap-1 rounded-full border px-2 font-semibold text-foreground/80" data-flag="extend" title={t('proof.keepAliveTitle')}>
+                  <KeepAlive className="size-3" aria-hidden="true" /> {t('proof.keepAlive')}
                 </span>
               )}
               {alert.publishedAt && !Number.isNaN(Date.parse(alert.publishedAt)) && (
-                <span>Published {new Date(alert.publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <span>{t('proof.published', { date: formatDay(locale, new Date(alert.publishedAt)) })}</span>
               )}
               {alert.expiresAtBlock && <ExpiryLine block={alert.expiresAtBlock} />}
             </div>
           )}
           {alert.explorer.tx ? (
             <a href={alert.explorer.tx} target="_blank" rel="noreferrer noopener" className={cn(buttonVariants({ variant: 'outline' }), 'h-11 w-full px-3 text-primary sm:w-auto sm:justify-self-start')} data-tx-link>
-              View transaction on Arkiv explorer <ExternalLink data-icon="inline-end" />
+              {t('proof.viewTx')} <ExternalLink data-icon="inline-end" />
             </a>
           ) : (
             entityHref && (
               <a href={entityHref} target="_blank" rel="noreferrer noopener" className={cn(buttonVariants({ variant: 'outline' }), 'h-11 w-full px-3 text-primary sm:w-auto sm:justify-self-start')} data-entity-link>
-                View this alert on Arkiv explorer <ExternalLink data-icon="inline-end" />
+                {t('proof.viewEntity')} <ExternalLink data-icon="inline-end" />
               </a>
             )
           )}
@@ -263,12 +268,12 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
       ) : (
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
           {alert.demo
-            ? 'Built-in demo record, shown because the Nazar API and Arkiv could not answer. There is nothing on Arkiv to verify for it.'
+            ? t('proof.note.demo')
             : alert.fromSnapshot && alert.savedCopyFinal
-              ? "The Nazar API and Arkiv could not answer just now, so this came from Nazar's saved copy of every published alert. The regulator document above is the source; the Arkiv entity can be checked on the Arkiv page once Arkiv answers again."
+              ? t('proof.note.savedFinal')
               : alert.fromSnapshot
-              ? 'Answered instantly from the copy of the alert list saved on this device. The entity key, signer and transaction load from Arkiv with the live check; if you are offline, the regulator document above is the source.'
-              : 'Nazar has read this alert but has not published it on Arkiv yet. The regulator document above is the source.'}
+              ? t('proof.note.instant')
+              : t('proof.note.unpublished')}
         </p>
       )}
     </div>

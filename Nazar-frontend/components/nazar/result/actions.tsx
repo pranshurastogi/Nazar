@@ -9,6 +9,7 @@ import { CabinetFormDialog } from '@/components/nazar/cabinet-form'
 import { findByBatch, useCabinet } from '@/lib/cabinet'
 import { validateBatch, type Alert, type CheckResult } from '@/lib/source'
 import { shareMessage, shareSummary, shareUrl, whatsappHref } from '@/lib/share'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { copy, SourceTag, TONE } from './shared'
 
@@ -22,14 +23,15 @@ const ICON_ACTION = cn(SEGMENT, 'w-11 px-0 sm:w-auto sm:px-3.5')
  * "In cabinet" on a laptop and "Saved" on a phone.
  */
 function SaveAction({ result }: { result: CheckResult }) {
+  const { t } = useT()
   const items = useCabinet()
   const [open, setOpen] = useState(false)
   if (result.state === 'unreadable' || !validateBatch(result.batch).ok) return null
   const saved = findByBatch(items, result.batch)
   if (saved) {
     return (
-      <Link href="/cabinet" className={cn(buttonVariants({ variant: 'ghost' }), SEGMENT)} aria-label={`In your cabinet as ${saved.name}. Open cabinet`} data-in-cabinet>
-        <BookmarkCheck className="text-primary" /> In cabinet
+      <Link href="/cabinet" className={cn(buttonVariants({ variant: 'ghost' }), SEGMENT)} aria-label={t('result.inCabinetAria', { name: saved.name })} data-in-cabinet>
+        <BookmarkCheck className="text-primary" /> {t('result.inCabinet')}
       </Link>
     )
   }
@@ -37,7 +39,7 @@ function SaveAction({ result }: { result: CheckResult }) {
   return (
     <>
       <Button variant="ghost" className={SEGMENT} onClick={() => setOpen(true)} data-save-cabinet>
-        <BookmarkPlus /> Save to cabinet
+        <BookmarkPlus /> {t('result.save')}
       </Button>
       <CabinetFormDialog open={open} onOpenChange={setOpen} initial={{ batch: result.batch, name: alert?.brand ?? '' }} />
     </>
@@ -51,17 +53,18 @@ function SaveAction({ result }: { result: CheckResult }) {
  * buttons so the bar stays on one line at 360 px.
  */
 export function ShareSave({ result, saveable }: { result: CheckResult; saveable: boolean }) {
+  const { t } = useT()
   const [canShare, setCanShare] = useState(false)
   useEffect(() => setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function'), [])
   // A can't-tell answer is not worth forwarding, and cannot be saved either.
   if (result.state === 'unreadable') return null
 
   const url = shareUrl(result.batch)
-  const copyLink = () => copy(url, 'Link')
+  const copyLink = () => copy(url, t('copy.link'))
   const share = async () => {
     try {
       // The link goes in `url`, not in the text, so share targets do not show it twice.
-      await navigator.share({ title: `Batch ${result.batch} · ${TONE[result.state].label} · Nazar`, text: shareSummary(result), url })
+      await navigator.share({ title: `${t('result.batch')} ${result.batch} · ${t(`state.${result.state}`)} · Nazar`, text: shareSummary(result), url })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       await copyLink()
@@ -71,18 +74,18 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
   return (
     <div
       role="group"
-      aria-label="Save and share"
+      aria-label={t('result.saveAndShare')}
       className="mx-5 mb-5 flex w-fit max-w-[calc(100%-2.5rem)] items-stretch divide-x rounded-xl border bg-card shadow-xs sm:mx-6 sm:max-w-[calc(100%-3rem)]"
       data-share-actions
     >
       {saveable && <SaveAction result={result} />}
       {canShare ? (
-        <Button variant="ghost" className={ICON_ACTION} onClick={share} aria-label="Share" title="Share" data-share>
-          <Share2 /> <span className="hidden sm:inline">Share</span>
+        <Button variant="ghost" className={ICON_ACTION} onClick={share} aria-label={t('result.share')} title={t('result.share')} data-share>
+          <Share2 /> <span className="hidden sm:inline">{t('result.share')}</span>
         </Button>
       ) : (
-        <Button variant="ghost" className={ICON_ACTION} onClick={copyLink} aria-label="Copy link" title="Copy link" data-copy-link>
-          <Link2 /> <span className="hidden sm:inline">Copy link</span>
+        <Button variant="ghost" className={ICON_ACTION} onClick={copyLink} aria-label={t('result.copyLink')} title={t('result.copyLink')} data-copy-link>
+          <Link2 /> <span className="hidden sm:inline">{t('result.copyLink')}</span>
         </Button>
       )}
       <a
@@ -90,11 +93,11 @@ export function ShareSave({ result, saveable }: { result: CheckResult; saveable:
         target="_blank"
         rel="noreferrer noopener"
         className={cn(buttonVariants({ variant: 'ghost' }), ICON_ACTION)}
-        aria-label="Share on WhatsApp"
-        title="Share on WhatsApp"
+        aria-label={t('result.whatsappAria')}
+        title={t('result.whatsappAria')}
         data-whatsapp
       >
-        <MessageCircle /> <span className="hidden sm:inline">WhatsApp</span>
+        <MessageCircle /> <span className="hidden sm:inline">{t('result.whatsapp')}</span>
       </a>
     </div>
   )
@@ -110,6 +113,7 @@ export function ResultActions({
   alert?: Alert
   onProof: (a: Alert) => void
 }) {
+  const { t, locale } = useT()
   const tone = TONE[result.state]
 
   return (
@@ -119,7 +123,7 @@ export function ResultActions({
       <SourceTag source={result.source} className="items-start py-1 leading-4 [&>span:first-child]:mt-[5px]" />
       {alert ? (
         <Button variant="ghost" className={cn('-mr-2.5 h-11 px-2.5 font-semibold sm:row-span-2', tone.text)} onClick={() => onProof(alert)}>
-          How do we know? <ChevronRight data-icon="inline-end" />
+          {t('result.howDoWeKnow')} <ChevronRight data-icon="inline-end" />
         </Button>
       ) : (
         <span className="h-11" aria-hidden="true" />
@@ -127,6 +131,12 @@ export function ResultActions({
       {alert && (
         <p className="col-span-2 -mt-1.5 pb-1.5 text-xs text-muted-foreground sm:col-span-1 sm:row-start-2 sm:mt-0 sm:pb-1">
           {alert.authority}, {alert.noticeDate}
+        </p>
+      )}
+      {/* Hindi mode: the notice's own words (product, reason, title) are the regulator's, kept in English. */}
+      {alert && locale !== 'en' && (
+        <p className="col-span-2 -mt-1 pb-2 text-xs leading-5 text-muted-foreground" data-published-as-is>
+          {t('note.publishedAsIs')}
         </p>
       )}
     </div>

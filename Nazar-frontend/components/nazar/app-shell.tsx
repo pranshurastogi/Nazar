@@ -28,6 +28,7 @@ import { Onboarding, ONBOARDED_KEY } from '@/components/nazar/onboarding'
 import { StatusPill } from '@/components/nazar/status-pill'
 import { PerfRuntime } from '@/components/nazar/perf/runtime'
 import { useCabinetFlagged, useUnseenAlerts } from '@/lib/badges'
+import { useT, type MessageKey } from '@/lib/i18n'
 import { prefetchFor } from '@/lib/source/prefetch'
 import { loadPipelineStatus, type PipelineStatus } from '@/lib/source'
 import { cn } from '@/lib/utils'
@@ -47,14 +48,14 @@ type NavEntry = {
   key: string
   href: string
   icon: Icon
-  label: string
+  label: MessageKey
   /** One short line under the label in the desktop rail. */
-  hint: string
+  hint: MessageKey
   /** The mobile bar: its label and icon when they differ, or false to keep the entry off the bar. */
-  bar?: { label?: string; icon?: Icon; aria?: string } | false
+  bar?: { label?: MessageKey; icon?: Icon; aria?: MessageKey } | false
 }
 
-type NavSection = { id: string; title: string; items: NavEntry[] }
+type NavSection = { id: string; title: MessageKey; items: NavEntry[] }
 
 /** A count on a nav item: unseen alerts (quiet, primary) or flagged cabinet medicines (red). */
 type Badge = { count: number; tone: 'new' | 'flagged'; label: string }
@@ -86,39 +87,39 @@ function BadgeDot({ badge, className }: { badge: Badge; className?: string }) {
 const SECTIONS: NavSection[] = [
   {
     id: 'lookup',
-    title: 'Look up',
+    title: 'nav.section.lookup',
     items: [
-      { key: 'check', href: '/', icon: MagnifyingGlass, label: 'Check', hint: 'Look up a batch number' },
-      { key: 'alerts', href: '/feed', icon: BellSimple, label: 'Alerts', hint: 'Every regulator alert' },
+      { key: 'check', href: '/', icon: MagnifyingGlass, label: 'nav.check', hint: 'nav.check.hint' },
+      { key: 'alerts', href: '/feed', icon: BellSimple, label: 'nav.alerts', hint: 'nav.alerts.hint' },
       // Desktop only: the phone bar keeps five tabs; on a phone Check and More link to it.
-      { key: 'sweep', href: '/sweep', icon: ListChecks, label: 'Shelf sweep', hint: 'Check many batches at once', bar: false },
+      { key: 'sweep', href: '/sweep', icon: ListChecks, label: 'nav.sweep', hint: 'nav.sweep.hint', bar: false },
     ],
   },
   {
     id: 'yours',
-    title: 'Yours',
-    items: [{ key: 'cabinet', href: '/cabinet', icon: Pill, label: 'My cabinet', hint: 'Medicines you keep', bar: { label: 'Cabinet', aria: 'My cabinet' } }],
+    title: 'nav.section.yours',
+    items: [{ key: 'cabinet', href: '/cabinet', icon: Pill, label: 'nav.cabinet', hint: 'nav.cabinet.hint', bar: { label: 'nav.cabinet.bar', aria: 'nav.cabinet' } }],
   },
   {
     id: 'verify',
-    title: 'Verify',
+    title: 'nav.section.verify',
     items: [
-      { key: 'onchain', href: '/arkiv', icon: Cube, label: 'On-chain', hint: 'Every alert on Arkiv', bar: false },
-      { key: 'ai', href: '/ai', icon: Robot, label: 'AI assistant', hint: 'Ask Nazar in your AI chat', bar: { label: 'AI', aria: 'AI assistant' } },
+      { key: 'onchain', href: '/arkiv', icon: Cube, label: 'nav.onchain', hint: 'nav.onchain.hint', bar: false },
+      { key: 'ai', href: '/ai', icon: Robot, label: 'nav.ai', hint: 'nav.ai.hint', bar: { label: 'nav.ai.bar', aria: 'nav.ai' } },
     ],
   },
   {
     id: 'learn',
-    title: 'Learn',
+    title: 'nav.section.learn',
     items: [
       {
         key: 'learn',
         href: '/more',
         icon: BookOpenText,
-        label: 'How it works',
-        hint: 'Sources, proof, privacy',
+        label: 'nav.learn',
+        hint: 'nav.learn.hint',
         // On a phone this tab also holds On-chain, settings and About, so it reads "More" there.
-        bar: { label: 'More', icon: DotsThreeCircle, aria: 'More: how it works, on-chain, settings' },
+        bar: { label: 'nav.learn.bar', icon: DotsThreeCircle, aria: 'nav.learn.barAria' },
       },
     ],
   },
@@ -126,14 +127,14 @@ const SECTIONS: NavSection[] = [
 
 const BAR = SECTIONS.flatMap((s) => s.items).filter((n) => n.bar !== false)
 
-const TITLES: Record<string, string> = {
-  '/': 'Check a medicine batch',
-  '/feed': 'Regulator alerts',
-  '/sweep': 'Shelf sweep',
-  '/cabinet': 'My medicine cabinet',
-  '/more': 'How Nazar works',
-  '/arkiv': 'On-chain directory · Arkiv',
-  '/ai': 'Nazar for AI assistants',
+const TITLES: Record<string, MessageKey> = {
+  '/': 'title./',
+  '/feed': 'title./feed',
+  '/sweep': 'title./sweep',
+  '/cabinet': 'title./cabinet',
+  '/more': 'title./more',
+  '/arkiv': 'title./arkiv',
+  '/ai': 'title./ai',
 }
 
 /** A tab is current on its own path and below it (/more#proof, /cabinet/…). */
@@ -171,7 +172,10 @@ const prefetchHandlers = (href: string) => ({
 })
 
 function RailItem({ entry, active, badge }: { entry: NavEntry; active: boolean; badge?: Badge | null }) {
-  const { key, href, icon: Icon, label, hint } = entry
+  const { t } = useT()
+  const { key, href, icon: Icon } = entry
+  const label = t(entry.label)
+  const hint = t(entry.hint)
   return (
     <Link
       href={href}
@@ -219,15 +223,17 @@ function RailItem({ entry, active, badge }: { entry: NavEntry; active: boolean; 
 }
 
 function BarItem({ entry, active, badge }: { entry: NavEntry; active: boolean; badge?: Badge | null }) {
+  const { t } = useT()
   const { key, href } = entry
   const bar = entry.bar || {}
   const Icon = bar.icon ?? entry.icon
-  const label = bar.label ?? entry.label
+  const label = t(bar.label ?? entry.label)
+  const aria = bar.aria ? t(bar.aria) : undefined
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      aria-label={badge ? `${bar.aria ?? label}, ${badge.label}` : bar.aria}
+      aria-label={badge ? `${aria ?? label}, ${badge.label}` : aria}
       data-nav={key}
       data-label={label}
       className={cn(
@@ -250,12 +256,42 @@ function BarItem({ entry, active, badge }: { entry: NavEntry; active: boolean; b
         {/* Sits on the icon's corner, inside the tab, so the 56px target and the label are untouched. */}
         {badge && <BadgeDot badge={badge} className="absolute -top-1 right-1.5 ring-2 ring-card" />}
       </span>
-      <span className="max-w-full truncate px-0.5">{label}</span>
+      <span className="max-w-full truncate px-0.5 hi:py-0.5 hi:text-xs hi:leading-[1.35]">{label}</span>
     </Link>
   )
 }
 
+/**
+ * "EN | हिं": one 44px button that switches the language for the whole app (saved on the device).
+ * The active side is bold; screen readers hear the name and, as its description, the current language.
+ */
+function LanguageToggle() {
+  const { locale, setLocale, t } = useT()
+  const hi = locale === 'hi'
+  return (
+    <Button
+      variant="ghost"
+      className="h-11 min-w-11 gap-1 rounded-full px-2 text-[13px] font-medium min-[380px]:px-2.5 text-muted-foreground hover:text-foreground dark:hover:bg-muted"
+      onClick={() => setLocale(hi ? 'en' : 'hi')}
+      aria-label={t('lang.aria')}
+      aria-describedby="lang-current"
+      data-lang-toggle={locale}
+    >
+      {/* From 380px: both, the active one bold. Narrower phones keep the status pill readable by
+          showing only the language a tap switches to. */}
+      <span className="hidden items-center gap-1 min-[380px]:inline-flex">
+        <span lang="en" className={cn(!hi && 'font-bold text-foreground')}>EN</span>
+        <span aria-hidden="true" className="text-border">|</span>
+        <span lang="hi" className={cn(hi && 'font-bold text-foreground')}>हिं</span>
+      </span>
+      <span lang={hi ? 'en' : 'hi'} className="font-semibold text-foreground min-[380px]:hidden">{hi ? 'EN' : 'हिं'}</span>
+      <span id="lang-current" hidden>{t('lang.current')}</span>
+    </Button>
+  )
+}
+
 function ThemeToggle() {
+  const { t } = useT()
   const { resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -266,7 +302,7 @@ function ThemeToggle() {
       variant="ghost"
       className="size-11 rounded-full p-0 text-muted-foreground hover:text-foreground dark:hover:bg-muted"
       onClick={() => setTheme(dark ? 'light' : 'dark')}
-      aria-label="Toggle dark mode"
+      aria-label={t('shell.darkMode')}
     >
       <Glyph className="size-5" aria-hidden="true" />
     </Button>
@@ -274,6 +310,7 @@ function ThemeToggle() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t, tp, tr, intl } = useT()
   const pathname = usePathname()
   const router = useRouter()
   const [status, setStatus] = useState<PipelineStatus>({ kind: 'checking' })
@@ -283,11 +320,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pending = useRef<string | null>(null)
 
   useEffect(() => {
-    setToday(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))
     try {
       if (!localStorage.getItem(ONBOARDED_KEY)) setGuideOpen(true)
     } catch {}
   }, [])
+
+  useEffect(() => {
+    setToday(new Date().toLocaleDateString(intl, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))
+  }, [intl])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -333,15 +373,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [requestCheck],
   )
 
-  const title = TITLES[pathname] ?? 'Nazar'
+  const title = TITLES[pathname] ? t(TITLES[pathname]) : 'Nazar'
 
   // Nav badges, read on the device. The Alerts count clears on the Alerts page itself, which
   // records what is on screen as seen.
   const unseen = useUnseenAlerts()
   const flagged = useCabinetFlagged()
   const badges: Record<string, Badge | null> = {
-    alerts: unseen > 0 && !isActive('/feed', pathname) ? { count: unseen, tone: 'new', label: `${unseen} new ${unseen === 1 ? 'alert' : 'alerts'}` } : null,
-    cabinet: flagged > 0 ? { count: flagged, tone: 'flagged', label: `${flagged} ${flagged === 1 ? 'medicine' : 'medicines'} flagged` } : null,
+    alerts: unseen > 0 && !isActive('/feed', pathname) ? { count: unseen, tone: 'new', label: tp('badge.newAlerts', unseen) } : null,
+    cabinet: flagged > 0 ? { count: flagged, tone: 'flagged', label: tp('badge.flagged', flagged) } : null,
   }
 
   return (
@@ -355,18 +395,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
           data-skip-link
         >
-          Skip to content
+          {t('shell.skip')}
         </a>
         <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col overflow-y-auto border-r bg-background px-4 py-6 [scrollbar-width:none] lg:flex dark:bg-[color-mix(in_oklab,var(--background),var(--card)_35%)]">
-          <Link href="/" aria-label="Nazar home" className={cn('inline-flex min-h-11 items-center self-start rounded-lg px-2', focusRing)}>
+          <Link href="/" aria-label={t('nav.home')} className={cn('inline-flex min-h-11 items-center self-start rounded-lg px-2', focusRing)}>
             <Logo />
           </Link>
           <MotionConfig reducedMotion="user">
-            <nav className="mt-8 flex flex-col gap-5 [@media(max-height:759px)]:mt-5 [@media(max-height:759px)]:gap-3" aria-label="Main navigation">
+            <nav className="mt-8 flex flex-col gap-5 [@media(max-height:759px)]:mt-5 [@media(max-height:759px)]:gap-3" aria-label={t('nav.main')}>
               {SECTIONS.map((section) => (
                 <div key={section.id} className="flex flex-col gap-1">
                   <p id={`nav-${section.id}`} className="px-3 pb-1 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground/75 uppercase">
-                    {section.title}
+                    {t(section.title)}
                   </p>
                   <ul className="flex flex-col gap-0.5" aria-labelledby={`nav-${section.id}`}>
                     {section.items.map((n) => (
@@ -385,17 +425,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary dark:bg-primary/15">
                   <LockSimple weight="duotone" className="size-[18px]" aria-hidden="true" />
                 </span>
-                Private by design
+                {t('shell.private')}
               </p>
               {/* Short screens keep the headline only, so the rail never has to scroll. */}
-              <p className="mt-2.5 text-xs leading-5 text-muted-foreground [@media(max-height:859px)]:sr-only">Your checks and cabinet stay on this device.</p>
+              <p className="mt-2.5 text-xs leading-5 text-muted-foreground [@media(max-height:859px)]:sr-only">{t('shell.privateHint')}</p>
             </div>
             <div className="mt-4 px-1" data-author>
               <p className="text-xs text-muted-foreground">
-                Built by{' '}
-                <a href={AUTHOR.site} target="_blank" rel="noreferrer noopener me" className="font-medium text-foreground underline-offset-2 hover:underline">
-                  {AUTHOR.name}
-                </a>
+                {tr('shell.builtBy', {
+                  name: (
+                    <a href={AUTHOR.site} target="_blank" rel="noreferrer noopener me" className="font-medium text-foreground underline-offset-2 hover:underline">
+                      {AUTHOR.name}
+                    </a>
+                  ),
+                })}
               </p>
               <SocialIcons only={['X', 'GitHub', 'LinkedIn']} className="-ml-3 mt-0.5" />
             </div>
@@ -404,7 +447,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="mx-auto max-w-6xl px-4 pb-32 sm:px-6 lg:pb-12 lg:pl-[18.5rem] lg:pr-10">
           <header className="flex min-h-11 items-center justify-between gap-2 py-4 sm:gap-3 lg:py-7">
-            <Link href="/" aria-label="Nazar home" className={cn('-ml-1 inline-flex min-h-11 shrink-0 items-center rounded-lg px-1 lg:hidden', focusRing)}>
+            <Link href="/" aria-label={t('nav.home')} className={cn('-ml-1 inline-flex min-h-11 shrink-0 items-center rounded-lg px-1 lg:hidden', focusRing)}>
               <Logo />
             </Link>
             {/* A quiet location line, not a heading: each page's own hero headline is its h1. */}
@@ -422,8 +465,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={() => setGuideOpen(true)}
                 >
                   <Question className="size-5" aria-hidden="true" />
-                  <span className="sr-only sm:not-sr-only">Guide</span>
+                  <span className="sr-only sm:not-sr-only">{t('shell.guide')}</span>
                 </Button>
+                <span className="h-5 w-px bg-border" aria-hidden="true" />
+                <LanguageToggle />
                 <span className="h-5 w-px bg-border" aria-hidden="true" />
                 <ThemeToggle />
               </div>
@@ -435,20 +480,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </main>
 
           <footer className="mt-12 flex flex-col gap-1 border-t pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <p>Nazar reports what regulators publish. It never certifies a medicine as safe.</p>
+            <p>{t('shell.footer')}</p>
             <div className="flex flex-wrap items-center gap-x-3">
               <Link
                 href="/ai"
                 className={cn('-mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 font-medium text-primary underline-offset-2 hover:underline', focusRing)}
                 data-mcp-link
               >
-                <Robot weight="duotone" className="size-4" aria-hidden="true" /> Use in your AI assistant
+                <Robot weight="duotone" className="size-4" aria-hidden="true" /> {t('shell.useInAi')}
               </Link>
               <p>
-                © {new Date().getFullYear()} Nazar · Built by{' '}
-                <a href={AUTHOR.site} target="_blank" rel="noreferrer noopener me" className="font-medium text-foreground underline-offset-2 hover:underline">
-                  {AUTHOR.name}
-                </a>
+                {tr('shell.copyright', {
+                  year: new Date().getFullYear(),
+                  name: (
+                    <a href={AUTHOR.site} target="_blank" rel="noreferrer noopener me" className="font-medium text-foreground underline-offset-2 hover:underline">
+                      {AUTHOR.name}
+                    </a>
+                  ),
+                })}
               </p>
               <SocialIcons only={['X', 'GitHub', 'LinkedIn']} className="lg:hidden" />
             </div>
@@ -457,7 +506,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <MotionConfig reducedMotion="user">
           <nav
-            aria-label="Mobile navigation"
+            aria-label={t('nav.mobile')}
             className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-10 mx-auto flex max-w-md gap-0.5 rounded-[1.375rem] border border-border/70 bg-card/80 p-1 shadow-[0_8px_30px_-12px_rgb(15_23_42/0.25)] backdrop-blur-xl backdrop-saturate-150 lg:hidden dark:border-white/[0.08] dark:bg-card/75 dark:shadow-[0_10px_34px_-10px_rgb(0_0_0/0.7)]"
           >
             {BAR.map((n) => (

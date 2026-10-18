@@ -4,6 +4,7 @@ import { Fragment, useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Search, X } from 'lucide-react'
 
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The Alerts page's search: a box at the top of the list, the words it matched highlighted in
@@ -76,10 +77,11 @@ export const mentions = (text: string | null | undefined, terms: string[]) => {
 }
 
 export function FeedSearchBox({ value, onChange, busy }: { value: string; onChange: (v: string) => void; busy: boolean }) {
+  const { t } = useT()
   return (
-    <section role="search" aria-label="Search alerts" className="mt-7">
+    <section role="search" aria-label={t('feed.searchAria')} className="mt-7">
       <label htmlFor="feed-q" className="mb-1.5 block px-1 text-xs font-semibold text-muted-foreground">
-        Search by medicine or maker
+        {t('feed.searchLabel')}
       </label>
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-4 size-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -89,7 +91,7 @@ export function FeedSearchBox({ value, onChange, busy }: { value: string; onChan
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === 'Escape' && value && (e.preventDefault(), onChange(''))}
-          placeholder="Coldrif, Dolo, Sresan…"
+          placeholder={t('feed.searchPlaceholder')}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -107,7 +109,7 @@ export function FeedSearchBox({ value, onChange, busy }: { value: string; onChan
           <button
             type="button"
             onClick={() => onChange('')}
-            aria-label="Clear search"
+            aria-label={t('feed.searchClear')}
             data-feed-search-clear
             className="absolute top-1/2 right-1.5 grid size-11 -translate-y-1/2 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           >
@@ -116,7 +118,7 @@ export function FeedSearchBox({ value, onChange, busy }: { value: string; onChan
         )}
       </div>
       <p id="feed-q-hint" className="mt-1.5 px-1 text-xs leading-5 text-muted-foreground">
-        Brand, product, generic name or manufacturer. Have the pack? The batch number gives an exact answer.
+        {t('feed.searchHint')}
       </p>
     </section>
   )
@@ -124,6 +126,7 @@ export function FeedSearchBox({ value, onChange, busy }: { value: string; onChan
 
 /** "Check this batch": shown when the query looks like a batch number. */
 export function CheckBatchOffer({ batch, className }: { batch: string; className?: string }) {
+  const { t } = useT()
   return (
     <Link
       href={`/?batch=${encodeURIComponent(batch)}`}
@@ -134,9 +137,9 @@ export function CheckBatchOffer({ batch, className }: { batch: string; className
       )}
     >
       <span className="min-w-0">
-        <span className="text-muted-foreground">Looks like a batch number. </span>
+        <span className="text-muted-foreground">{t('feed.looksLikeBatch')}</span>
         <span className="font-semibold text-primary">
-          Check this batch: <span className="font-mono">{batch}</span>
+          {t('feed.checkThisBatch')}<span className="font-mono">{batch}</span>
         </span>
       </span>
       <ArrowRight className="size-4 shrink-0 text-primary transition-transform group-hover:translate-x-0.5" aria-hidden="true" />

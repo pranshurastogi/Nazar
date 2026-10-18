@@ -3,14 +3,53 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
-import { CircleHelp, Laptop, Moon, Sun, Trash2 } from 'lucide-react'
+import { CircleHelp, Languages, Laptop, Moon, Sun, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { useShell } from '@/components/nazar/app-shell'
 import { clearCabinet, clearRecent, RECENT_KEY, useCabinet, useHydrated } from '@/lib/cabinet'
+import { useT, type Locale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { panel, Section } from './shared'
+
+/** English or Hindi for the whole app, saved on this device. Labels are in both scripts so either reader finds it. */
+function LanguageSetting({ row }: { row: string }) {
+  const { t, locale, setLocale } = useT()
+  const hydrated = useHydrated()
+  const options: { value: Locale; label: string; lang: string }[] = [
+    { value: 'en', label: t('lang.optionEn'), lang: 'en' },
+    { value: 'hi', label: t('lang.optionHi'), lang: 'hi' },
+  ]
+  return (
+    <div className={row} data-language-setting>
+      <div>
+        <p className="text-sm font-semibold" id="language-label">
+          {t('lang.settingTitle')} <span className="font-normal text-muted-foreground">· {locale === 'hi' ? 'Language' : 'भाषा'}</span>
+        </p>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">{t('lang.settingHint')}</p>
+      </div>
+      <div role="radiogroup" aria-labelledby="language-label" className="grid h-12 grid-cols-2 overflow-hidden rounded-xl border bg-background sm:w-80">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            role="radio"
+            lang={o.lang}
+            aria-checked={hydrated ? locale === o.value : false}
+            data-lang-option={o.value}
+            onClick={() => setLocale(o.value)}
+            className={cn(
+              'flex h-full items-center justify-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
+              hydrated && locale === o.value && 'bg-primary/10 text-primary hover:text-primary',
+            )}
+          >
+            <Languages className="size-4" aria-hidden="true" /> {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function Settings() {
   const { theme, setTheme } = useTheme()
@@ -62,6 +101,8 @@ export function Settings() {
             ))}
           </div>
         </div>
+
+        <LanguageSetting row={row} />
 
         <div className={row}>
           <div>

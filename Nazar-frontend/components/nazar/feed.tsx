@@ -13,7 +13,6 @@ import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
 import {
   checkBatch,
-  formatYm,
   loadFeed,
   SOURCE_NAME,
   STATE_NAME,
@@ -32,6 +31,7 @@ import type { SnapshotIndex } from '@/lib/source/snapshot'
 import { alertEntries, alertKey, endVisit, isNew, markSeen, snapshotEntries, visitBaseline, type SeenState } from '@/lib/seen'
 import { peek, revalidate } from '@/lib/source/swr'
 import { serif } from '@/lib/fonts'
+import { formatYmLocale, useT, type Locale, type MessageKey, type PluralKey, type Vars } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // The Feed tab: every alert Nazar holds, newest first, from whichever source answers
@@ -89,19 +89,19 @@ const isDefault = (f: Filters) => !f.serious && !f.peds && !f.state && !f.source
 const keeps = (a: Alert, f: Filters) =>
   !a.retraction && (!f.serious || a.severity >= 4) && (!f.peds || a.peds) && (!f.state || a.state === f.state) && (!f.source || a.sourceId === f.source)
 
-/** Short names of the filters in use, for the search and RSS notes. */
-const filterNames = (f: Filters) =>
-  [f.serious && 'Serious 4–5', f.peds && 'Child Shield only', f.state && `Made in ${STATE_NAME[f.state] ?? f.state}`, f.source && (SOURCE_NAME[f.source] ?? f.source)].filter(
+type T = (key: MessageKey, vars?: Vars) => string
+
+/** Short names of the filters in use, for the search and RSS notes. State and source names are the regulator's. */
+const filterNames = (f: Filters, t: T) =>
+  [f.serious && t('feed.serious'), f.peds && t('feed.childOnly'), f.state && t('feed.madeInState', { state: STATE_NAME[f.state] ?? f.state }), f.source && (SOURCE_NAME[f.source] ?? f.source)].filter(
     (x): x is string => !!x,
   )
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-IN')} ${n === 1 ? one : many}`
-
 /** Consecutive alerts from the same month share a heading. */
-function groupByMonth(items: Alert[]) {
+function groupByMonth(items: Alert[], locale: Locale, t: T) {
   const groups: { key: string; label: string; items: Alert[] }[] = []
   for (const a of items) {
-    const label = formatYm(a.alertYm) ?? 'Date not listed'
+    const label = formatYmLocale(locale, a.alertYm) ?? t('feed.dateNotListed')
     const last = groups[groups.length - 1]
     if (last && last.label === label) last.items.push(a)
     else groups.push({ key: `${label}-${groups.length}`, label, items: [a] })
@@ -148,6 +148,7 @@ function SelectField({
 }
 
 function SeverityTile({ value }: { value: number }) {
+  const { t } = useT()
   const serious = value >= 4
   return (
     <span
@@ -157,13 +158,14 @@ function SeverityTile({ value }: { value: number }) {
       )}
     >
       <span className="font-mono text-base leading-none font-semibold" aria-hidden="true">{value}</span>
-      <span className="text-[9px] leading-none font-bold tracking-wider uppercase" aria-hidden="true">sev</span>
-      <span className="sr-only">Severity {value} of 5</span>
+      <span className="text-[9px] leading-none font-bold tracking-wider uppercase hi:text-[10px] hi:leading-[1.2]" aria-hidden="true">{t('feed.sev')}</span>
+      <span className="sr-only">{t('result.severityOf', { n: value })}</span>
     </span>
   )
 }
 
 function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: Alert; open: boolean; onToggle: () => void; terms?: string[]; fresh?: boolean }) {
+  const { t } = useT()
   const made = stateName(alert.state)
   // While searching, say where a match came from when it is not the name or batch on show.
   const maker = terms.length && mentions(alert.manufacturer, terms) ? alert.manufacturer : null
@@ -190,15 +192,15 @@ function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: 
               <span
                 data-live-arkiv
                 role="img"
-                aria-label="Live on Arkiv"
-                title="Live on Arkiv"
+                aria-label={t('feed.liveOnArkiv')}
+                title={t('feed.liveOnArkiv')}
                 className="ml-1.5 inline-block size-2 rounded-full bg-primary align-middle ring-2 ring-primary/20"
               />
             )}
           </span>
           {alert.peds && (
             <span className="mt-px inline-flex shrink-0 items-center gap-1 rounded-full border border-flagged-border px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-flagged uppercase">
-              <Baby className="size-3" aria-hidden="true" /> Child
+              <Baby className="size-3" aria-hidden="true" /> {t('feed.child')}
             </span>
           )}
           {fresh && (
@@ -206,7 +208,7 @@ function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: 
               data-new-pill
               className="mt-px inline-flex shrink-0 items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary uppercase ring-1 ring-primary/25 ring-inset dark:bg-primary/15"
             >
-              New
+              {t('feed.new')}
             </span>
           )}
         </span>
@@ -220,14 +222,14 @@ function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: 
           <span className="mt-0.5 block truncate text-xs text-muted-foreground" data-row-match>
             {maker && (
               <>
-                <span className="font-medium text-foreground/70">Maker </span>
+                <span className="font-medium text-foreground/70">{t('feed.maker')}</span>
                 <Highlight text={maker} terms={terms} />
               </>
             )}
             {maker && generic && ' · '}
             {generic && (
               <>
-                <span className="font-medium text-foreground/70">Contains </span>
+                <span className="font-medium text-foreground/70">{t('feed.contains')}</span>
                 <Highlight text={generic} terms={terms} />
               </>
             )}
@@ -238,7 +240,7 @@ function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: 
           <span className="hidden sm:inline"> · </span>
           <span className="block sm:inline">
             {alert.noticeDate}
-            {made ? ` · Made in ${made}` : ''}
+            {made ? t('feed.rowMadeIn', { state: made }) : ''}
           </span>
         </span>
       </span>
@@ -252,6 +254,7 @@ function FeedRow({ alert, open, onToggle, terms = [], fresh = false }: { alert: 
 
 /** The expanded view of one feed alert: a result card, upgraded with every notice for the batch when a check finds them. */
 function FeedDetail({ alert, source }: { alert: Alert; source: FeedPage['source'] }) {
+  const { t } = useT()
   const shell = useShell()
   const ref = useRef<HTMLDivElement>(null)
   const [result, setResult] = useState<CheckResult>(() => ({ state: 'flagged', batch: alert.batch, alert, alerts: [alert], asOf: new Date(), source }))
@@ -270,7 +273,7 @@ function FeedDetail({ alert, source }: { alert: Alert; source: FeedPage['source'
   }, [alert, source])
 
   return (
-    <div ref={ref} id={`alert-${alert.id}`} role="region" aria-label={`Alert details for batch ${alert.batch}`} className="scroll-mb-28 px-0.5 pt-1 pb-3">
+    <div ref={ref} id={`alert-${alert.id}`} role="region" aria-label={t('feed.detailsAria', { batch: alert.batch })} className="scroll-mb-28 px-0.5 pt-1 pb-3">
       <ResultCard result={result} onCheck={shell.requestCheck} />
     </div>
   )
@@ -299,6 +302,8 @@ function useSeen() {
 }
 
 export function Feed() {
+  const { t, tp, tr, locale, intl } = useT()
+  const plural = (base: PluralKey, n: number) => tp(base, n)
   const [filters, setFilters] = useState<Filters | null>(null)
   const [items, setItems] = useState<Alert[]>([])
   const [page, setPage] = useState<FeedPage | null>(null)
@@ -396,7 +401,7 @@ export function Feed() {
       })
       setPage(next)
     } catch {
-      if (!ctrl?.signal.aborted) toast.error("Couldn't load more alerts. Please try again.")
+      if (!ctrl?.signal.aborted) toast.error(t('feed.loadMoreFailed'))
     } finally {
       if (!ctrl?.signal.aborted) setLoading(null)
     }
@@ -427,29 +432,29 @@ export function Feed() {
   const batch = searching ? batchLike(query) : null
   const shown = results ? results.items.filter((a) => keeps(a, f)) : []
   const hidden = results ? results.items.length - shown.length : 0
-  const following = filterNames(f)
+  const following = filterNames(f, t)
 
   const first = searching ? !results : loading === 'first'
   const source = searching ? results?.source : page?.source
   const rows = searching ? shown : items
   const saved = source === 'snapshot' ? currentSnapshot() : null
-  const savedAt = saved ? saved.generatedAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
+  const savedAt = saved ? saved.generatedAt.toLocaleString(intl, { day: 'numeric', month: locale === 'hi' ? 'long' : 'short', hour: 'numeric', minute: '2-digit' }) : null
   const total = page?.total ?? null
   const count = searching
     ? results && (
         <>
-          <span className="font-semibold">{plural(shown.length, 'alert')}</span>
+          <span className="font-semibold">{plural('feed.alerts', shown.length)}</span>
           <span className="text-muted-foreground">
-            {' '}
-            {shown.length === 1 ? 'names' : 'name'} “{shownQ}”{results.capped ? ' · top matches' : ''}
+            {tp('feed.searchRest', shown.length, { q: shownQ })}
+            {results.capped ? t('feed.topMatches') : ''}
           </span>
         </>
       )
     : !first &&
       page && (
         <>
-          <span className="font-semibold">{total !== null ? plural(total, 'alert') : `${plural(items.length, 'alert')}${page.more ? ' so far' : ''}`}</span>
-          <span className="text-muted-foreground"> · newest first</span>
+          <span className="font-semibold">{total !== null ? plural('feed.alerts', total) : `${plural('feed.alerts', items.length)}${page.more ? t('feed.soFar') : ''}`}</span>
+          <span className="text-muted-foreground">{t('feed.newestFirst')}</span>
         </>
       )
   const onChain = !first && rows.some((a) => a.entityKey)
@@ -457,13 +462,19 @@ export function Feed() {
   return (
     <div className="pt-4 md:pt-8">
       <section className="max-w-2xl">
-        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">Regulator alerts</p>
-        <h2 className="mt-3 text-[clamp(2rem,6vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.045em]">
-          Every alert, <span className={cn(serif.className, 'pr-1 text-[1.1em] font-normal tracking-normal text-primary')}>newest first.</span>
+        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase hi:text-xs">{t('feed.kicker')}</p>
+        <h2 className="mt-3 text-[clamp(2rem,6vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.045em] hi:text-[clamp(1.875rem,5.5vw,2.5rem)] hi:leading-[1.3]">
+          {t('feed.heroLead')}
+          <span className={cn(locale === 'hi' ? 'font-semibold' : [serif.className, 'pr-1 text-[1.1em] font-normal tracking-normal'], 'text-primary')}>{t('feed.heroAccent')}</span>
         </h2>
-        <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-          Batches named by CDSCO, state drug controllers and WHO, read from their own documents. Open any alert for the proof.
+        <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground hi:leading-8">
+          {t('feed.lede')}
         </p>
+        {locale !== 'en' && (
+          <p className="mt-2 text-xs leading-5 text-muted-foreground" data-published-as-is>
+            {t('note.publishedAsIs')}
+          </p>
+        )}
       </section>
 
       <FeedPulse state={f.state} serious={f.serious} peds={f.peds} source={f.source} onState={(state) => update({ state })} />
@@ -478,14 +489,14 @@ export function Feed() {
         busy={stale}
       />
 
-      <section aria-label="Filter alerts" className="mt-3 rounded-2xl border bg-card p-4 sm:p-5">
+      <section aria-label={t('feed.filterAria')} className="mt-3 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] md:items-end md:gap-4">
           <div>
-            <p className="mb-1.5 hidden text-xs font-semibold text-muted-foreground md:block" aria-hidden="true">Severity</p>
-            <div role="group" aria-label="Severity" className="grid h-12 grid-cols-2 overflow-hidden rounded-xl border bg-background">
+            <p className="mb-1.5 hidden text-xs font-semibold text-muted-foreground md:block" aria-hidden="true">{t('feed.severity')}</p>
+            <div role="group" aria-label={t('feed.severity')} className="grid h-12 grid-cols-2 overflow-hidden rounded-xl border bg-background">
               {[
-                { serious: false, label: 'All' },
-                { serious: true, label: 'Serious 4–5' },
+                { serious: false, label: t('feed.all') },
+                { serious: true, label: t('feed.serious') },
               ].map((o) => (
                 <button
                   key={o.label}
@@ -502,7 +513,7 @@ export function Feed() {
             </div>
           </div>
           <div>
-            <p className="mb-1.5 hidden text-xs font-semibold text-muted-foreground md:block" aria-hidden="true">Children</p>
+            <p className="mb-1.5 hidden text-xs font-semibold text-muted-foreground md:block" aria-hidden="true">{t('feed.children')}</p>
             <button
               aria-pressed={f.peds}
               onClick={() => update({ peds: !f.peds })}
@@ -511,12 +522,12 @@ export function Feed() {
                 f.peds && 'border-primary/50 bg-primary/10 text-primary hover:text-primary',
               )}
             >
-              <Baby className="size-4" aria-hidden="true" /> Child Shield only
+              <Baby className="size-4" aria-hidden="true" /> {t('feed.childOnly')}
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3 md:contents">
-            <SelectField id="feed-state" label="Made in" value={f.state} onChange={(v) => update({ state: v })} all="All states" options={STATES} />
-            <SelectField id="feed-source" label="Source" value={f.source} onChange={(v) => update({ source: v })} all="All sources" options={SOURCES} />
+            <SelectField id="feed-state" label={t('feed.madeIn')} value={f.state} onChange={(v) => update({ state: v })} all={t('feed.allStates')} options={STATES} />
+            <SelectField id="feed-source" label={t('feed.source')} value={f.source} onChange={(v) => update({ source: v })} all={t('feed.allSources')} options={SOURCES} />
           </div>
         </div>
       </section>
@@ -529,13 +540,13 @@ export function Feed() {
           {onChain && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" data-feed-onchain-key>
               <span className="size-2 rounded-full bg-primary ring-2 ring-primary/20" aria-hidden="true" />
-              Live on Arkiv
+              {t('feed.liveOnArkiv')}
             </span>
           )}
           {source && !first && <SourceTag source={source} />}
           {!isDefault(f) && (
             <Button variant="ghost" className="h-11 px-3" onClick={() => setFilters(DEFAULTS)}>
-              <RotateCcw /> Reset filters
+              <RotateCcw /> {t('feed.reset')}
             </Button>
           )}
           {!searching && <RssToggle open={rssOpen} onToggle={() => setRssOpen((o) => !o)} />}
@@ -546,22 +557,21 @@ export function Feed() {
 
       {searching && results && following.length > 0 && (
         <p className="mt-1 px-1 text-xs leading-5 text-muted-foreground" data-feed-search-filters>
-          Your filters still apply: <span className="font-medium text-foreground">{following.join(' · ')}</span>.
-          {hidden > 0 ? ` ${plural(hidden, 'more match', 'more matches')} hidden by them.` : ''}
+          {tr('feed.filtersApply', { list: <span className="font-medium text-foreground">{following.join(' · ')}</span> })}
+          {hidden > 0 ? tp('feed.hiddenMatches', hidden) : ''}
         </p>
       )}
 
       {source === 'snapshot' && !first && (
         <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground" data-feed-saved-copy>
-          {searching
-            ? "The Nazar API could not answer just now, so these matches come from Nazar's saved copy of every published alert"
-            : "The Nazar API and Arkiv could not answer just now, so this is Nazar's saved copy of every published alert"}
-          {savedAt ? `, as of ${savedAt}` : ''}. It refreshes when they are back.
+          {searching ? t('feed.savedSearch') : t('feed.savedList')}
+          {savedAt ? t('feed.savedAsOf', { time: savedAt }) : ''}
+          {t('feed.savedRefresh')}
         </p>
       )}
       {source === 'demo' && !first && (
         <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">
-          Demo data: the Nazar API and Arkiv could not answer, so built-in sample alerts are shown.
+          {t('feed.demo')}
         </p>
       )}
 
@@ -571,8 +581,8 @@ export function Feed() {
         <div className="mt-3 flex min-h-12 items-center gap-2 rounded-xl border border-primary/20 bg-primary/[0.05] py-0.5 pr-1 pl-4 text-sm dark:bg-primary/10" data-feed-new>
           <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
           <span className="min-w-0 flex-1 leading-5 sm:flex-none">
-            <span className="font-semibold">{plural(fresh.size, 'new alert')}</span>
-            <span className="text-muted-foreground"> since your last visit</span>
+            <span className="font-semibold">{plural('feed.newCount', fresh.size)}</span>
+            <span className="text-muted-foreground">{t('feed.sinceVisit')}</span>
             <span className="hidden text-muted-foreground sm:inline" aria-hidden="true">
               {' '}
               ·
@@ -584,7 +594,7 @@ export function Feed() {
             data-feed-mark-seen
             className="min-h-11 shrink-0 rounded-lg px-3 font-semibold whitespace-nowrap text-primary underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           >
-            Mark all seen
+            {t('feed.markSeen')}
           </button>
         </div>
       )}
@@ -611,11 +621,11 @@ export function Feed() {
         {!first && rows.length === 0 && !searching && (
           <div className="flex flex-col items-center px-6 py-12 text-center">
             <Rings className="size-24"><Search /></Rings>
-            <p className="mt-4 font-semibold">No alerts match these filters</p>
-            <p className="mt-1 max-w-xs text-sm text-muted-foreground">Try another state or source, or reset the filters to see every alert.</p>
+            <p className="mt-4 font-semibold">{t('feed.emptyTitle')}</p>
+            <p className="mt-1 max-w-xs text-sm text-muted-foreground">{t('feed.emptyHint')}</p>
             {!isDefault(f) && (
               <Button variant="outline" className="mt-5 h-11" onClick={() => setFilters(DEFAULTS)}>
-                <RotateCcw /> Reset filters
+                <RotateCcw /> {t('feed.reset')}
               </Button>
             )}
           </div>
@@ -627,29 +637,26 @@ export function Feed() {
             {hidden > 0 ? (
               <>
                 <p className="mt-4 font-semibold">
-                  {plural(hidden, 'alert')} {hidden === 1 ? 'names' : 'name'} “{shownQ}”, but none match your filters
+                  {tp('feed.hiddenTitle', hidden, { q: shownQ })}
                 </p>
-                <p className="mt-1 max-w-xs text-sm text-muted-foreground">Reset the filters to see them.</p>
+                <p className="mt-1 max-w-xs text-sm text-muted-foreground">{t('feed.hiddenHint')}</p>
                 <Button variant="outline" className="mt-5 h-11" onClick={() => setFilters(DEFAULTS)}>
-                  <RotateCcw /> Reset filters
+                  <RotateCcw /> {t('feed.reset')}
                 </Button>
               </>
             ) : (
               <>
-                <p className="mt-4 max-w-sm font-semibold text-balance">No regulator alert names “{shownQ}” in Nazar&apos;s records.</p>
-                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                  This is not a safety certificate. Names are spelled many ways in notices, so try fewer letters; for an exact answer, check the batch number
-                  printed on the pack.
-                </p>
+                <p className="mt-4 max-w-sm font-semibold text-balance">{t('feed.noneTitle', { q: shownQ })}</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t('feed.noneHint')}</p>
               </>
             )}
           </div>
         )}
 
         {!first &&
-          groupByMonth(rows).map((g) => (
+          groupByMonth(rows, locale, t).map((g) => (
             <section key={g.key} aria-label={g.label}>
-              <h3 className="px-2.5 pt-3 pb-1 text-[11px] font-bold tracking-[0.16em] text-muted-foreground uppercase sm:px-3">{g.label}</h3>
+              <h3 className="px-2.5 pt-3 pb-1 text-[11px] font-bold tracking-[0.16em] text-muted-foreground uppercase sm:px-3 hi:text-xs">{g.label}</h3>
               <ul className="divide-y divide-border/70">
                 {g.items.map((a) => (
                   <li key={a.id}>
@@ -674,25 +681,26 @@ export function Feed() {
             <Button variant="outline" className="h-12 w-full max-w-sm text-sm font-semibold" onClick={loadMore} aria-busy={loading === 'more'} disabled={loading === 'more'}>
               {loading === 'more' ? (
                 <>
-                  Loading <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
+                  {t('feed.loading')} <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
                 </>
               ) : (
-                'Load more alerts'
+                t('feed.loadMore')
               )}
             </Button>
           ) : (
-            <p className="text-xs text-muted-foreground">End of the feed</p>
+            <p className="text-xs text-muted-foreground">{t('feed.end')}</p>
           )}
           {page?.more && (
             <p className="text-xs text-muted-foreground">
-              Showing {items.length.toLocaleString('en-IN')}
-              {total !== null ? ` of ${total.toLocaleString('en-IN')}` : ''}
+              {total !== null
+                ? t('feed.showingOf', { n: items.length.toLocaleString(intl), total: total.toLocaleString(intl) })
+                : t('feed.showing', { n: items.length.toLocaleString(intl) })}
             </p>
           )}
         </div>
       )}
       {!first && searching && results?.capped && (
-        <p className="mt-4 text-center text-xs text-muted-foreground">Showing the top matches. Add a word to narrow the search.</p>
+        <p className="mt-4 text-center text-xs text-muted-foreground">{t('feed.cappedHint')}</p>
       )}
     </div>
   )

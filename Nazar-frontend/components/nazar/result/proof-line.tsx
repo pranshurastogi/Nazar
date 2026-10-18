@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import { ChevronRight, LoaderCircle, Unlink } from 'lucide-react'
 
 import type { Alert } from '@/lib/source'
+import { useT, type MessageKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // Below md the result card shows the on-chain proof as one line that opens the "How do we know?"
@@ -28,15 +29,16 @@ type Status = 'published' | 'saved' | 'pending' | 'unpublished'
 const statusOf = (a: Alert): Status =>
   a.entityKey ? 'published' : a.fromSnapshot && a.savedCopyFinal ? 'saved' : a.fromSnapshot ? 'pending' : 'unpublished'
 
-const LABEL: Record<Status, string> = {
-  published: 'Live on Arkiv',
-  saved: "From Nazar's saved copy",
-  pending: 'Confirming on Arkiv…',
-  unpublished: 'Not yet on Arkiv',
+const LABEL: Record<Status, MessageKey> = {
+  published: 'proof.live',
+  saved: 'proof.saved',
+  pending: 'proof.pending',
+  unpublished: 'proof.unpublished',
 }
 
 /** "Live on Arkiv · View proof": one tap target that opens the proof sheet. */
 export function ProofLine({ alert, onOpen }: { alert: Alert; onOpen: () => void }) {
+  const { t } = useT()
   const status = statusOf(alert)
   const live = status === 'published' || status === 'pending'
   return (
@@ -47,7 +49,7 @@ export function ProofLine({ alert, onOpen }: { alert: Alert; onOpen: () => void 
         aria-haspopup="dialog"
         className="-mx-2 flex min-h-12 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 text-left text-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
-        <span className="sr-only">On-chain proof:</span>
+        <span className="sr-only">{t('proof.lineSr')}</span>
         <span
           className={cn(
             'inline-flex min-w-0 items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-bold',
@@ -57,10 +59,10 @@ export function ProofLine({ alert, onOpen }: { alert: Alert; onOpen: () => void 
           {status === 'published' && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />}
           {status === 'pending' && <LoaderCircle className="size-3 shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
           {(status === 'saved' || status === 'unpublished') && <Unlink className="size-3 shrink-0" aria-hidden="true" />}
-          <span className="truncate">{LABEL[status]}</span>
+          <span className="truncate">{t(LABEL[status])}</span>
         </span>
         <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 font-semibold text-primary">
-          View proof <ChevronRight className="size-4" aria-hidden="true" />
+          {t('proof.view')} <ChevronRight className="size-4" aria-hidden="true" />
         </span>
       </button>
     </div>

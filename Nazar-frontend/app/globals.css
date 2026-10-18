@@ -3,9 +3,11 @@
 @import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
+/* Hindi mode (html[data-lang=hi]): tweaks for Devanagari, e.g. hi:leading-tight on a tight headline. */
+@custom-variant hi (&:is([data-lang='hi'] *));
 
 @theme inline {
-  --font-sans: var(--font-noto-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--nazar-sans);
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   --color-background: var(--background);
@@ -51,6 +53,10 @@
 :root {
   --radius: 0.75rem;
 
+  /* Body face. Hindi mode puts Noto Sans Devanagari (whose Latin is drawn to match Noto Sans) in
+     front; English never loads it. */
+  --nazar-sans: var(--font-noto-sans), ui-sans-serif, system-ui, sans-serif;
+
   /* Nazar blue: chrome and logo only. */
   --brand: hsl(224 70% 38%);
   --brand-tint: hsl(205 75% 80%);
@@ -90,6 +96,12 @@
   --ai: hsl(28 14% 30%);
   --ai-soft: hsl(36 22% 94%);
   --ai-border: hsl(32 14% 78%);
+}
+
+html[data-lang='hi'] {
+  /* Devanagari leads: Google's Noto Sans also ships a Devanagari subset and would otherwise claim those
+     glyphs. Batch numbers and hashes stay in JetBrains Mono (font-mono). */
+  --nazar-sans: var(--font-devanagari), var(--font-noto-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 .dark {
@@ -189,4 +201,23 @@
 @keyframes nazar-halo {
   0%, 100% { transform: scale(0.82); opacity: 0.55; }
   50% { transform: scale(1); opacity: 1; }
+}
+
+/* ---- Hindi (lib/i18n) */
+
+/* Until React has rendered the saved language, the English server HTML stays hidden (set in <head>
+   by LOCALE_SCRIPT, lifted by LocaleProvider before paint). If scripts never run, it shows anyway. */
+html[data-i18n-pending] body {
+  opacity: 0;
+  animation: nazar-i18n-reveal 0s linear 2.5s forwards;
+}
+@keyframes nazar-i18n-reveal {
+  to { opacity: 1; }
+}
+
+/* Devanagari joins its letters along the headline bar (shirorekha): tracking breaks the joins, so
+   Hindi text sets none. Mono (batch numbers, hashes) keeps its spacing. Unlayered, so it wins over
+   tracking utilities. */
+html[data-lang='hi'] body :not(.font-mono, .font-mono *) {
+  letter-spacing: normal;
 }

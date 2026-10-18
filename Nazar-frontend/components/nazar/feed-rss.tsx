@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Button, buttonVariants } from '@/components/ui/button'
 import { API_URL } from '@/lib/source'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 // "Subscribe (RSS)": the API serves the alert list as RSS and Atom ({API}/v1/alerts.rss|.atom)
@@ -29,15 +30,17 @@ export function feedUrl(f: RssFilters, format: 'rss' | 'atom' = 'rss', origin = 
 }
 
 export function RssToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const { t } = useT()
   if (!API_URL) return null
   return (
     <Button variant="ghost" className="h-11 px-3" aria-expanded={open} aria-controls="feed-rss" onClick={onToggle} data-rss-toggle>
-      <Rss /> Subscribe (RSS)
+      <Rss /> {t('rss.subscribe')}
     </Button>
   )
 }
 
 export function RssPanel({ filters, following }: { filters: RssFilters; following: string[] }) {
+  const { t, tr } = useT()
   const [format, setFormat] = useState<'rss' | 'atom'>('rss')
   const [copied, setCopied] = useState(false)
   const url = feedUrl(filters, format)
@@ -48,28 +51,24 @@ export function RssPanel({ filters, following }: { filters: RssFilters; followin
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)
-      toast.success('Feed link copied. Paste it into your feed reader.')
+      toast.success(t('rss.copiedToast'))
     } catch {
-      toast.error("Couldn't copy. Select the link and copy it.")
+      toast.error(t('rss.copyFailed'))
     }
   }
 
   return (
-    <section id="feed-rss" aria-label="Subscribe to these alerts" className="mt-2 rounded-2xl border bg-card p-4 sm:p-5" data-rss-panel>
+    <section id="feed-rss" aria-label={t('rss.panelAria')} className="mt-2 rounded-2xl border bg-card p-4 sm:p-5" data-rss-panel>
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
-          <p className="text-sm font-semibold">Follow new alerts in a feed reader</p>
+          <p className="text-sm font-semibold">{t('rss.title')}</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {following.length ? (
-              <>
-                This feed follows your filters: <span className="font-medium text-foreground">{following.join(' · ')}</span>.
-              </>
-            ) : (
-              'This feed has every alert. Set filters above to narrow it.'
-            )}
+            {following.length
+              ? tr('rss.follows', { list: <span className="font-medium text-foreground">{following.join(' · ')}</span> })
+              : t('rss.every')}
           </p>
         </div>
-        <div role="group" aria-label="Feed format" className="grid h-11 grid-cols-2 overflow-hidden rounded-xl bg-background text-sm font-semibold ring-1 ring-border ring-inset">
+        <div role="group" aria-label={t('rss.format')} className="grid h-11 grid-cols-2 overflow-hidden rounded-xl bg-background text-sm font-semibold ring-1 ring-border ring-inset">
           {(['rss', 'atom'] as const).map((f) => (
             <button
               key={f}
@@ -88,7 +87,7 @@ export function RssPanel({ filters, following }: { filters: RssFilters; followin
       </div>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <label htmlFor="feed-rss-url" className="sr-only">
-          Feed link
+          {t('rss.link')}
         </label>
         <input
           id="feed-rss-url"
@@ -100,10 +99,10 @@ export function RssPanel({ filters, following }: { filters: RssFilters; followin
         />
         <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button variant="outline" className="h-11" onClick={copy} data-rss-copy>
-            {copied ? <Check /> : <Copy />} {copied ? 'Copied' : 'Copy link'}
+            {copied ? <Check /> : <Copy />} {copied ? t('rss.copied') : t('rss.copy')}
           </Button>
           <a href={url} target="_blank" rel="noreferrer noopener" data-rss-open className={cn(buttonVariants({ variant: 'outline' }), 'h-11 gap-1.5 px-2.5')}>
-            <ExternalLink /> Open
+            <ExternalLink /> {t('rss.open')}
           </a>
         </div>
       </div>

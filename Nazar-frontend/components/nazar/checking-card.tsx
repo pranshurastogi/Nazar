@@ -1,16 +1,14 @@
+'use client'
+
 import { NazarMark } from '@/components/nazar/logo'
 import type { Stage } from '@/lib/source'
-
-const STAGE_TEXT: Record<Stage, string> = {
-  api: 'Asking the Nazar API…',
-  arkiv: 'Reading published alerts on Arkiv directly…',
-  snapshot: "Live sources are busy. Reading Nazar's saved copy of the alerts…",
-}
+import { useT } from '@/lib/i18n'
 
 /** Placeholder shown while a check is in flight. Shaped like a result card so nothing jumps when it lands. */
 export function CheckingCard({ batch, stage }: { batch: string; stage: Stage }) {
+  const { t, tr } = useT()
   return (
-    <section aria-busy="true" aria-label={`Checking batch ${batch}`} className="overflow-hidden rounded-2xl border bg-card">
+    <section aria-busy="true" aria-label={t('checking.title', { batch })} className="overflow-hidden rounded-2xl border bg-card">
       <div className="nazar-progress h-0.5 bg-primary/10" aria-hidden="true" />
       <div className="flex gap-4 p-5 sm:p-6">
         <div className="relative grid size-12 shrink-0 place-items-center" aria-hidden="true">
@@ -27,9 +25,9 @@ export function CheckingCard({ batch, stage }: { batch: string; stage: Stage }) 
         <div className="min-w-0 flex-1">
           <span className="block h-6 w-24 animate-pulse motion-reduce:animate-none rounded-full bg-muted" />
           <h3 className="mt-2.5 text-xl font-semibold leading-snug tracking-tight">
-            Checking batch <span className="font-mono">{batch}</span>
+            {tr('checking.title', { batch: <span className="font-mono">{batch}</span> })}
           </h3>
-          <p role="status" className="mt-1 text-sm text-muted-foreground">{STAGE_TEXT[stage]}</p>
+          <p role="status" className="mt-1 text-sm text-muted-foreground">{t(`checking.${stage}`)}</p>
         </div>
       </div>
       <div className="grid gap-2 border-t bg-card/70 px-5 py-4 sm:px-6" aria-hidden="true">

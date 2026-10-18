@@ -1,21 +1,18 @@
+'use client'
+
 import { Clock, Landmark, ScanText } from 'lucide-react'
 
-import { TIER_NOTE, type Alert, type CheckResult } from '@/lib/source'
+import { type Alert, type CheckResult } from '@/lib/source'
+import { formatAsOfIn, useT, type Locale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { ChildShield } from './child-shield'
-import { formatAsOf, SeverityPips, TONE } from './shared'
-
-const HEADLINE = {
-  flagged: () => 'This batch failed a government quality test',
-  retracted: () => 'An alert on this batch was withdrawn',
-  no_alert: (asOf: Date) => `No official alert for this batch as of ${formatAsOf(asOf)}`,
-  unreadable: () => "We couldn't read the batch number clearly",
-} as const
+import { SeverityPips, TIER_KEY, TONE } from './shared'
 
 /** The headline. A look-alike is typed, not unreadable, so it asks instead; it is never a flag. */
-function headline(result: CheckResult) {
-  if (result.state === 'unreadable' && result.suggestion) return `Did you mean ${result.suggestion}?`
-  return HEADLINE[result.state](result.asOf)
+function headline(result: CheckResult, t: ReturnType<typeof useT>['t'], locale: Locale) {
+  if (result.state === 'unreadable' && result.suggestion) return t('headline.didYouMean', { batch: result.suggestion })
+  if (result.state === 'no_alert') return t('headline.no_alert', { time: formatAsOfIn(locale, result.asOf) })
+  return t(`headline.${result.state}`)
 }
 
 /**
@@ -24,15 +21,17 @@ function headline(result: CheckResult) {
  * product it is about.
  */
 export function VerdictHeader({ result, alert, official }: { result: CheckResult; alert?: Alert; official?: boolean }) {
+  const { t, locale } = useT()
   const tone = TONE[result.state]
-  const tierNote = alert ? TIER_NOTE[alert.tier] : undefined
+  const tierKey = alert ? TIER_KEY[alert.tier] : undefined
+  const tierNote = tierKey ? t(tierKey) : undefined
   // The no-alert headline already carries the time; a can't-tell answer is about the input, not a moment.
   const showTime = result.state === 'flagged' || result.state === 'retracted'
   return (
     <div className={cn('px-5 pt-5 pb-5 sm:px-6 sm:pt-6', tone.band)}>
       {official && (
         <p className="mb-4 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase" data-official-label>
-          <Landmark className="size-3.5 shrink-0" aria-hidden="true" /> Official · from regulator notices, verified on Arkiv
+          <Landmark className="size-3.5 shrink-0" aria-hidden="true" /> {t('result.official')}
         </p>
       )}
       <div className="flex gap-3.5 sm:gap-4">
@@ -42,12 +41,12 @@ export function VerdictHeader({ result, alert, official }: { result: CheckResult
         <div className="min-w-0 flex-1">
           <div className="flex min-h-6 flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className={cn('inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-bold tracking-wider uppercase', tone.icon)} data-state-chip>
-              {tone.label}
+              {t(`state.${result.state}`)}
             </span>
             {alert && result.state === 'flagged' && <SeverityPips value={alert.severity} />}
           </div>
           <h3 className="mt-2 max-w-[38ch] text-xl leading-snug font-semibold tracking-tight text-balance sm:text-[1.375rem]" data-verdict-headline>
-            {headline(result)}
+            {headline(result, t, locale)}
           </h3>
           {alert && (
             <p className="mt-1.5 text-sm leading-5">
@@ -57,13 +56,13 @@ export function VerdictHeader({ result, alert, official }: { result: CheckResult
           )}
           <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm leading-5 text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-current/10 bg-card/70 px-2 py-0.5 whitespace-nowrap" data-batch-pill>
-              Batch <span className="font-mono font-semibold text-foreground">{result.batch || '—'}</span>
+              {t('result.batch')} <span className="font-mono font-semibold text-foreground">{result.batch || '—'}</span>
             </span>
             {showTime && (
               <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap" data-checked-at>
                 <Clock className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="sr-only">Checked </span>
-                {formatAsOf(result.asOf)}
+                <span className="sr-only">{t('result.checked')}</span>
+                {formatAsOfIn(locale, result.asOf)}
               </span>
             )}
           </p>

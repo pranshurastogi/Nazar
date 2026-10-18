@@ -1,13 +1,18 @@
 import type { Metadata, Viewport } from 'next'
-import { JetBrains_Mono, Noto_Sans } from 'next/font/google'
+import { JetBrains_Mono, Noto_Sans, Noto_Sans_Devanagari } from 'next/font/google'
 
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { LOCALE_SCRIPT } from '@/lib/i18n/core'
+import { LocaleProvider } from '@/lib/i18n/provider'
 import './globals.css'
 
 const notoSans = Noto_Sans({ subsets: ['latin'], variable: '--font-noto-sans', display: 'swap' })
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono', display: 'swap' })
+// Hindi mode only (globals.css adds it to the stack under html[data-lang=hi]). Not preloaded, and
+// its @font-face covers Devanagari code points only, so English visitors never download it.
+const devanagari = Noto_Sans_Devanagari({ subsets: ['devanagari'], variable: '--font-devanagari', display: 'swap', preload: false })
 
 // Absolute URLs for social cards: the production domain unless a deploy says otherwise.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://nazar-nu.vercel.app'
@@ -48,11 +53,18 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${notoSans.variable} ${jetbrainsMono.variable}`}>
+    // The server always renders English with lang="en"; LOCALE_SCRIPT corrects lang/data-lang before
+    // first paint and LocaleProvider switches the text before the page is revealed (see lib/i18n).
+    <html lang="en" data-lang="en" suppressHydrationWarning className={`${notoSans.variable} ${jetbrainsMono.variable} ${devanagari.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: LOCALE_SCRIPT }} />
+      </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <TooltipProvider>{children}</TooltipProvider>
-          <Toaster position="top-center" />
+          <LocaleProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+            <Toaster position="top-center" />
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

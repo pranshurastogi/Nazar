@@ -1,19 +1,21 @@
+'use client'
+
 import { Info, History } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { matchKey, type Alert, type CheckResult } from '@/lib/source'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { TONE } from './shared'
 import { SeverityWhy } from './severity-why'
 import { WhatToDo } from './what-to-do'
 
-/** How far a typed batch is from its look-alike, in words. Both fold to the same confusion key. */
-function distance(typed: string, other: string) {
+/** How far a typed batch is from its look-alike: one character apart, or merely alike. Both fold to the same confusion key. */
+function oneApart(typed: string, other: string) {
   const a = matchKey(typed)
   const b = matchKey(other)
-  if (a.length !== b.length) return 'it looks very like'
-  const n = [...a].filter((c, i) => c !== b[i]).length
-  return n === 1 ? 'it is one character away from' : 'it looks very like'
+  if (a.length !== b.length) return false
+  return [...a].filter((c, i) => c !== b[i]).length === 1
 }
 
 /** A calm, tinted box for the one thing to take away: icon, a bold lead, then the quieter rest. */
@@ -29,6 +31,7 @@ function Callout({ result, icon: Icon = Info, children }: { result: CheckResult;
 
 /** The state's key message, under the band: what to do first, or what this answer does and does not mean. */
 export function VerdictBody({ result, alert, onCheck }: { result: CheckResult; alert?: Alert; onCheck: (batch: string) => void }) {
+  const { t, tr } = useT()
   return (
     <div className="px-5 pt-5 pb-4 sm:px-6">
       {result.state === 'flagged' && alert && (
@@ -42,14 +45,14 @@ export function VerdictBody({ result, alert, onCheck }: { result: CheckResult; a
           <span className="font-semibold">{alert.retraction.reason}.</span>{' '}
           <span className="text-muted-foreground">
             {alert.retraction.authority}
-            {alert.retraction.date ? `, ${alert.retraction.date}` : ''}. The original alert stays on record.
+            {alert.retraction.date ? `, ${alert.retraction.date}` : ''}. {t('result.originalStays')}
           </span>
         </Callout>
       )}
       {result.state === 'no_alert' && (
         <Callout result={result}>
-          <span className="font-semibold">This is not a safety certificate.</span>{' '}
-          <span className="text-muted-foreground">It only means no regulator has published an alert for this batch yet.</span>
+          <span className="font-semibold">{t('result.notCertificate')}</span>{' '}
+          <span className="text-muted-foreground">{t('result.notCertificateMeans')}</span>
         </Callout>
       )}
       {result.state === 'unreadable' &&
@@ -57,17 +60,19 @@ export function VerdictBody({ result, alert, onCheck }: { result: CheckResult; a
           // A look-alike is never a flag: amber card, no flagged badge, and the person decides.
           <div className="max-w-prose text-sm leading-6" data-lookalike={result.suggestion}>
             <p>
-              <span className="font-mono font-semibold">{result.batch}</span> has no alert, but {distance(result.batch, result.suggestion)}{' '}
-              <span className="font-mono font-semibold">{result.suggestion}</span>, which is named in a regulator alert.{' '}
-              <span className="text-muted-foreground">Check the batch number on the pack again.</span>
+              {tr(oneApart(result.batch, result.suggestion) ? 'result.lookalikeOne' : 'result.lookalikeLike', {
+                typed: <span className="font-mono font-semibold">{result.batch}</span>,
+                suggestion: <span className="font-mono font-semibold">{result.suggestion}</span>,
+              })}{' '}
+              <span className="text-muted-foreground">{t('result.lookalikeAgain')}</span>
             </p>
             <Button variant="outline" className="mt-3 h-11 rounded-xl border-caution-border bg-card px-4" onClick={() => onCheck(result.suggestion!)} data-lookalike-check>
-              Check <span className="font-mono font-semibold">{result.suggestion}</span>
+              {tr('result.checkSuggestion', { batch: <span className="font-mono font-semibold">{result.suggestion}</span> })}
             </Button>
           </div>
         ) : (
           <Callout result={result}>
-            <span className="text-muted-foreground">Batch numbers use letters, digits and - / . ( ) only. Re-read the line after “B.No.” or ask your chemist.</span>
+            <span className="text-muted-foreground">{t('result.invalidHelp')}</span>
           </Callout>
         ))}
     </div>

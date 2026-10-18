@@ -32,16 +32,18 @@ import { checkBatch, type AlertFeed, type CheckResult, type ResultState, type St
 import { HOME_KEYS, loadChild, loadSevere, notDemo } from '@/lib/source/prefetch'
 import { peek, revalidate } from '@/lib/source/swr'
 import { serif } from '@/lib/fonts'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 const RECENT_KEY = 'nazar:recent'
 type Recent = { batch: string; name: string; state: ResultState }
 
-const STATE_STYLE: Record<ResultState, { icon: typeof Search; cls: string; label: string }> = {
-  flagged: { icon: TriangleAlert, cls: 'bg-flagged-soft text-flagged', label: 'Flagged' },
-  retracted: { icon: History, cls: 'bg-caution-soft text-caution', label: 'Retracted' },
-  no_alert: { icon: Search, cls: 'bg-quiet-soft text-quiet', label: 'No alert found' },
-  unreadable: { icon: CircleHelp, cls: 'bg-caution-soft text-caution', label: "Can't tell" },
+// Labels come from the dictionary (state.flagged …), so the chip words match the result card.
+const STATE_STYLE: Record<ResultState, { icon: typeof Search; cls: string }> = {
+  flagged: { icon: TriangleAlert, cls: 'bg-flagged-soft text-flagged' },
+  retracted: { icon: History, cls: 'bg-caution-soft text-caution' },
+  no_alert: { icon: Search, cls: 'bg-quiet-soft text-quiet' },
+  unreadable: { icon: CircleHelp, cls: 'bg-caution-soft text-caution' },
 }
 
 /** Answers faster than this skip the loading card, so quick checks do not flicker. */
@@ -78,6 +80,8 @@ function DeepLinkCheck({ onBatch }: { onBatch: (batch: string) => void }) {
 }
 
 export default function Page() {
+  const { t, tr, locale } = useT()
+  const hi = locale === 'hi'
   const [batch, setBatch] = useState('')
   const [result, setResult] = useState<CheckResult | null>(null)
   const [pending, setPending] = useState<{ batch: string; stage: Stage } | null>(null)
@@ -185,7 +189,7 @@ export default function Page() {
     } catch {
       if (ctrl.signal.aborted) return
       // The instant answer stays on screen; only say so when there is nothing to show.
-      if (!instant) toast.error("Couldn't check right now. Please try again.")
+      if (!instant) toast.error(t('check.failed'))
     } finally {
       clearTimeout(timer)
       if (checkRef.current === ctrl) {
@@ -222,28 +226,30 @@ export default function Page() {
           <div className="max-w-lg">
             {/* The eye mirrors the check: it watches the batch box, scans while checking, and takes the result's colour. */}
             <div className="flex items-center justify-between gap-4 md:flex-col-reverse md:items-start md:justify-start">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Har batch par nazar</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary hi:text-xs" data-tagline>{t('check.tagline')}</p>
               <SentinelEye
                 state={pending ? 'checking' : scanning ? 'scanning' : (result?.state ?? 'idle')}
                 lookAt={inputRef}
                 className="w-24 shrink-0 md:w-44"
               />
             </div>
-            <h1 className="mt-3 text-[clamp(2.5rem,8vw,3.25rem)] md:text-[2.5rem] xl:text-[3.25rem] font-semibold leading-[0.98] tracking-[-0.05em]" data-check-hero>
-              Check the batch,
+            {/* Hindi: Devanagari needs taller lines, and the italic serif has no Devanagari, so the accent
+                phrase keeps the sans face and carries the emphasis in colour and weight. */}
+            <h1 className="mt-3 text-[clamp(2.5rem,8vw,3.25rem)] md:text-[2.5rem] xl:text-[3.25rem] font-semibold leading-[0.98] tracking-[-0.05em] hi:text-[clamp(2.125rem,7vw,2.75rem)] hi:leading-[1.3] md:hi:text-[2.25rem] xl:hi:text-[2.75rem]" data-check-hero>
+              {t('check.heroLine1')}
               <br />
-              <span className={cn(serif.className, 'pr-1 text-[1.12em] font-normal tracking-[-0.01em] text-primary')}>not just the brand.</span>
+              <span className={cn(hi ? 'font-semibold' : [serif.className, 'pr-1 text-[1.12em] font-normal tracking-[-0.01em]'], 'text-primary')}>{t('check.heroLine2')}</span>
             </h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground">
-              Match any batch number against alerts published by CDSCO and state drug regulators. Every answer shows where it came from.
+            <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground hi:leading-8">
+              {t('check.lede')}
             </p>
           </div>
 
           <div className="rounded-2xl border bg-card p-5 shadow-sm sm:p-6">
             <div className="flex items-center justify-between">
-              <label htmlFor="batch" className="text-sm font-semibold">Batch number</label>
+              <label htmlFor="batch" className="text-sm font-semibold">{t('check.label')}</label>
               <span className="text-xs text-muted-foreground">
-                Look for <span className="font-mono">B.No.</span> on the pack
+                {tr('check.lookFor', { code: <span className="font-mono">B.No.</span> })}
               </span>
             </div>
             <div className="mt-3 flex items-center gap-3 rounded-xl border bg-background px-4 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/60">
@@ -258,7 +264,7 @@ export default function Page() {
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && runCheck()}
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
-                placeholder="e.g. SR-13"
+                placeholder={t('check.placeholder')}
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
@@ -279,7 +285,7 @@ export default function Page() {
                     inputRef.current?.focus()
                   }}
                   className="grid size-10 place-items-center text-muted-foreground"
-                  aria-label="Clear batch"
+                  aria-label={t('check.clear')}
                 >
                   <X className="size-5" />
                 </button>
@@ -287,26 +293,26 @@ export default function Page() {
             </div>
             {/* Always mounted, so screen readers announce the message when it appears. */}
             <p id="batch-empty" role="status" className={cn('text-sm font-medium text-caution', emptyHint && 'mt-2')} data-empty-hint={emptyHint ? 'shown' : 'hidden'}>
-              {emptyHint ? 'Enter the batch number from the pack (B.No.)' : ''}
+              {emptyHint ? t('check.empty') : ''}
             </p>
             <div className="mt-4 flex gap-3">
               <Button className="h-13 flex-1 rounded-xl text-base font-semibold" onClick={() => runCheck()} aria-busy={!!pending}>
                 {pending ? (
                   <>
-                    Checking <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
+                    {t('check.checking')} <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" />
                   </>
                 ) : (
                   <>
-                    Check batch <ArrowRight data-icon="inline-end" />
+                    {t('check.submit')} <ArrowRight data-icon="inline-end" />
                   </>
                 )}
               </Button>
-              <Button variant="outline" className="size-13 rounded-xl text-primary" aria-label="Scan the pack" onClick={() => setScanning(true)} aria-haspopup="dialog">
+              <Button variant="outline" className="size-13 rounded-xl text-primary" aria-label={t('check.scan')} onClick={() => setScanning(true)} aria-haspopup="dialog">
                 <ScanLine className="size-5" />
               </Button>
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-              <span>Try:</span>
+              <span>{t('check.try')}</span>
               {/* The button is a 44px tap target; the pill inside keeps the chip visually small. */}
               {['SR-13', 'TG25-2281A', 'AB1234', '5R-13'].map((b) => (
                 <button key={b} onClick={() => runCheck(b)} data-try-chip className="group inline-flex min-h-11 items-center rounded-full font-mono font-medium text-foreground focus-visible:outline-none">
@@ -314,7 +320,7 @@ export default function Page() {
                 </button>
               ))}
               <span className="ml-auto hidden lg:inline">
-                <kbd className="rounded border px-1.5 font-mono">/</kbd> to focus
+                {tr('check.focusKey', { key: <kbd className="rounded border px-1.5 font-mono">/</kbd> })}
               </span>
             </div>
             <Link
@@ -322,7 +328,7 @@ export default function Page() {
               className="-mb-2 inline-flex min-h-11 items-center gap-1 rounded-md text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
               data-sweep-link
             >
-              Checking many batches? Try Shelf sweep <ArrowRight className="size-3.5" aria-hidden="true" />
+              {t('check.sweepLink')} <ArrowRight className="size-3.5" aria-hidden="true" />
             </Link>
           </div>
         </section>
@@ -349,7 +355,7 @@ export default function Page() {
                         className="pointer-events-none absolute -top-3 right-4 z-10 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm"
                       >
                         <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                        Confirming with the live record…
+                        {t('check.confirming')}
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -363,14 +369,14 @@ export default function Page() {
           <div className="rounded-2xl border bg-card p-5 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Regulator notices</p>
-                <h3 className="mt-1 text-lg font-semibold tracking-tight">High-severity alerts</h3>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t('check.noticesKicker')}</p>
+                <h3 className="mt-1 text-lg font-semibold tracking-tight">{t('check.severeTitle')}</h3>
               </div>
               <Badge variant="secondary" className="h-6 min-w-16 px-2.5" aria-busy={!feed}>
-                {feed ? `${feed.total} active` : <Skeleton className="h-3 w-10" />}
+                {feed ? t('check.active', { n: feed.total }) : <Skeleton className="h-3 w-10" />}
               </Badge>
             </div>
-            <ul className="mt-4 min-h-[10.5rem] divide-y" aria-busy={!feed} aria-label="High-severity alerts">
+            <ul className="mt-4 min-h-[10.5rem] divide-y" aria-busy={!feed} aria-label={t('check.severeTitle')}>
               {!feed &&
                 [0, 1, 2].map((i) => (
                   <li key={i} className="flex min-h-14 items-center gap-3 py-2.5">
@@ -382,7 +388,7 @@ export default function Page() {
                   </li>
                 ))}
               {feed?.items.length === 0 && (
-                <li className="py-6 text-sm text-muted-foreground">No active alerts published yet.</li>
+                <li className="py-6 text-sm text-muted-foreground">{t('check.noneActive')}</li>
               )}
               {feed?.items.slice(0, 5).map((a) => (
                 <li key={a.id}>
@@ -402,7 +408,7 @@ export default function Page() {
             <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
               {feed ? <SourceTag source={feed.source} /> : <span />}
               <Link href="/feed?sev=4" className={cn(buttonVariants({ variant: 'ghost' }), 'h-11 px-3 text-primary')}>
-                See all alerts <ArrowRight data-icon="inline-end" />
+                {t('check.seeAll')} <ArrowRight data-icon="inline-end" />
               </Link>
             </div>
           </div>
@@ -411,21 +417,21 @@ export default function Page() {
             <div className="flex items-center gap-3">
               <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><Baby className="size-5" /></span>
               <div>
-                <h3 className="font-semibold">Child Shield</h3>
-                <p className="text-xs text-muted-foreground">Children&apos;s medicines with an official alert</p>
+                <h3 className="font-semibold">{t('check.childTitle')}</h3>
+                <p className="text-xs text-muted-foreground">{t('check.childSub')}</p>
               </div>
             </div>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              Medicines made for children that a regulator has flagged. A toxic glycol found in any medicine is ranked at the highest severity.{' '}
+              {t('check.childBody')}{' '}
               {childFeed ? (
-                <span className="font-semibold text-foreground">{childFeed.total} active right now.</span>
+                <span className="font-semibold text-foreground">{t('check.childActive', { n: childFeed.total })}</span>
               ) : (
                 <Skeleton className="inline-block h-3.5 w-28 align-middle" />
               )}
             </p>
             {/* Beside the alerts list (md+), the latest children's alerts fill the card instead of empty space. */}
             {!!childFeed?.items.length && (
-              <ul className="mt-4 hidden divide-y rounded-xl border md:block" aria-label="Latest Child Shield alerts" data-child-list>
+              <ul className="mt-4 hidden divide-y rounded-xl border md:block" aria-label={t('check.childListAria')} data-child-list>
                 {childFeed.items.slice(0, 3).map((a) => (
                   <li key={a.id}>
                     <button
@@ -451,7 +457,7 @@ export default function Page() {
                 disabled={!childFeed?.items.length}
                 onClick={() => childFeed?.items[0] && runCheck(childFeed.items[0].batch)}
               >
-                See the latest <ArrowRight data-icon="inline-end" />
+                {t('check.seeLatest')} <ArrowRight data-icon="inline-end" />
               </Button>
               {childFeed && <SourceTag source={childFeed.source} />}
             </div>
@@ -461,16 +467,16 @@ export default function Page() {
         <section className="mt-10">
           <div className="flex items-end justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">On this device</p>
-              <h3 className="mt-1 text-xl font-semibold tracking-tight">Recent checks</h3>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t('check.recentKicker')}</p>
+              <h3 className="mt-1 text-xl font-semibold tracking-tight">{t('check.recentTitle')}</h3>
             </div>
-            {recent.length > 0 && <Button variant="ghost" className="h-10" onClick={clearRecent}>Clear</Button>}
+            {recent.length > 0 && <Button variant="ghost" className="h-10" onClick={clearRecent}>{t('check.recentClear')}</Button>}
           </div>
           {recent.length === 0 ? (
             <div className="mt-4 flex flex-col items-center rounded-2xl border border-dashed px-6 py-10 text-center">
               <Rings className="size-24"><Search /></Rings>
-              <p className="mt-4 font-semibold">No checks yet</p>
-              <p className="mt-1 max-w-xs text-sm text-muted-foreground">Batches you check appear here. They never leave this device.</p>
+              <p className="mt-4 font-semibold">{t('check.recentEmpty')}</p>
+              <p className="mt-1 max-w-xs text-sm text-muted-foreground">{t('check.recentEmptyHint')}</p>
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -480,8 +486,8 @@ export default function Page() {
                   <button key={item.batch} onClick={() => runCheck(item.batch)} className="flex min-h-16 items-center gap-3 rounded-2xl border bg-card p-4 text-left transition-colors hover:bg-muted/50">
                     <span className={cn('grid size-10 shrink-0 place-items-center rounded-xl', s.cls)}><s.icon className="size-5" /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{item.name}</span>
-                      <span className="block truncate text-xs text-muted-foreground"><span className="font-mono">{item.batch}</span> · {s.label}</span>
+                      <span className="block truncate text-sm font-semibold">{item.name === 'Batch check' ? t('check.recentBatchCheck') : item.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground"><span className="font-mono">{item.batch}</span> · {t(`state.${item.state}`)}</span>
                     </span>
                     <ChevronRight className="size-4 text-muted-foreground" />
                   </button>
@@ -495,12 +501,12 @@ export default function Page() {
           <div className="flex items-center gap-3">
             <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><FileSpreadsheet className="size-5" /></span>
             <div>
-              <h3 className="font-semibold">Have a whole shelf to check?</h3>
-              <p className="mt-0.5 text-sm text-muted-foreground">Shelf Sweep matches a stock CSV in your browser.</p>
+              <h3 className="font-semibold">{t('check.shelfTitle')}</h3>
+              <p className="mt-0.5 text-sm text-muted-foreground">{t('check.shelfHint')}</p>
             </div>
           </div>
           <Button variant="outline" className="h-11" onClick={() => soon('Shelf Sweep')}>
-            Open Shelf Sweep <ArrowRight data-icon="inline-end" />
+            {t('check.shelfOpen')} <ArrowRight data-icon="inline-end" />
           </Button>
         </section>
 
