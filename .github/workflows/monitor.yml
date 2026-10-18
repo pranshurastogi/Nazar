@@ -1,0 +1,37 @@
+name: Monitor
+
+# Hourly check of the live backend. A failing run makes GitHub email the repo owner.
+# It catches the failure mode that would otherwise be silent: the server running in a region
+# where CDSCO refuses connections (Railway's US regions), so national alerts stop arriving.
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API: https://nazar-api-production.up.railway.app
+    steps:
+      - name: API is up
+        run: curl -fsS --retry 3 --retry-delay 10 "$API/health" -o health.json && jq . health.json
+      - name: CDSCO is reachable from the server's region
+        run: |
+          jq -e '.egress.cdsco == "ok"' health.json > /dev/null || {
+            echo "::error::$(jq -r '.egress.warning // "CDSCO unreachable from the server (egress check)"' health.json)"
+            echo "::error::Move the Railway service to Singapore (asia-southeast1-eqsg3a): railway config apply, or Settings → Regions."
+            exit 1
+          }
+      - name: Pipeline heartbeat is fresh
+        run: |
+          curl -fsS "$API/v1/pipeline/status" -o status.json
+          jq '{heartbeat: .heartbeat | {stale, ageMs, txHash}, stats}' status.json
+          jq -e '.heartbeat != null and .heartbeat.stale == false' status.json > /dev/null || {
+            echo "::error::Heartbeat is stale or missing: the worker is not running or cannot publish (check wallet balance)."
+            exit 1
+          }
+      - name: A batch check answers
+        run: |
+          curl -fsS "$API/v1/check?batch=SR-13" | jq -e '.state == "flagged"' > /dev/null || { echo "::error::SR-13 is no longer flagged"; exit 1; }

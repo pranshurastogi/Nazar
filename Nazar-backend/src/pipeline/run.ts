@@ -311,7 +311,16 @@ export async function runPipeline(opts: RunOptions, deps: RunDeps): Promise<RunR
           if (!h) return 'skipped'
           sha = h.raw.sha256
           const prior = ledger.getDocument(sha)
-          if (!h.isNew && prior && (prior.status === 'resolved' || prior.status === 'published')) return 'skipped'
+          if (!h.isNew && prior && (prior.status === 'resolved' || prior.status === 'published')) {
+            // Catch-up: a document resolved while publishing was off (dry-run, unfunded wallet, a fresh
+            // server) still has pending alerts. Publish them now; the publisher reconciles with Arkiv first.
+            if (opts.publish && deps.publisher && ledger.unpublishedAlerts(sha).length) {
+              const rep = await deps.publisher.publishNotice(sha)
+              s.published += rep.published
+              if (rep.chunks.some((c) => c.status === 'failed')) throw new Error(`catch-up publish failed for ${sha}`)
+            }
+            return 'skipped'
+          }
           s.harvested++
           return processDocument(adapter, h.raw, h.bytes, { ledger, extract, publisher: deps.publisher }, { ...opts, signal: docSignal })
         }

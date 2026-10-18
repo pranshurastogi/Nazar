@@ -101,6 +101,28 @@ describe('runPipeline', () => {
     expect(ledger.getDocument(published[0]!)?.status).toBe('published')
   })
 
+  it('catches up: publishes pending alerts of a document resolved while publishing was off', async () => {
+    const ledger = new Ledger(':memory:')
+    const src = [source('tn-dc', [discovered('tn-dc', 1)])]
+    // Same bytes again on the second run (refresh-style source): harvest says "not new".
+    const seen = new Map<string, RawDoc>()
+    const harvest: HarvestFn = async (doc, { ledger: l }) => {
+      const prev = seen.get(doc.url)
+      if (prev) return { raw: prev, bytes: new TextEncoder().encode(doc.title), isNew: false }
+      const raw = rawDoc({ ...doc, finalUrl: doc.url })
+      l.upsertDocument(raw)
+      seen.set(doc.url, raw)
+      return { raw, bytes: new TextEncoder().encode(doc.title), isNew: true }
+    }
+    await runPipeline({ publish: false }, deps(ledger, src, { harvest }))
+    expect(ledger.stats().pending).toBeGreaterThan(0)
+    const published: string[] = []
+    const publisher = { publishNotice: async (sha: string) => (published.push(sha), { published: 2, chunks: [{ status: 'confirmed' }] }) }
+    const rep = await runPipeline({ publish: true }, deps(ledger, src, { harvest, publisher }))
+    expect(rep.totals).toMatchObject({ skipped: 1, processed: 0, published: 2 })
+    expect(published).toHaveLength(1)
+  })
+
   it('stops between documents when aborted', async () => {
     const ledger = new Ledger(':memory:')
     const ac = new AbortController()

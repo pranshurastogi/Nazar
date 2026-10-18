@@ -84,7 +84,7 @@ railway config plan     # diff against the live project; expect "already up to d
 railway config apply    # enforce it, e.g. after recreating the service
 ```
 
-The server also checks itself at startup (`src/pipeline/egress.ts`). It looks up its egress country, probes CDSCO and reports the result on `/health` (`egress`, `warnings`) and `/v1/pipeline/status`. A misplaced server logs an error rather than quietly harvesting nothing:
+The server also checks itself at startup (`src/pipeline/egress.ts`). It looks up its egress country, probes CDSCO and reports the result on `/health` (`egress`, `warnings`) and `/v1/pipeline/status`. A misplaced server logs an error rather than quietly harvesting nothing. `.github/workflows/monitor.yml` checks this every hour, along with heartbeat freshness and a known-flagged batch, and fails (GitHub emails the owner) if anything is wrong:
 
 ```bash
 curl -s https://<service>.up.railway.app/health | jq '.egress, .warnings'
