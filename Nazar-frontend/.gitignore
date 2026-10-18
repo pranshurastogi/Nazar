@@ -10,3 +10,6 @@ next-env.d.ts
 # Platform
 .vercel/
 .DS_Store
+.vercel
+.env*
+!.env.example
