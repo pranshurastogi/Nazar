@@ -6,19 +6,19 @@
 
 **Har batch par nazar.** An eye on every batch.
 
-Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself on Arkiv.
+Check any Indian medicine batch against CDSCO, state drug regulator and WHO alerts in seconds, with proof anyone can verify on Arkiv.
 
-**[Open the live app →](https://nazar-nu.vercel.app)**
+**[Open the live app →](https://nazar-nu.vercel.app)** · [Arkiv directory](https://nazar-nu.vercel.app/arkiv) · [API](https://nazar-api-production.up.railway.app/health)
 
 [![CI](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml)
 [![Pipeline](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml)
 [![Monitor](https://github.com/pranshurastogi/Nazar/actions/workflows/monitor.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/monitor.yml)
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [Pipeline](#the-pipeline) · [Arkiv](#arkiv) · [Tests](#tests) · [Roadmap](#roadmap)
+[Features](#what-you-can-do) · [Screenshots](#screenshots) · [Try it](#try-it) · [How it works](#how-it-works) · [Pipeline](#the-pipeline) · [Arkiv](#arkiv) · [Run it](#run-it-yourself) · [Tests](#tests)
 
 </div>
 
-![Nazar flagging COLDRIF batch SR-13 from live regulator data, with Child Shield and two notices](docs/screenshots/live-desktop-sr13.png)
+![A flagged batch: COLDRIF SR-13 with Child Shield, two regulator notices and the on-chain proof chain from the WHO document to the Arkiv alert entity](docs/screenshots/result-onchain-proof-desktop.png)
 
 ---
 
@@ -35,60 +35,55 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 
 > **Nazar never says a medicine is "safe".** It reports what a named regulator published, on which date, with the document. "No alert found" is shown in slate grey, never green, and always says it is not a safety certificate.
 
+## What you can do
+
+| | Feature | What it does |
+|---|---|---|
+| 🔎 | **Check a batch** | Type the batch number from the pack and get one of four honest answers: **Flagged**, **Retracted**, **No alert found** or **Can't tell**. Look-alike characters (0/O, 1/I/L, 5/S, 8/B) only ever produce "Did you mean…?", never a flag. |
+| 📷 | **Strip Scan** | Point the camera at the pack, or upload a photo. QR, Data Matrix and GS1 codes are decoded on the device (BarcodeDetector or zxing-wasm), with an OCR fallback for the printed "B.No." line. If the code and the printed batch disagree you see "Label details don't match. Show this pack to your chemist." Images never leave the phone. |
+| 🧒 | **Child Shield** | Paediatric formulations with serious failures get a banner telling parents to contact a doctor now. |
+| ⚖️ | **Severity with reasons** | A versioned rule table, not a black box: "Adulterated with a toxic glycol: base 5 · Paediatric formulation: +1 (capped at 5)". |
+| 🔗 | **On-chain proof** | Every result shows the chain of custody: regulator document → SHA-256 → Arkiv notice entity → this alert entity. It also shows the transaction link, an "Official Nazar publisher" check against `$creator`, and the Read-only and Anyone-can-keep-alive flags. |
+| 📰 | **Feed** | Every alert, newest first, grouped by month. Filter by severity, Child Shield, state of manufacture and source. Filters sync to the URL. |
+| 💊 | **Medicine cabinet** | Save the batches you keep at home. Each is re-checked whenever you open the page, flagged ones float to the top, and expired or expiring packs are called out. It lives only in your browser (export and import as JSON). |
+| ⛓️ | **Arkiv directory** | A structured explorer of everything Nazar has on chain: live counts and breakdowns, filters that turn into Arkiv predicates, the **exact query string and an SDK snippet**, and attributes shown next to the payload. It can query Arkiv straight from your browser. |
+| 📖 | **More** | How Nazar works, live source status, proof on Arkiv, privacy, settings and about. |
+| ✨ | **First-run guide** | A short animated guide: where to find "B.No.", the four answers, and how the proof works. |
+
+**It keeps working when Nazar's servers don't.** Every check tries the Nazar API first, then reads Arkiv directly from the browser (filtered by the publisher's `$creator`), then falls back to built-in demo data. The answer always says which source it came from.
+
 ## Screenshots
 
-**Live data**, from the pipeline run on 17 Oct 2026 against the real regulator sources:
+| Check | Feed |
+|:---:|:---:|
+| ![Home: batch check, high-severity alerts from the live pipeline and Child Shield](docs/screenshots/home-desktop.png) | ![Feed of serious alerts grouped by month with filters](docs/screenshots/feed-desktop.png) |
 
-| Home: high-severity alerts | A CDSCO NSQ batch | "How do we know?" |
+| Arkiv directory | Filtered: Child Shield, severity 4+ | Entity: attributes vs payload |
 |:---:|:---:|:---:|
-| ![Home page listing live high-severity alerts and pipeline status](docs/screenshots/live-desktop-home.png) | ![Flagged result for SST25006 from the CDSCO August 2026 NSQ list](docs/screenshots/live-mobile-cdsco-result.png) | ![Proof sheet with publisher, notice, batch dates, extraction method and source hash](docs/screenshots/live-mobile-proof.png) |
+| ![Arkiv directory: live counts of notices, alerts and heartbeat with the live query panel](docs/screenshots/arkiv-directory-desktop.png) | ![Directory filtered to paediatric alerts at severity 4 or above, with the matching Arkiv query](docs/screenshots/arkiv-filtered-desktop.png) | ![Entity drawer: official publisher, flags, expiry estimate and typed attributes](docs/screenshots/arkiv-entity-drawer-desktop.png) |
 
-**First-run guide**, centred and animated:
+| Flagged on mobile | "How do we know?" | Strip Scan | Label mismatch |
+|:---:|:---:|:---:|:---:|
+| ![Flagged result for SR-13 on mobile, dark mode](docs/screenshots/mobile-result-dark.png) | ![Proof sheet with publisher, notice, Arkiv entity and source hash](docs/screenshots/mobile-proof-dark.png) | ![Scanner read SR-13 from a GS1 QR code, with expiry](docs/screenshots/mobile-scanner-dark.png) | ![Scanner warning that the QR code and the printed batch disagree](docs/screenshots/mobile-scanner-mismatch-dark.png) |
 
-| Desktop | Finding the batch number | Four honest answers |
+| Medicine cabinet | More | First-run guide |
 |:---:|:---:|:---:|
-| ![Onboarding welcome step on desktop](docs/screenshots/desktop-onboarding-dark.png) | ![Onboarding step showing a bottle label being scanned for B.No.](docs/screenshots/desktop-onboarding-batch-dark.png) | ![Onboarding step explaining the four result states](docs/screenshots/mobile-onboarding-states.png) |
+| ![Cabinet with two flagged medicines floated to the top](docs/screenshots/mobile-cabinet-dark.png) | ![More: how it works, sources, proof on Arkiv, privacy, settings](docs/screenshots/mobile-more-dark.png) | ![Animated onboarding with the Nazar mark](docs/screenshots/onboarding-desktop-dark.png) |
 
-<details>
-<summary>More screens (demo data, dark mode, no-alert state)</summary>
+## Try it
 
-| Flagged result | Proof sheet | No alert found (dark) |
-|:---:|:---:|:---:|
-| ![Flagged result for Coldrif SR-13 with Child Shield](docs/screenshots/mobile-flagged.png) | ![Proof of record bottom sheet](docs/screenshots/mobile-proof.png) | ![No alert found state in dark mode](docs/screenshots/mobile-dark-no-alert.png) |
-
-![Nazar home screen in dark mode](docs/screenshots/desktop-dark-home.png)
-
-</details>
-
-## Quick start
-
-Requires Node 22.5+ (24 recommended) and pnpm 10.
-
-```bash
-# 1. Backend: harvest real alerts, then serve the API on :8787
-cd Nazar-backend
-pnpm install
-cp .env.example .env && pnpm cli wallet:new     # prints only the address; the key stays in .env
-pnpm cli run --since 202601 --limit 6           # discover → harvest → extract → resolve (dry-run publish)
-pnpm start
-
-# 2. Web app on :3000 (reads the API, then Arkiv directly, then demo data)
-cd ../Nazar-frontend
-pnpm install
-cp .env.example .env.local
-pnpm dev
-```
-
-### Try these batches
+On **[nazar-nu.vercel.app](https://nazar-nu.vercel.app)**:
 
 | Type this | You get | Where it comes from |
 |---|---|---|
-| `SR-13` | **Flagged**, severity 5, Child Shield, 2 notices | COLDRIF, WHO Medical Product Alert N°5/2025 (DEG 48.6% w/v) |
+| `SR-13` | **Flagged**, severity 5, Child Shield, 2 notices, on-chain proof | COLDRIF, WHO Medical Product Alert N°5/2025 (DEG 48.6% w/v) |
 | `R01GL2523`, `LSL25160` | **Flagged**, severity 5 | Respifresh TR and ReLife, same WHO alert |
 | `SST25006` | **Flagged** | Salbutamol tablets, CDSCO and Tamil Nadu NSQ lists, Aug 2026 |
+| `(N)25567` | **Flagged** | Sodium chloride injection, CDSCO (batches with brackets are kept) |
 | `5R-13` | **Can't tell**, "Did you mean SR-13?" | A look-alike is never shown as a flag |
 | `AB1234` | **No alert found** | Not a safety certificate |
-| `DEMO-RT1` | **Retracted** | Demo-only record |
+
+Or open **[/arkiv](https://nazar-nu.vercel.app/arkiv)** and try filters like Child Shield + severity 4+ to watch the Arkiv query change.
 
 ## How it works
 
@@ -101,32 +96,31 @@ flowchart LR
     D[Maharashtra FDA<br/>NSQ table]
     E[WHO Medical<br/>Product Alerts]
   end
-  subgraph Pipeline [Nazar-backend]
+  subgraph Railway [Nazar-backend · Railway, Singapore]
     H[Harvest<br/>sha256 store]
     X[Extract<br/>ruled tables · OCR ·<br/>grounded LLM]
     R[Resolve<br/>brand · plant · case ·<br/>severity rules]
     P[Publisher<br/>atomic batches]
-  end
-  K[(Arkiv<br/>Tiramisu)]
-  L[(SQLite ledger<br/>cache + FTS5)]
-  subgraph Readers
-    W[Web app]
+    L[(SQLite ledger<br/>cache + FTS5)]
     I[Nazar API]
   end
+  K[(Arkiv<br/>Tiramisu)]
+  W[Web app<br/>Vercel]
   A & B & C & D & E --> H --> X --> R --> P --> K
   R --> L --> I --> W
   K -- "direct read, no backend needed" --> W
+  K -- "directory + reconcile" --> I
 ```
 
-- **Truth on chain, caches off chain.** The ledger and search index can be deleted and rebuilt from Arkiv.
+- **Truth on chain, caches off chain.** The ledger and search index can be deleted and rebuilt from Arkiv. A fresh server did exactly that: it adopted every published alert by row id and published zero duplicates.
 - **Content-addressed lineage.** Source bytes sha256 → row id → alert entity → case. Any alert traces back to the exact document.
 - **Deterministic first, AI at the edges.** A table-geometry parser handles almost every row. An LLM sees only rejected rows, and every value it returns must appear in the source text.
-- **No backend needed to check.** The web app queries Arkiv directly, filtered by the publisher's `$creator`, if the API is down.
-- **Privacy by locality.** Batches you check stay on your device.
+- **No backend needed to check.** The web app can query Arkiv directly, filtered by `$creator`.
+- **Privacy by locality.** Checks, the cabinet and photos stay on your device.
 
 ## The pipeline
 
-[`Nazar-backend/`](Nazar-backend/README.md) is a TypeScript/Node 24 service. It has a CLI, a cron worker and a Hono API.
+[`Nazar-backend/`](Nazar-backend/README.md) is a TypeScript/Node 24 service with a CLI, a cron worker and a Hono API. It runs on Railway in **Singapore**, because CDSCO refuses connections from US cloud regions; the region is pinned in [`.railway/railway.ts`](Nazar-backend/.railway/railway.ts).
 
 ### Sources (live-verified)
 
@@ -147,51 +141,46 @@ flowchart LR
 3. **OCR fallback.** Tesseract on rendered pages, with a batch-only re-read for rejected cells.
 4. **LLM fallback.** Claude, grounded: only for rejected rows, and any value not found in the row text is dropped.
 
-Rows are scored for confidence:
-
 | Confidence | Result |
 |---|---|
 | ≥ 0.90 | auto-publish |
 | 0.60–0.89 | "Machine-read, awaiting pharmacist confirmation" |
 | below 0.60 | curator queue only |
 
-### First full run (17 Oct 2026, from Kazakhstan)
+Rows with no printed batch become drug-level records that can never match a batch check. Every skipped row is counted by reason.
 
-| Source | Docs | Rows |
-|---|---|---|
-| cdsco-online | 6 | 811 |
-| cdsco-pdf | 6 | 322 |
-| tn-dc | 6 | 102 |
-| mh-fda | 1 | 162 |
-| who-mpa | 2 | 3 |
-| curated | 1 | 3 |
-| **Total** | **22** | **1,403** |
+### What the live server holds (18 Oct 2026)
 
-- 0 documents failed.
-- 1,389 rows auto-publish, 13 are machine-read and 1 went to the curator queue.
-- Severity distribution: 119 at 5, 109 at 4, 427 at 3, 594 at 2, 154 at 1.
+- **23 documents** harvested from 6 sources, **1,438 rows**: **1,404 alerts published to Arkiv**, 33 drug-level records, 1 in the curator queue, 0 failed documents.
+- Runs on a schedule: CDSCO every 6 hours, states every 3 hours, heartbeat every 5 minutes. Each run reconciles with Arkiv before sending, so nothing is published twice.
+- Watchdogs: every request, document and source has a hard deadline, so one slow government site can't stall a run.
 
 ```bash
-pnpm cli sources | discover | harvest | extract <sha|file> | run | publish | check <batch> | status | heartbeat | worker
+pnpm cli sources | discover | harvest | extract <sha|file> | run | publish | arkiv:validate | check <batch> | status | heartbeat | keep-alive | worker
 ```
 
 ## Arkiv
 
-Nazar uses Arkiv as its data layer. Everything Arkiv-specific is organised in [`arkiv/`](arkiv/README.md): the data contract ([`schema.md`](arkiv/schema.md)), real entities read from the chain ([`examples/`](arkiv/examples)), runnable queries ([`queries/`](arkiv/queries)) and building notes ([`friction.md`](arkiv/friction.md)).
+Nazar uses Arkiv as its data layer. Everything Arkiv-specific lives in [`arkiv/`](arkiv/README.md):
+- the data contract ([`schema.md`](arkiv/schema.md));
+- real entities read from the chain ([`examples/`](arkiv/examples));
+- runnable queries ([`queries/`](arkiv/queries));
+- building notes ([`friction.md`](arkiv/friction.md)).
 
-- **Publisher wallet:** `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` ([explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2))
-- **Live on Tiramisu since 18 Oct 2026:** **21 notices, 1,404 alerts and the pipeline heartbeat**, all created by the publisher, written in 106 atomic transactions for about 0.25 GLM. You can recount them with the query below.
-  - First transactions: [WHO alert N°5/2025 notice + COLDRIF/Respifresh/ReLife](https://tiramisu.explorer.arkiv.network/tx/0x9f12a1ce1e9ea0e34e4f7026ee499c403327d9526d39e3d53b682dfd7d4f898c) and [curated seed](https://tiramisu.explorer.arkiv.network/tx/0x6a996737a022ef78d5f0dca83204793c260cea33c33410b8c761acfad0c96c9a).
-  - Example SR-13 alert entity: [`0x346f83d7…80fe54`](https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54). It is `readonly` and allows `permissionlessExtension`, with severity 5, `peds=1` and `exp_ym=202704`, and its `notice` attribute links to the WHO notice entity.
-  - Heartbeat entity: [`0x00c58f01…268d`](https://tiramisu.explorer.arkiv.network/entity/0x00c58f01535a96bca043e9e2136c4ee46ec57c94a8938994d8791a28825b268d).
-- **Live app:** <https://nazar-nu.vercel.app>. It reads these entities straight from Arkiv in the browser, with no Nazar server involved.
-- **Live API and pipeline:** <https://nazar-api-production.up.railway.app> (`/health`, `/v1/check?batch=SR-13`) on Railway, Singapore. <sub>The region matters: CDSCO refuses connections from US cloud regions. It is pinned in [`.railway/railway.ts`](Nazar-backend/.railway/railway.ts). The server reports CDSCO reachability on `/health`, and an hourly [monitor](.github/workflows/monitor.yml) fails if that ever breaks.</sub> It harvests on schedule, publishes new notices and renews the heartbeat entity every 5 minutes. A fresh server rebuilt its ledger from the regulator sources and reconciled with Arkiv, adopting all 1,144 existing alerts by row id with zero duplicates.
+**On chain:**
+- **Publisher wallet:** [`0xd06d85Eb20f126f796E4a341b711B1a757c66bD2`](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2).
+- **Live on Tiramisu:** **21 notices, 1,404 alerts and the pipeline heartbeat**, all created by the publisher. Recount them with `cd arkiv/queries && npx tsx count.ts`, or browse them in the [Arkiv directory](https://nazar-nu.vercel.app/arkiv).
+- **First transactions:** the [WHO alert N°5/2025 notice + COLDRIF/Respifresh/ReLife](https://tiramisu.explorer.arkiv.network/tx/0x9f12a1ce1e9ea0e34e4f7026ee499c403327d9526d39e3d53b682dfd7d4f898c) and the [curated seed](https://tiramisu.explorer.arkiv.network/tx/0x6a996737a022ef78d5f0dca83204793c260cea33c33410b8c761acfad0c96c9a).
+- **Example SR-13 alert entity:** [`0x346f83d7…80fe54`](https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54). It is `readonly` with `permissionlessExtension`, severity 5, `peds=1` and `exp_ym=202704`, and its `notice` attribute links to the WHO notice entity.
+- **Heartbeat entity:** [`0x43dd6702…8465`](https://tiramisu.explorer.arkiv.network/entity/0x43dd67026c7eb65ffaa1eec0784c6a8576d965f6c35f5b62ca583ef98cb58465). It lives 20 minutes and is renewed every 5 by the worker: a lease that only stays alive while the pipeline does.
+
+**How it is modelled:**
 - **Entities:** `notice`, `alert`, `retraction`, `heartbeat`, `snapshot`. Each carries `project=nazar-in-batch-alerts`, `t` and `v`.
-- **Typed attributes for what we query:** `batch`, `sev`, `peds`, `exp_ym`, `alert_ym`, `state`, `case`, `rid`, `notice` (key)… Display detail goes in the JSON payload.
-- **Lifetimes follow product logic.** An alert lives until the batch expires + 180 days, and a notice lives 5 years. A retraction lives for the alert's remaining life + 1 year. The heartbeat lives 20 minutes and is renewed every 5.
-- **Flags:** alerts are `readonly` and allow `permissionlessExtension`. No one can rewrite an alert, but anyone can keep one alive while the batch is still on shelves.
-- **Writes:** one atomic `executeBatch` per notice, using predicted keys so alerts link to their notice in the same transaction. Writes are idempotent by row id and serialised per wallet. Dry-run is the default and uses real gas estimation.
-- **Reads:** always use `.createdBy(publisher)`. Example batch check:
+- **Typed attributes for what we query:** `batch`, `sev`, `peds`, `exp_ym`, `alert_ym`, `state`, `case`, `rid`, `notice` (key), and more. Display detail goes in the JSON payload.
+- **Lifetimes follow product logic.** An alert lives until the batch expires + 180 days, and a notice lives 5 years. A retraction lives for the alert's remaining life + 1 year.
+- **Flags:** alerts are `readonly` and allow `permissionlessExtension`. No one can rewrite an alert, but anyone can keep one alive while the batch is still on shelves (`pnpm cli keep-alive <key>`).
+- **Writes:** one atomic `executeBatch` per notice, using predicted keys so alerts link to their notice in the same transaction. Writes are idempotent by row id and serialised per wallet.
+- **Reads:** always `eq(project)`, `eq(t)` and `.createdBy(publisher)`. Paging pins each page to its first block (`.atBlock(block).cursor(cursor)`).
 
 ```ts
 client.select({ key: true, attributes: true, payload: true })
@@ -200,50 +189,84 @@ client.select({ key: true, attributes: true, payload: true })
   .fetch()
 ```
 
+## Run it yourself
+
+Requires Node 22.5+ (24 recommended) and pnpm 10.
+
+```bash
+# 1. Backend: harvest real alerts, then serve the API on :8787
+cd Nazar-backend
+pnpm install
+cp .env.example .env && pnpm cli wallet:new     # prints only the address; the key stays in .env
+pnpm cli run --since 202601 --limit 6           # discover → harvest → extract → resolve (dry-run publish)
+pnpm start
+
+# 2. Web app on :3000 (reads the API, then Arkiv directly, then demo data)
+cd ../Nazar-frontend
+pnpm install
+cp .env.example .env.local
+pnpm dev
+```
+
+To publish for real:
+1. Fund the publisher at <https://hub.arkiv.network/faucet>.
+2. Run `pnpm cli arkiv:validate`.
+3. Run `pnpm cli publish --live`.
+
+**Deploy:**
+- **Backend:** Railway, Fly.io or any Docker host. See [`Nazar-backend/docs/deploy.md`](Nazar-backend/docs/deploy.md); keep it in an Asian region.
+- **Web app:** Vercel. Set `NEXT_PUBLIC_NAZAR_API_URL`, `NEXT_PUBLIC_NAZAR_PUBLISHER` and `NEXT_PUBLIC_ARKIV_RPC_URL`.
+
 ## Tests
 
 | Suite | What it covers | Run |
 |---|---|---|
-| Backend unit + golden | 241 tests. Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking), reader, API, orchestrator | `cd Nazar-backend && pnpm test` |
+| Backend unit + golden | **317 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, API, watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
+| Scanner parsers | 17 tests: GS1 element strings and Digital Links, pack key-value text, noise | `cd Nazar-frontend && pnpm test:scan` |
+| Frontend e2e | ~250 checks in headless Chrome over CDP, with the API down and with a mocked API. Covers onboarding, every result state, look-alikes, the proof sheet and on-chain module, Feed, Cabinet, More, the Arkiv directory, Strip Scan (upload path), 360–430px layouts, dark mode, reduced motion and console errors | `cd Nazar-frontend && pnpm build && pnpm e2e` |
 | Backend live | Hits the real regulator sites (opt-in) | `pnpm test:live` |
-| Frontend e2e | 68 checks in headless Chrome over CDP: onboarding, every result state, look-alikes, proof sheet, status pill, 360–430px layout, dark mode, reduced motion, console errors. Run with the API down (fallback) and with a mocked API | `cd Nazar-frontend && pnpm build && pnpm e2e` |
 
 GitHub Actions:
-- **CI**, on every push: backend typecheck and tests, frontend typecheck and build, and the e2e suite.
-- **Pipeline**, every 6 hours: harvest, extract and publish. This is dry-run unless `NAZAR_PUBLISH_MODE=live` is set and the publisher key is in the repository secrets.
+- **CI**, on every push: backend typecheck and tests, frontend typecheck, scanner tests and build, then the e2e suite.
+- **Pipeline**, every 6 hours: harvest, extract and publish. Dry-run unless `NAZAR_PUBLISH_MODE=live` is set and the publisher key is in the repository secrets.
+- **Monitor**, hourly: fails, which emails the owner, if the API is down, CDSCO is unreachable from the server's region, the on-chain heartbeat is stale, or SR-13 stops being flagged.
 
 ## Project structure
 
 ```
 Nazar/
-├── arkiv/                  schema.md (data contract), friction.md
-├── Nazar-backend/          pipeline, Arkiv publisher/reader, API, CLI, worker
+├── arkiv/                  README, schema.md, friction.md, examples/ (real entities), queries/ (runnable)
+├── Nazar-backend/          pipeline, Arkiv publisher/reader/directory, API, CLI, worker
 │   ├── src/{sources,pipeline,extract,resolve,arkiv,api,domain,storage,lib}
+│   ├── .railway/railway.ts Railway infrastructure as code (Singapore)
+│   ├── Dockerfile, fly.toml, render.yaml, docs/deploy.md
 │   └── test/{unit,golden,fixtures,live}
 ├── Nazar-frontend/         Next.js 16 web app
-│   ├── app/                check screen, layout, icons, manifest
-│   ├── components/nazar/   onboarding (animated), result card, status pill
+│   ├── app/(main)/         check, feed, cabinet, arkiv, more
+│   ├── components/nazar/   result card modules, scanner, cabinet, feed, arkiv directory, onboarding
 │   ├── lib/source/         API client, browser Arkiv reader, demo fallback, batch matching
+│   ├── lib/scan/           GS1 / label parsers, decoders, OCR
 │   └── e2e/                CDP end-to-end suite + runner
 ├── docs/screenshots/
-└── .github/workflows/      ci.yml, pipeline.yml
+└── .github/workflows/      ci.yml, pipeline.yml, monitor.yml
 ```
 
 **Stack:**
-- **Frontend:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui on Base UI, Motion.
+- **Frontend:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui on Base UI, Motion, zxing-wasm, tesseract.js.
 - **Backend:** Node 24, TypeScript, pdfjs-dist, tesseract.js, Hono, node:sqlite (FTS5), Zod.
 - **Arkiv:** `@arkiv-network/sdk` 0.8 with viem.
+- **Hosting:** Vercel (web) and Railway, Singapore (API + worker).
 
 ## Roadmap
 
 - [x] Batch check with four result states, severity reasons, Child Shield, look-alike guard
-- [x] Animated first-run guide, proof sheet, private recent checks, dark mode
 - [x] Real pipeline: CDSCO (API + PDFs), Tamil Nadu, Maharashtra, WHO; OCR and grounded LLM fallback
-- [x] Arkiv data contract, publisher (atomic, idempotent), reader, heartbeat; dry-run verified with gas estimates
-- [x] Web app reads the API, then Arkiv directly, then demo data
-- [x] Fund the publisher wallet and publish live to Tiramisu (17 notices, 1,144 alerts, heartbeat)
+- [x] Arkiv data contract, atomic and idempotent publisher, reader, heartbeat, keep-alive
+- [x] Live on Tiramisu: 21 notices, 1,404 alerts, heartbeat; backend on Railway with monitoring
+- [x] Strip Scan, Feed, medicine cabinet, Arkiv directory, on-chain proof module
+- [ ] "About this medicine": what a medicine is for, from a structured, guard-railed LLM answer (in progress)
 - [ ] Telangana and Karnataka adapters from an Indian host; Kerala when its site is back
-- [ ] Strip Scan (QR + on-device OCR), Batch Passport timeline, Keep Alive, Shelf Sweep CSV, MCP server
+- [ ] Batch Passport timeline, Shelf Sweep CSV for pharmacies, MCP server for AI agents
 - [ ] Hindi and Kannada, then 10 languages with read-aloud
 
 ## Author
