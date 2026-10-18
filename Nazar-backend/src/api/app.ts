@@ -5,6 +5,7 @@ import { etag } from 'hono/etag'
 import type { Hex } from 'viem'
 import { z } from 'zod'
 
+import { publicClient } from '../arkiv/client.ts'
 import { DirectoryError, EntitiesQuery, type ArkivDirectory } from '../arkiv/directory.ts'
 import type { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
@@ -14,6 +15,8 @@ import { child } from '../lib/logger.ts'
 import { ExplainError, MedicineExplainer } from '../medicine/explain.ts'
 import { clientIp } from '../medicine/limits.ts'
 import { ExplainInput, MAX_BODY_BYTES } from '../medicine/schema.ts'
+import { mcpHandler, type McpHttpOptions } from '../mcp/http.ts'
+import { readProof, type ProofClient } from '../mcp/proof.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
 import { isPublishableTier } from '../resolve/case.ts'
 import type { EgressStatus } from '../pipeline/egress.ts'
@@ -66,6 +69,8 @@ export interface AppDeps {
   snapshot?: SnapshotService
   /** "About this medicine" (POST /v1/medicine/explain); defaults to one built from env. */
   medicine?: Pick<MedicineExplainer, 'explain'>
+  /** MCP server (/mcp). arkiv_proof reads entities live through `proofClient` (null disables it) and trusts `publisher`. */
+  mcp?: { proofClient?: ProofClient | null; publisher?: Hex | null; limits?: McpHttpOptions }
 }
 
 export type CheckState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
@@ -198,18 +203,25 @@ export function createApp(deps: AppDeps) {
     await next()
     log.info({ method: c.req.method, path: c.req.path, status: c.res.status, ms: Math.round(performance.now() - t0) }, 'request')
   })
-  app.use(
-    '*',
-    cors({
-      origin: origins.includes('*') ? '*' : origins,
-      allowMethods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
-      allowHeaders: ['Content-Type'],
-      exposeHeaders: ['Retry-After'],
-      maxAge: 600,
-    }),
-  )
+  const webCors = cors({
+    origin: origins.includes('*') ? '*' : origins,
+    allowMethods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+    allowHeaders: ['Content-Type'],
+    exposeHeaders: ['Retry-After'],
+    maxAge: 600,
+  })
+  // MCP clients run anywhere (desktop apps, browser inspectors, hosted assistants), so /mcp is open to every origin.
+  const mcpCors = cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'Mcp-Session-Id', 'Mcp-Protocol-Version', 'Last-Event-ID'],
+    exposeHeaders: ['Mcp-Session-Id', 'Mcp-Protocol-Version', 'Retry-After'],
+    maxAge: 600,
+  })
+  app.use('*', (c, next) => (c.req.path === '/mcp' ? mcpCors(c, next) : webCors(c, next)))
   // Outside etag, so tags are computed on the plain body; the snapshot ships pre-compressed and is skipped.
-  app.use('*', compress())
+  const gzip = compress()
+  app.use('*', (c, next) => (c.req.path === '/mcp' ? next() : gzip(c, next)))
   app.use('/v1/*', cdnCacheHeaders())
   app.use('/v1/*', etag({ weak: true }))
 
@@ -253,10 +265,15 @@ export function createApp(deps: AppDeps) {
   const snapshot = deps.snapshot ?? new SnapshotService(ledger)
   app.get('/v1/snapshot', (c) => serveSnapshot(c, snapshot))
 
+  /** The cached check shared by /v1/check and the MCP check_batch tool. */
+  const cachedCheck = async (raw: string): Promise<CheckResponse> => {
+    const key = raw.trim().replace(/\s+/g, ' ').toUpperCase()
+    return { ...(await checkCache.get(key, () => check(raw))), asOf: now().toISOString() }
+  }
+
   app.get('/v1/check', async (c) => {
     const { batch: raw } = parse(CheckQuery, c.req.query())
-    const key = raw.trim().replace(/\s+/g, ' ').toUpperCase()
-    const result = { ...(await checkCache.get(key, () => check(raw))), asOf: now().toISOString() }
+    const result = await cachedCheck(raw)
     c.header('Cache-Control', CHECK_CACHE)
     return c.json(result)
   })
@@ -372,6 +389,25 @@ export function createApp(deps: AppDeps) {
     c.header('Cache-Control', 'no-store')
     return c.json(result)
   })
+
+  // ---- MCP: the same answers for AI assistants (see src/mcp). Read-only; no Gemini explainer here.
+  const proofClient = deps.mcp?.proofClient === undefined ? () => publicClient() : deps.mcp.proofClient ? () => deps.mcp!.proofClient! : null
+  const proofPublisher = deps.mcp?.publisher !== undefined ? deps.mcp.publisher : (deps.publisher ?? null)
+  const mcp = mcpHandler(
+    {
+      check: cachedCheck,
+      alerts: (q) => {
+        const { rows, total } = listAlerts(ledger, { offset: 0, ...q })
+        return { items: rows.map((r) => alertDto(r, ctx)), total }
+      },
+      search: (q, limit) => publishable(ledger.searchAlerts(q, limit)).map((r) => alertDto(r, ctx)),
+      caseItems: (caseId) => publishable(ledger.alertsByCase(caseId)).map((r) => alertDto(r, ctx)),
+      sources: async () => (deps.sources ?? (() => defaultSources(ledger)))(),
+      proof: proofClient ? (key) => readProof(key, { client: proofClient(), publisher: proofPublisher, explorerBase: ctx.explorerBase }) : null,
+    },
+    deps.mcp?.limits,
+  )
+  app.on(['GET', 'POST', 'DELETE'], '/mcp', mcp)
 
   return Object.assign(app, { check, checkCache, snapshot })
 }

@@ -50,6 +50,7 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 | 📰 | **Feed** | Every alert, newest first, grouped by month. Filter by severity, Child Shield, state of manufacture and source. Filters sync to the URL. |
 | 💊 | **Medicine cabinet** | Save the batches you keep at home. Each is re-checked whenever you open the page, flagged ones float to the top, and expired or expiring packs are called out. It lives only in your browser (export and import as JSON). |
 | ⛓️ | **Arkiv directory** | A structured explorer of everything Nazar has on chain: live counts and breakdowns, filters that turn into Arkiv predicates, the **exact query string and an SDK snippet**, and attributes shown next to the payload. It can query Arkiv straight from your browser. |
+| 🤖 | **Nazar in your AI assistant** | A hosted MCP server lets Claude, ChatGPT, Cursor and other assistants check batches with the same four answers, cite the regulator notice and verify the alert on Arkiv. See [MCP server](#mcp-server). |
 | 📖 | **More** | How Nazar works, live source status, proof on Arkiv, privacy, settings and about. |
 | ✨ | **First-run guide** | A short animated guide: where to find "B.No.", the four answers, and how the proof works. |
 
@@ -200,6 +201,18 @@ client.select({ key: true, attributes: true, payload: true })
   .fetch()
 ```
 
+## MCP server
+
+Endpoint: **`https://nazar-api-production.up.railway.app/mcp`** (Streamable HTTP, stateless, read-only, no account).
+
+```bash
+claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp
+```
+
+Cursor (`~/.cursor/mcp.json`): `{"mcpServers":{"nazar":{"url":"https://nazar-api-production.up.railway.app/mcp"}}}`. VS Code (`.vscode/mcp.json`): `{"servers":{"nazar":{"type":"http","url":"…/mcp"}}}`. Claude Desktop, claude.ai and ChatGPT: add a custom connector with the URL.
+
+Tools: `check_batch`, `search_alerts`, `recent_alerts`, `get_case` (Batch Passport), `list_sources`, and `arkiv_proof`, which reads the alert straight from Arkiv so the answer can be verified without trusting Nazar. The server's instructions carry the same rules as the app: four states, never "safe", always cite the notice and the Arkiv entity. Ask: *"Is batch SR-13 of Coldrif flagged?"* Details: [`Nazar-backend/README.md`](Nazar-backend/README.md#mcp-server).
+
 ## Run it yourself
 
 Requires Node 22.5+ (24 recommended) and pnpm 10.
@@ -232,7 +245,7 @@ To publish for real:
 
 | Suite | What it covers | Run |
 |---|---|---|
-| Backend unit + golden | **352 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, snapshot and caches, medicine explainer (schema, guardrails, limits, Gemini retry and fallback), API, watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
+| Backend unit + golden | **367 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, snapshot and caches, medicine explainer (schema, guardrails, limits, Gemini retry and fallback), API, MCP server (tools, stateless HTTP round trip, limits), watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
 | Scanner parsers | 22 tests: GS1 element strings and Digital Links, pack key-value text, full pack labels, noise | `cd Nazar-frontend && pnpm test:scan` |
 | Frontend e2e | ~250 checks in headless Chrome over CDP, with the API down and with a mocked API. Covers onboarding, every result state, look-alikes, the proof sheet and on-chain module, Feed, Cabinet, More, the Arkiv directory, Strip Scan (upload path), 360–430px layouts, dark mode, reduced motion and console errors | `cd Nazar-frontend && pnpm build && pnpm e2e` |
 | Backend live | Hits the real regulator sites (opt-in) | `pnpm test:live` |
@@ -278,7 +291,8 @@ Nazar/
 - [x] Pack Reader and opt-in "About this medicine" (structured, guard-railed Gemini answer, rate-limited)
 - [x] Instant snapshot checks, edge caching, offline service worker
 - [ ] Telangana and Karnataka adapters from an Indian host; Kerala when its site is back
-- [ ] Batch Passport timeline, Shelf Sweep CSV for pharmacies, MCP server for AI agents
+- [x] MCP server for AI assistants (stateless Streamable HTTP, live Arkiv proof tool)
+- [ ] Batch Passport timeline, Shelf Sweep CSV for pharmacies
 - [ ] Hindi and Kannada, then 10 languages with read-aloud
 
 ## Author

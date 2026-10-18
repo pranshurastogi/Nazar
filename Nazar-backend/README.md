@@ -112,6 +112,54 @@ To publish for real:
 
 `/v1/check` answers from the ledger first. If the ledger has nothing, it falls back to the Arkiv reader, which always filters by the `project` tag and the publisher's `$creator`.
 
+## MCP server
+
+AI assistants (Claude, ChatGPT, Cursor, VS Code, any MCP client) can use Nazar through a hosted [Model Context Protocol](https://modelcontextprotocol.io) server on the same API:
+
+```
+https://nazar-api-production.up.railway.app/mcp
+```
+
+- **Transport:** Streamable HTTP, **stateless**: every POST gets a fresh server and transport, no sessions, JSON responses (no SSE). `GET`/`DELETE` return 405. CORS is open on `/mcp` only. No auth; read-only.
+- **Limits:** 60 tool calls per minute and 240 requests per minute per client (salted, in-memory IP hash, as for the medicine explainer), 64 KB request bodies. Logs record the tool name, outcome and duration, never arguments.
+- **Honesty rules** are sent as the server `instructions`: four states, never "safe", "No alert found" is not a safety certificate, cite the regulator notice and the Arkiv entity, a look-alike is never a flag. General medicine information (the Gemini explainer) is deliberately **not** exposed.
+
+| Tool | Does |
+|---|---|
+| `check_batch({ batch })` | `flagged` / `retracted` / `no_alert` / `unreadable`, every matching alert (brand, product, manufacturer, reason, severity + rules, Child Shield, regulator, notice title/date/URL, Arkiv entity key + explorer link) and the look-alike `suggestion`. Same code path and cache as `/v1/check` |
+| `search_alerts({ query, limit? })` | full-text search over brand, product, manufacturer and reason |
+| `recent_alerts({ minSeverity?, childShield?, state?, source?, limit? })` | the feed, newest first |
+| `get_case({ caseId })` | Batch Passport: every notice naming the batch |
+| `list_sources()` | regulators, enabled or why not, last checked |
+| `arkiv_proof({ entityKey })` | reads the entity **live from Arkiv** (`getEntity`), not from the ledger: attributes, payload, creator, official-publisher check, flags, expiry |
+
+Resources: `nazar://about`, `nazar://schema`. Prompt: `check_my_medicine` (walks a person through finding "B. No." on the pack).
+
+```bash
+# Claude Code
+claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp
+```
+
+```jsonc
+// Claude Code project file .mcp.json
+{ "mcpServers": { "nazar": { "type": "http", "url": "https://nazar-api-production.up.railway.app/mcp" } } }
+// Cursor ~/.cursor/mcp.json
+{ "mcpServers": { "nazar": { "url": "https://nazar-api-production.up.railway.app/mcp" } } }
+// VS Code .vscode/mcp.json
+{ "servers": { "nazar": { "type": "http", "url": "https://nazar-api-production.up.railway.app/mcp" } } }
+```
+
+Claude Desktop / claude.ai: Settings → Connectors → Add custom connector → paste the URL. ChatGPT: Settings → Apps & Connectors → Advanced → Developer mode → Create connector → paste the URL (no authentication).
+
+Try it locally with the MCP Inspector:
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp --transport http --method tools/list
+npx @modelcontextprotocol/inspector --cli http://localhost:8787/mcp --transport http --method tools/call --tool-name check_batch --tool-arg batch=SR-13
+```
+
+Code: `src/mcp/server.ts` (tools, resources, prompt, instructions), `src/mcp/http.ts` (stateless transport, limits), `src/mcp/proof.ts` (live Arkiv read). Tests: `test/unit/mcp.test.ts`.
+
 ## Tests
 
 ```bash
@@ -137,6 +185,7 @@ src/
   arkiv/               schema (entity builders), client, publisher, reader, heartbeat
   storage/             content-addressed raw store, SQLite ledger (FTS5)
   api/                 Hono app + DTOs
+  mcp/                 MCP server (tools, stateless Streamable HTTP, live Arkiv proof)
   cli.ts               commander CLI
 test/
   unit/, golden/, fixtures/ (real CDSCO, TN, MH and WHO documents), live/

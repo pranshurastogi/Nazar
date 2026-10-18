@@ -36,6 +36,8 @@ export function buildProductionApp() {
     chainId: e.ARKIV_CHAIN_ID,
     egress: egressStatus,
     directory,
+    // arkiv_proof labels an entity official only when its creator is this address.
+    mcp: { publisher: listed },
     status: () =>
       pipelineStatus({
         ledger,

@@ -45,6 +45,8 @@ npx tsx heartbeat.ts
 npx tsx count.ts
 ```
 
+AI assistants can do the same through Nazar's MCP server (`https://nazar-api-production.up.railway.app/mcp`): its `arkiv_proof` tool reads an entity directly from Arkiv with `getEntity`, never from Nazar's database, and reports its attributes, payload, creator, whether that creator is the publisher above, its flags and expiry.
+
 Every query starts with `eq("project", …)`, `eq("t", …)` and `.createdBy(PUBLISHER)`. The first two keep other apps' data out. The third means an entity copied by someone else is never shown as official. The anonymous public RPC is rate limited, so set `ARKIV_API_KEY` if you hit HTTP 429.
 
 ## How an alert is shaped
