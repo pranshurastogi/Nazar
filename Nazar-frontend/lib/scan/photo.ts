@@ -5,7 +5,7 @@
 import { decodePhoto, warmDecoders, type DecodedCode } from './decode'
 import { prepareForOcr, recognizeLabel, releaseOcrSoon, warmOcr } from './ocr'
 import type { PackLabel } from './pack'
-import { interpretCode, interpretOcr, readPack, readsDisagree, type ScanRead } from './read'
+import { interpretCode, interpretOcr, readPack, readsDisagree, withCodeName, type ScanRead } from './read'
 
 export type PhotoStage = 'opening' | 'code' | 'text'
 
@@ -20,10 +20,12 @@ export type PhotoRead = {
   mismatch?: { code: string; printed: string }
 }
 
-/** The best read among several codes in a photo: one with a batch, then one with dates. */
+/** The best read among several codes in a photo: one with a batch, then one with dates. A name any code carries rides along. */
 export function bestCodeRead(codes: DecodedCode[]): ScanRead | null {
   const reads = codes.map((c) => interpretCode(c.text, c.format)).filter((r): r is ScanRead => !!r)
-  return reads.find((r) => r.batch) ?? reads.find((r) => r.expiry) ?? reads[0] ?? null
+  const best = reads.find((r) => r.batch) ?? reads.find((r) => r.expiry) ?? reads[0] ?? null
+  const name = reads.find((r) => r.name)?.name
+  return best && name && !best.name ? { ...best, name } : best
 }
 
 /** Starts downloading the decoders and the OCR engine, e.g. when the person reaches for the camera. */
@@ -54,14 +56,14 @@ export async function readPackPhoto(file: Blob, onStage?: (s: PhotoStage) => voi
   try {
     const r = await recognizeLabel(ocrInput, { tryHarder: !code?.batch })
     const text = r.text.trim()
-    if (!text) return { code, pack: null, text: '' }
-    const pack = readPack(r)
+    if (!text) return { code, pack: withCodeName(null, code?.name), text: '' }
+    const pack = withCodeName(readPack(r), code?.name)
     const printed = interpretOcr(r.text)?.batch
     const mismatch = code?.batch && printed && readsDisagree(code.batch, printed) ? { code: code.batch, printed } : undefined
     return { code, pack, text, ...(mismatch ? { mismatch } : {}) }
   } catch {
     // The text reader could not load (offline on first use): a code read still counts.
-    if (code) return { code, pack: null, text: '' }
+    if (code) return { code, pack: withCodeName(null, code.name), text: '' }
     throw new Error('ocr-unavailable')
   } finally {
     releaseOcrSoon()

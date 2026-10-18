@@ -19,10 +19,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { SentinelEye } from '@/components/ui/sentinel-core'
 import { Rings } from '@/components/nazar/rings'
-import { decodeFrame, decodePhoto, warmDecoders, type DecodedCode } from '@/lib/scan/decode'
+import { decodeFrame, decodePhoto, warmDecoders } from '@/lib/scan/decode'
 import { confidenceOf, prepareForOcr, recognize, recognizeLabel, releaseOcrSoon, warmOcr } from '@/lib/scan/ocr'
-import type { PackLabel } from '@/lib/scan/pack'
-import { interpretCode, interpretOcr, readPack, readsDisagree, Vote, type ScanRead } from '@/lib/scan/read'
+import { packSummary, type PackLabel } from '@/lib/scan/pack'
+import { bestCodeRead as bestRead } from '@/lib/scan/photo'
+import { interpretOcr, readPack, readsDisagree, Vote, withCodeName, type ScanRead } from '@/lib/scan/read'
 import { cn } from '@/lib/utils'
 import { ScanResult, type Found } from './scan-result'
 import { ViewfinderOverlay, cropFor } from './viewfinder'
@@ -35,7 +36,7 @@ type Phase =
   | { kind: 'live' }
   | { kind: 'blocked'; reason: Blocked }
   | { kind: 'photo' }
-  | { kind: 'empty'; note: string }
+  | { kind: 'empty'; note: string; pack?: PackLabel | null }
   | { kind: 'result'; found: Found }
 
 /** Codes are error-corrected, so two identical frames settle it; printed text needs 3 of the last 5. */
@@ -54,12 +55,6 @@ function drawFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
   canvas.width = Math.round(video.videoWidth * scale)
   canvas.height = Math.round(video.videoHeight * scale)
   canvas.getContext('2d', { willReadFrequently: true })?.drawImage(video, 0, 0, canvas.width, canvas.height)
-}
-
-/** The best read among several codes in view: one with a batch, then one with dates. */
-function bestRead(codes: DecodedCode[]): ScanRead | null {
-  const reads = codes.map((c) => interpretCode(c.text, c.format)).filter((r): r is ScanRead => !!r)
-  return reads.find((r) => r.batch) ?? reads.find((r) => r.expiry) ?? reads[0] ?? null
 }
 
 function blockedOf(err: unknown): Blocked {
@@ -139,7 +134,8 @@ export function Scanner({
           const printed = read?.printed
           const mismatch = codeBatch && printed?.batch && readsDisagree(codeBatch, printed.batch) ? { code: codeBatch, printed: printed.batch } : undefined
           if (mismatch) setAnnounce("Label details don't match. Show this pack to your chemist.")
-          return { kind: 'result', found: { ...p.found, crossCheck: codeBatch ? 'done' : p.found.crossCheck, mismatch, pack: read?.pack ?? p.found.pack, packPending: false } }
+          const pack = withCodeName(read?.pack ?? p.found.pack, p.found.codeName) ?? undefined
+          return { kind: 'result', found: { ...p.found, crossCheck: codeBatch ? 'done' : p.found.crossCheck, mismatch, pack, packPending: false } }
         })
       })
   }, [])
@@ -177,6 +173,7 @@ export function Scanner({
                   expiry: read.expiry,
                   mfg: read.mfg,
                   gtin: read.gtin,
+                  codeName: read.name,
                   votes: { votes: lead.votes, of: codeVote.count },
                   crossCheck: 'pending',
                   packPending: true,
@@ -212,6 +209,7 @@ export function Scanner({
                     expiry: read.expiry ?? codeMeta?.expiry,
                     mfg: read.mfg ?? codeMeta?.mfg,
                     gtin: codeMeta?.gtin,
+                    codeName: codeMeta?.name,
                     votes: { votes: lead.votes, of: textVote.count },
                     confidence: textConf.get(lead.batch),
                     crossCheck: 'none',
@@ -358,7 +356,7 @@ export function Scanner({
       if (gen !== genRef.current) return
       const ocrInput = prepareForOcr(canvas, canvas.width, canvas.height, undefined, 2000)
       if (code?.batch) {
-        finishRead({ batch: code.batch, source: code.source, kind: code.kind, expiry: code.expiry, mfg: code.mfg, gtin: code.gtin, crossCheck: 'pending', packPending: true })
+        finishRead({ batch: code.batch, source: code.source, kind: code.kind, expiry: code.expiry, mfg: code.mfg, gtin: code.gtin, codeName: code.name, crossCheck: 'pending', packPending: true })
         crossCheck(ocrInput, code.batch, gen)
         return
       }
@@ -366,7 +364,7 @@ export function Scanner({
       const r = await recognizeLabel(ocrInput, { tryHarder: true })
       if (gen !== genRef.current) return
       const text = interpretOcr(r.text)
-      const pack = readPack(r)
+      const pack = withCodeName(readPack(r), code?.name) ?? undefined
       if (text?.batch) {
         finishRead({
           batch: text.batch,
@@ -375,6 +373,7 @@ export function Scanner({
           expiry: text.expiry ?? code?.expiry,
           mfg: text.mfg ?? code?.mfg,
           gtin: code?.gtin,
+          codeName: code?.name,
           confidence: confidenceOf(r, text.batch),
           crossCheck: 'none',
           pack,
@@ -384,8 +383,9 @@ export function Scanner({
       const note = code?.gtin
         ? 'The code on this pack names the product, not the batch, and no B.No. line was readable.'
         : "We couldn't find a batch number in this photo."
-      setPhase({ kind: 'empty', note })
-      setAnnounce(note)
+      const named = packSummary(pack).name
+      setPhase({ kind: 'empty', note, pack })
+      setAnnounce(named ? `Read ${named}, but no batch number. ${note}` : note)
     } catch {
       if (gen !== genRef.current) return
       setPhase({ kind: 'empty', note: "We couldn't read this photo." })
@@ -488,6 +488,7 @@ export function Scanner({
 
             {phase.kind === 'empty' && (
               <StatePanel icon={<ShieldAlert />} title="No batch number found" tone="caution">
+                <EmptyName pack={phase.pack} />
                 <p>{phase.note} Try a closer, sharper photo of the B.No. line in good light, or type it in.</p>
                 <Button variant="outline" className="mt-5 h-12 rounded-xl px-5" onClick={() => startCamera()}>
                   <Camera data-icon="inline-start" /> Try the camera again
@@ -561,6 +562,18 @@ function StatePanel({
       <h3 className="mt-4 text-lg font-semibold tracking-tight">{title}</h3>
       <div className="mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">{children}</div>
     </div>
+  )
+}
+
+/** The medicine name read from a photo that had no batch number: the name still helps the person. */
+function EmptyName({ pack }: { pack?: PackLabel | null }) {
+  const { name, detail } = packSummary(pack)
+  if (!name) return null
+  return (
+    <p className="mb-2 text-foreground" data-scan-empty-name>
+      We read <span className="font-semibold">{name}</span>
+      {detail ? <span className="text-muted-foreground"> · {detail}</span> : null}
+    </p>
   )
 }
 

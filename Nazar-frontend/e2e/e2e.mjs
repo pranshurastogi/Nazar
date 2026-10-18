@@ -839,17 +839,22 @@ if (MODE === 'mock') {
   const field = k => js(`document.querySelector('[data-pack-field="${k}"] dd')?.innerText || ''`)
   ok('pack: batch read from the whole label (DOBS3975)', (await js(`document.getElementById('scan-batch')?.value`)) === 'DOBS3975', await scanText())
   ok('pack: product, composition and form extracted', /Paracetamol Tablets IP 650/.test(await field('product')) && /Paracetamol IP 650 mg/.test(await field('composition')) && (await field('form')) === 'tablet', `${await field('product')} | ${await field('composition')} | ${await field('form')}`)
+  const scanBrand = () => js(`document.querySelector('[data-scan-medicine] [data-scan-brand]')?.innerText || ''`)
+  const scanGeneric = () => js(`document.querySelector('[data-scan-medicine] [data-scan-generic]')?.innerText || ''`)
+  ok('name: the brand (DOLO-650), not the generic line, leads the scan result', (await scanBrand()) === 'DOLO-650' && (await field('brand')) === 'DOLO-650', `${await scanBrand()} | ${await field('brand')}`)
+  ok('name: the generic and the maker are shown separately under the brand', (await scanGeneric()) === 'Paracetamol 650 mg · Micro Labs' && (await js(`document.querySelector('[data-pack-field="product"] dt')?.innerText`)) === 'Generic name', await scanGeneric())
   ok('pack: maker, state, licence, pack size and MRP extracted', /Micro Labs/.test(await field('manufacturer')) && (await field('manufacturerState')).includes('Tamil Nadu') && /28\/MD\/AP\/2010/.test(await field('licence')) && /15 tablets/.test(await field('packSize')) && (await field('mrp')).startsWith('33.60'), [await field('manufacturer'), await field('manufacturerState'), await field('licence'), await field('packSize'), await field('mrp')].join(' | '))
   ok('pack: fields are editable', await js(`(() => { const b = [...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Edit'); b.click(); return true })()`) && (await waitFor(`document.querySelectorAll('[data-pack-fields] input, [data-pack-fields] textarea').length >= 5`, 2000)))
   await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Done').click()`); await wait(200)
   ok('pack: scanner has no horizontal overflow at 360', await js(`(() => { const d = document.querySelector('[data-scanner]'); return d.scrollWidth <= d.clientWidth + 1 })()`))
   await shot('scan-pack-360-dark')
   await js(`document.querySelector('[data-pack-fields]').scrollIntoView({ block: 'start' })`); await shot('scan-pack-360-dark-fields')
+  ok('name: "About this medicine" in the scanner names the brand before anything is sent', (await js(`document.querySelector('[data-scanner] [data-medicine-name]')?.innerText`)) === 'About DOLO-650', await js(`document.querySelector('[data-scanner] [data-medicine-name]')?.innerText`))
   const before = mock.medicineBodies.length
   await js(`[...document.querySelectorAll('[data-scanner] [data-medicine] button')].find(b => b.textContent.includes('Show general information')).click()`)
   await waitFor(`!!document.querySelector('[data-scanner] [data-medicine-card]')`, 8000); await wait(400)
   const sentScan = JSON.parse(mock.medicineBodies[before] || '{}')
-  ok('pack: scanner "About this medicine" asks with the label read on the device (no image)', sentScan.product === 'Paracetamol Tablets IP 650 mg' && (sentScan.composition || []).some(c => /Paracetamol/.test(c)) && !JSON.stringify(sentScan).includes('data:image'), mock.medicineBodies[before])
+  ok('pack: scanner "About this medicine" asks with the label read on the device (no image)', sentScan.product === 'Paracetamol Tablets IP 650 mg' && sentScan.brand === 'DOLO-650' && (sentScan.composition || []).some(c => /Paracetamol/.test(c)) && !JSON.stringify(sentScan).includes('data:image'), mock.medicineBodies[before])
   await js(`document.querySelector('[data-scanner] [data-medicine]').scrollIntoView({ block: 'start' })`); await shot('scan-pack-360-dark-medicine')
 
   // The name bug: a label that names only the form ("Tablet") must never become "About Tablet". The card says
@@ -857,7 +862,7 @@ if (MODE === 'mock') {
   const editField = async (k, v) => { await js(`(() => { const el = document.querySelector('[data-pack-field="${k}"] input, [data-pack-field="${k}"] textarea'); el.value = ${JSON.stringify(v)}; el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })()`); await wait(250) }
   const scanMed = `document.querySelector('[data-scanner] [data-medicine]')`
   await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Edit').click()`); await wait(250)
-  await editField('product', 'Tablet'); await editField('composition', '')
+  await editField('brand', ''); await editField('product', 'Tablet'); await editField('composition', '')
   await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Done').click()`); await wait(400)
   const askText = await js(`${scanMed}?.innerText || ''`)
   ok('name: a label read as only "Tablet" says "About this medicine" and asks for the name, never "about Tablet"', (await js(`${scanMed}?.dataset.medicine`)) === 'idle' && (await js(`${scanMed}.querySelector('[data-medicine-name]')?.innerText`)) === 'About this medicine' && (await js(`!!${scanMed}.querySelector('[data-medicine-confirm-name] input')`)) && !/about tablet/i.test(askText), askText.slice(0, 200))
@@ -884,6 +889,20 @@ if (MODE === 'mock') {
   ok('no alert after a scan: no green in the card or the AI panel (dark)', greenAny === false)
   ok('no alert after a scan: never says "safe", "genuine" or "approved"', !/\b(safe|genuine|approved)\b/i.test((await js(`document.querySelector('[data-confirming]').innerText`)).replace(/not a safety certificate/gi, '')))
   await js(`document.querySelector('[data-confirming]').scrollIntoView({ block: 'start' })`); await shot('scan-result-360-dark-ai-panel')
+
+  // The checked-in label photo (e2e/fixtures/pack-brand-label.png): a brand with ®, four salts, a maker and a B.No. line.
+  const theme = d => js(`document.documentElement.classList.toggle('dark', ${d}); document.documentElement.style.colorScheme = '${d ? 'dark' : 'light'}'`)
+  const BRAND_FIXTURE = decodeURIComponent(new globalThis.URL('./fixtures/pack-brand-label.png', import.meta.url).pathname)
+  await vp(390, 844, false); await theme(false); await js(`scrollTo(0, 0)`)
+  await js(`document.querySelector('[aria-label="Scan the pack"]').click()`); await waitFor(`!!document.querySelector('[data-scanner]')`, 5000); await wait(500)
+  await setScanFile(BRAND_FIXTURE)
+  await waitFor(`!!document.querySelector('[data-scan-result]') || document.querySelector('[data-scanner]')?.dataset.phase === 'empty'`, 60000); await wait(400)
+  ok('name fixture: the photo\'s brand "Sinarest" (® dropped) is the name on the scan result', (await scanBrand()) === 'Sinarest' && (await field('brand')) === 'Sinarest', `${await scanBrand()} | ${await scanText()}`.slice(0, 300))
+  ok('name fixture: four salts parsed into a clean list, shown under the brand', (await field('composition')) === 'Paracetamol IP 500 mg\nPhenylephrine Hydrochloride IP 10 mg\nChlorpheniramine Maleate IP 2 mg\nCaffeine IP 30 mg' && (await scanGeneric()).startsWith('Paracetamol 500 mg + Phenylephrine Hydrochloride 10 mg + ') && (await scanGeneric()).endsWith('· Centaur Pharmaceuticals'), `${await field('composition')} | ${await scanGeneric()}`)
+  ok('name fixture: the batch comes from the B.No. line, never from the name', (await js(`document.getElementById('scan-batch')?.value`)) === 'SN5521')
+  await js(`document.querySelector('[data-scanner]').scrollTo(0, 0)`); await shot('name-scan-result-390-light')
+  await theme(true); await shot('name-scan-result-390-dark'); await theme(false)
+  await escape()
 }
 
 // ---- Cabinet: add a medicine from a photo (mock). Read on the device and pre-filled with where each value came from;
@@ -926,7 +945,9 @@ if (MODE === 'mock') {
   ok('cabinet photo: reading shows progress with the scanning eye', await waitFor(`!!document.querySelector('[data-cabinet-reading] [data-sentinel][data-state="scanning"]')`, 5000))
   await shot('cabphoto-reading-390', 150)
   ok('cabinet photo: the label is read and the form pre-filled', await waitRead(), await dlgText())
-  ok('cabinet photo: name, batch and expiry pre-filled from the label', /Paracetamol Tablets IP 650 mg|DOLO-650/.test(await val('name')) && (await val('batch')) === 'DOBS3975' && (await val('expiry')) === '2028-05', `${await val('name')} | ${await val('batch')} | ${await val('expiry')}`)
+  ok('cabinet photo: name, batch and expiry pre-filled from the label', (await val('name')) === 'DOLO-650' && (await val('batch')) === 'DOBS3975' && (await val('expiry')) === '2028-05', `${await val('name')} | ${await val('batch')} | ${await val('expiry')}`)
+  const genericLine = () => js(`document.querySelector('[data-cabinet-form] [data-name-generic]')?.innerText || ''`)
+  ok('name: the brand is the cabinet name; the generic line is shown beneath it', (await genericLine()).replace(/\s+/g, ' ') === 'GENERIC Paracetamol Tablets IP 650 mg' || /^generic paracetamol tablets ip 650 mg$/i.test((await genericLine()).replace(/\s+/g, ' ')), await genericLine())
   ok('cabinet photo: each pre-filled field says "Read from the label · N%"', (await Promise.all(['name', 'batch', 'expiry'].map(srcText))).every(t => /^Read from the label · \d{1,3}%/.test(t)), (await Promise.all(['name', 'batch', 'expiry'].map(srcText))).join(' | '))
   ok('cabinet photo: composition and maker pre-filled as optional fields', /Paracetamol IP 650 mg/.test(await val('composition')) && /Micro Labs/.test(await val('maker')))
   ok('cabinet photo: a clear read offers no AI guess and sends nothing', !(await js(`!!document.querySelector('[data-ai-guess]')`)) && mock.identifyBodies.length === 0)
@@ -955,12 +976,15 @@ if (MODE === 'mock') {
   await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-error="error"]')`, 8000)
   ok('cabinet photo: a failed guess is explained politely with a retry', /Could not get a guess right now/.test(await js(`document.querySelector('[data-ai-error]')?.innerText || ''`)) && /Try the AI guess again/.test(await js(`document.querySelector('[data-ai-guess]')?.innerText || ''`)))
   mock.identify = 'ok'
+  // The label read the brand well, so type a different name: a typed name is never overwritten by the AI.
+  await setField('name', 'Dolo tabs')
   const sentBefore = mock.identifyBodies.length
   await js(`document.querySelector('[data-ai-guess]').click()`); await waitFor(`!!document.querySelector('[data-ai-done]')`, 8000); await wait(300)
   const sentRaw = mock.identifyBodies[sentBefore] || '{}'; const sent = JSON.parse(sentRaw)
   ok('cabinet photo: the AI request is only { text, hints }, with no image or data: URL', Object.keys(sent).every(k => k === 'text' || k === 'hints') && typeof sent.text === 'string' && /DOBS4410/.test(sent.text) && Object.keys(sent.hints || {}).every(k => ['product', 'batch', 'expiry', 'manufacturer', 'composition'].includes(k)) && !/data:|base64|image/i.test(sentRaw), sentRaw.slice(0, 300))
-  ok('cabinet photo: AI fills only the empty fields and marks them "AI guess · check this"', (await val('batch')) === 'DOBS4410' && (await src('batch')) === 'ai' && (await srcText('batch')) === 'AI guess · check this' && (await src('maker')) === 'ai' && (await src('composition')) === 'ai', `${await val('batch')} ${await src('batch')} ${await src('maker')} ${await src('composition')}`)
-  ok('cabinet photo: a well-read name is not overwritten; the AI name is a suggestion to accept', /Paracetamol Tablets IP 650 mg/.test(await val('name')) && (await src('name')) === 'label' && (await js(`document.querySelector('[data-ai-suggestion="name"]')?.innerText || ''`)).includes('DOLO-650'))
+  ok('cabinet photo: AI fills only the empty fields and marks them "AI guess · check this"', (await val('batch')) === 'DOBS4410' && (await src('batch')) === 'ai' && (await srcText('batch')) === 'AI guess · check this' && (await src('maker')) === 'ai', `${await val('batch')} ${await src('batch')} ${await src('maker')} ${await src('composition')}`)
+  ok('name: the salts the device read from the generic line stay (the AI agrees, nothing is replaced)', (await val('composition')) === 'Paracetamol IP 650 mg' && (await src('composition')) === 'label', `${await val('composition')} ${await src('composition')}`)
+  ok('cabinet photo: a typed name is not overwritten; the AI name is a suggestion to accept', (await val('name')) === 'Dolo tabs' && !(await src('name')) && (await js(`document.querySelector('[data-ai-suggestion="name"]')?.innerText || ''`)).includes('DOLO-650'))
   ok('cabinet photo: the AI answer is labelled as an AI guess, not regulator data', /not regulator data/.test(await js(`document.querySelector('[data-ai-done]')?.innerText || ''`)))
   await js(`document.querySelector('[data-cabinet-form] [data-field="batch"] [data-field-source="ai"]').click()`); await waitFor(`!!document.querySelector('[data-ai-evidence]')`, 3000); await wait(250)
   ok('cabinet photo: the AI chip opens the evidence, quoting the label text', /DOBS4410/.test(await js(`document.querySelector('[data-ai-evidence]')?.innerText || ''`)) && /not regulator data/.test(await js(`document.querySelector('[data-ai-evidence]')?.innerText || ''`)))
@@ -996,6 +1020,55 @@ if (MODE === 'mock') {
   await escape()
   ok('cabinet photo: closing without confirming saves nothing', (await cabStored()).length === 2)
   mock.identify = 'ok'
+
+  // ---- Name first (mock): the checked-in label photo, the opt-in AI auto-fill switch, and "Get salts and details".
+  const theme = d => js(`document.documentElement.classList.toggle('dark', ${d}); document.documentElement.style.colorScheme = '${d ? 'dark' : 'light'}'`)
+  const BRAND_FIXTURE = decodeURIComponent(new globalThis.URL('./fixtures/pack-brand-label.png', import.meta.url).pathname)
+  // A fresh page: the LLM_DISABLED answer above switches AI guessing off for the rest of the visit.
+  await vp(390, 844, false); await js(`localStorage.setItem('theme', 'light')`); await send('Page.reload'); await wait(1500); await theme(false)
+  const sentAll = mock.identifyBodies.length
+  await openChooser(); await setAddFile(BRAND_FIXTURE); await waitRead(); await wait(300)
+  ok('name fixture (cabinet): the brand "Sinarest" is the name, read from the label', (await val('name')) === 'Sinarest' && (await src('name')) === 'label', `${await val('name')} ${await src('name')}`)
+  ok('name fixture (cabinet): the four salts, the maker and the batch are pre-filled', (await val('composition')) === 'Paracetamol IP 500 mg, Phenylephrine Hydrochloride IP 10 mg, Chlorpheniramine Maleate IP 2 mg, Caffeine IP 30 mg' && /Centaur/.test(await val('maker')) && (await val('batch')) === 'SN5521', `${await val('composition')} | ${await val('maker')} | ${await val('batch')}`)
+  ok('name fixture (cabinet): a good read needs no AI and sends nothing', !(await js(`!!document.querySelector('[data-ai-panel], [data-ai-details]')`)) && mock.identifyBodies.length === sentAll)
+  await escape()
+  await openChooser(); await setAddFile(goodPack); await waitRead(); await wait(300)
+  ok('name: the brand leads the cabinet form with the generic beneath (DOLO-650)', (await val('name')) === 'DOLO-650' && /paracetamol tablets ip 650 mg/i.test(await genericLine()))
+  await shot('name-cabinet-prefill-390-light'); await theme(true); await shot('name-cabinet-prefill-390-dark'); await theme(false)
+  await escape()
+
+  // No name read: the AI offer is prominent, with an opt-in switch that makes it run by itself next time.
+  const noName = await packImage('name-noname', [['36px Arial', 'Mfd. by: Micro Labs Limited, Hosur'], ['36px Arial', 'DOBS4410     EXP 04/2028']])
+  await openChooser(); await setAddFile(noName); await waitRead(); await wait(300)
+  const n0 = mock.identifyBodies.length
+  ok('ai auto-fill: no name read makes the AI offer prominent; the switch starts off; nothing is sent', (await val('name')) === '' && (await js(`document.querySelector('[data-ai-panel]')?.hasAttribute('data-ai-prominent')`)) && (await js(`document.querySelector('[data-ai-autofill]')?.getAttribute('aria-checked')`)) === 'false' && mock.identifyBodies.length === n0, await dlgText())
+  await shot('name-ai-offer-390-light'); await theme(true); await shot('name-ai-offer-390-dark'); await theme(false)
+  await js(`document.querySelector('[data-ai-autofill]').click()`); await wait(200)
+  ok('ai auto-fill: turning the switch on is remembered on this device and sends nothing by itself', (await js(`localStorage.getItem('nazar:ai-autofill')`)) === '1' && (await js(`document.querySelector('[data-ai-autofill]').getAttribute('aria-checked')`)) === 'true' && mock.identifyBodies.length === n0)
+  await js(`document.querySelector('[data-photo-retake]').click()`); await wait(300); await setAddFile(noName); await waitRead()
+  ok('ai auto-fill: with the switch on, the next weak photo asks the AI by itself, once', (await waitFor(`!!document.querySelector('[data-ai-done]')`, 10000)) && mock.identifyBodies.length === n0 + 1, `${mock.identifyBodies.length - n0}`)
+  const autoRaw = mock.identifyBodies[n0] || '{}'; const autoSent = JSON.parse(autoRaw)
+  ok('ai auto-fill: only the label text and hints are sent, never the image', Object.keys(autoSent).every(k => k === 'text' || k === 'hints') && /DOBS4410/.test(autoSent.text) && !/data:|base64|image/i.test(autoRaw), autoRaw.slice(0, 300))
+  ok('ai auto-fill: the AI fills the empty name, salts and batch, marked as AI guesses, with its generic line under the name', (await val('name')) === 'DOLO-650' && (await src('name')) === 'ai' && /paracetamol tablets ip 650 mg/i.test(await genericLine()) && (await val('composition')) === 'Paracetamol IP 650 mg' && (await src('composition')) === 'ai' && (await val('batch')) === 'DOBS4410', `${await val('name')} ${await src('name')} | ${await genericLine()} | ${await val('composition')}`)
+  await js(`document.querySelector('[data-cabinet-dialog]').scrollTo(0, 0)`)
+  await shot('name-ai-enrich-390-light'); await theme(true); await shot('name-ai-enrich-390-dark'); await theme(false)
+  await escape()
+  await js(`localStorage.removeItem('nazar:ai-autofill')`)
+
+  // A name but no salts: "Get salts and details" asks only for the composition (and maker) from the label text.
+  const brandOnly = await packImage('name-brand-only', [['bold 60px Arial', 'DOLO-650'], ['34px Arial', 'B.No.: DOBS3975   Exp: 05/2028']])
+  await openChooser(); await setAddFile(brandOnly); await waitRead(); await wait(300)
+  const d0 = mock.identifyBodies.length
+  ok('salts: a read with the brand and batch but no salts offers "Get salts and details" and sends nothing yet', (await val('name')) === 'DOLO-650' && (await val('batch')) === 'DOBS3975' && ((await val('composition')) ?? '') === '' && !(await js(`!!document.querySelector('[data-ai-panel]')`)) && /Get salts and details/.test(await js(`document.querySelector('[data-ai-details-run]')?.innerText || ''`)) && mock.identifyBodies.length === d0, await dlgText())
+  await js(`document.querySelector('[data-ai-details-run]').click()`); await waitFor(`document.querySelector('[data-ai-details]')?.dataset.aiDetailsState === 'done'`, 8000); await wait(300)
+  const dRaw = mock.identifyBodies[d0] || '{}'; const dSent = JSON.parse(dRaw)
+  ok('salts: only the label text and the known name are sent (no image)', Object.keys(dSent).every(k => k === 'text' || k === 'hints') && /DOLO-650/.test(dSent.hints?.product || '') && !/data:|base64|image/i.test(dRaw), dRaw.slice(0, 300))
+  ok('salts: the composition and maker are filled from the label text, marked as AI guesses', (await val('composition')) === 'Paracetamol IP 650 mg' && (await src('composition')) === 'ai' && (await val('maker')) === 'Micro Labs Limited', `${await val('composition')} ${await src('composition')} ${await val('maker')}`)
+  ok('salts: the name and batch read from the label are left alone (no batch suggestion)', (await val('name')) === 'DOLO-650' && (await src('name')) === 'label' && (await val('batch')) === 'DOBS3975' && !(await js(`!!document.querySelector('[data-ai-suggestion="batch"]')`)))
+  await js(`document.querySelector('[data-ai-details]').scrollIntoView({ block: 'center' })`)
+  await shot('name-ai-salts-390-light'); await theme(true); await shot('name-ai-salts-390-dark'); await theme(false)
+  await escape()
+  ok('name: nothing from these reads was saved', (await cabStored()).length === 2)
 }
 
 // ---- Feed against the API (mock contract or the real backend)

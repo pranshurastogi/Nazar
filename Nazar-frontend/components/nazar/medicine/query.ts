@@ -17,19 +17,23 @@ const clip = (s: string | undefined, n: number) => {
  */
 export const realName = (v: string | undefined | null) => (v && /[a-z]{3}/i.test(v) && !isBareForm(v) ? v : undefined)
 
-/** The name to show and ask about: brand/product first, else the first ingredient; null when the label named no medicine. */
-export const nameOf = (q: MedicineQuery) => realName(q.product) ?? realName(q.brand) ?? realName(q.composition?.[0]) ?? null
+/**
+ * The name to show and ask about: the brand first (people know "DOLO-650", not "Paracetamol Tablets IP 650 mg"),
+ * then the product line, else the first ingredient; null when the label named no medicine.
+ */
+export const nameOf = (q: MedicineQuery) => realName(q.brand) ?? realName(q.product) ?? realName(q.composition?.[0]) ?? null
 
 export function queryFromPack(pack: PackLabel | null | undefined, batch?: string): MedicineQuery | null {
   if (!pack) return null
   const composition = pack.composition.map((c) => clip(c.value, 150)!).filter(Boolean).slice(0, 8)
   const product = realName(clip(pack.product?.value, 110))
+  const brand = realName(clip(pack.brand?.value, 110))
   const rest = { form: clip(pack.form?.value, 40), manufacturer: clip(pack.manufacturer?.value, 190), batch: clip(batch, 40) }
-  if (!product && !composition.length) {
+  if (!product && !brand && !composition.length) {
     // The label was read but names no medicine (only "Tablet", say): the card asks the person for the name first.
     return pack.product || pack.form ? rest : null
   }
-  return { product, composition: composition.length ? composition : undefined, ...rest }
+  return { ...(brand ? { brand } : {}), product, composition: composition.length ? composition : undefined, ...rest }
 }
 
 function queryFromAlert(a: Alert): MedicineQuery | null {

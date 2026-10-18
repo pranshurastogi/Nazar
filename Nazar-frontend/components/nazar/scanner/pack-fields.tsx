@@ -3,15 +3,16 @@
 import { useId, useState } from 'react'
 import { Check, Pencil } from 'lucide-react'
 
-import type { PackField, PackLabel } from '@/lib/scan/pack'
+import { genericOf, type PackField, type PackLabel } from '@/lib/scan/pack'
 import { cn } from '@/lib/utils'
 
-// The rest of the label, read on the device: product, composition, maker, licence, MRP. Shown as a
+// The rest of the label, read on the device: brand, product, composition, maker, licence, MRP. Shown as a
 // tidy list with a per-field confidence hint; "Edit" turns every value into an input.
 
-type Key = 'product' | 'composition' | 'form' | 'packSize' | 'manufacturer' | 'manufacturerState' | 'licence' | 'mrp'
+type Key = 'brand' | 'product' | 'composition' | 'form' | 'packSize' | 'manufacturer' | 'manufacturerState' | 'licence' | 'mrp'
 
 const ROWS: { key: Key; label: string; multiline?: boolean }[] = [
+  { key: 'brand', label: 'Brand' },
   { key: 'product', label: 'Product' },
   { key: 'composition', label: 'Composition', multiline: true },
   { key: 'form', label: 'Form' },
@@ -21,6 +22,9 @@ const ROWS: { key: Key; label: string; multiline?: boolean }[] = [
   { key: 'licence', label: 'Mfg. Lic. No.' },
   { key: 'mrp', label: 'MRP (₹)' },
 ]
+
+/** With a brand read, the product line is the generic description (unless it only repeats the brand, "Sinarest Tablets"). */
+const labelOf = (r: (typeof ROWS)[number], pack: PackLabel) => (r.key === 'product' && genericOf(pack) && pack.brand ? 'Generic name' : r.label)
 
 /** Lowest confidence that still reads as fine; below it the value gets a "check" hint. */
 const OK = 0.6
@@ -79,7 +83,7 @@ export function PackFields({ pack, onChange }: { pack: PackLabel; onChange: (p: 
           return (
             <div key={r.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-3 border-b border-border/60 py-2 last:border-0" data-pack-field={r.key}>
               <dt className="pt-0.5 text-xs font-medium text-muted-foreground">
-                {editing ? <label htmlFor={inputId}>{r.label}</label> : r.label}
+                {editing ? <label htmlFor={inputId}>{labelOf(r, pack)}</label> : labelOf(r, pack)}
               </dt>
               <dd className="min-w-0">
                 {editing ? (

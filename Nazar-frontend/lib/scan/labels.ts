@@ -122,6 +122,32 @@ export function parseBatchUrl(text: string): LabelData | null {
   return out.batch || out.expiry || out.mfg ? out : null
 }
 
+const NAME_KEYS = new Set(['brand', 'brandname', 'product', 'productname', 'name', 'drug', 'drugname', 'medicine', 'medicinename', 'item', 'itemname', 'tradename'])
+
+/**
+ * A product name carried by a code's text: "Brand Name: DOLO-650; B.No: ..." or "Product: Crocin Advance",
+ * or a verification link with ?product=DOLO-650 / ?brand=... . Most Indian GS1 codes hold only GTIN, batch and
+ * dates, so this is a bonus, never expected.
+ */
+export function parseNameText(text: string): string | undefined {
+  const t = text.trim()
+  const fromValue = (v: string | null | undefined) => {
+    const s = v?.replace(/\+/g, ' ').replace(/\s+/g, ' ').trim()
+    return s && /[A-Za-z]{3}/.test(s) && s.length <= 60 && !/^https?:/i.test(s) ? s.slice(0, 40) : undefined
+  }
+  try {
+    const url = new URL(t)
+    if (/^https?:$/.test(url.protocol)) {
+      const params = new URLSearchParams(url.search)
+      if (url.hash.includes('=')) new URLSearchParams(url.hash.slice(1)).forEach((v, k) => params.append(k, v))
+      for (const [k, v] of params) if (NAME_KEYS.has(k.toLowerCase().replace(/[^a-z]/g, ''))) return fromValue(v)
+      return undefined
+    }
+  } catch {}
+  const m = /(?:^|[\n;,|])\s*(?:brand|product|drug|medicine|item|trade)(?:\s*name)?\s*[:=\-]\s*([^\n;|]{2,60}?)(?=\s*(?:[\n;|]|,\s*[A-Za-z .]{2,20}\s*[:=]|\s(?:b\.?\s?no|batch|lot|mfg|mfd|exp|gtin|serial|sr\.?\s?no)\b|$))/i.exec(t)
+  return fromValue(m?.[1])
+}
+
 /** "2026-12", "202612", "261231" (GS1 style) as used in some URL parameters. */
 function parseCompactDate(v: string): LabelDate | undefined {
   const t = v.trim()

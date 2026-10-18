@@ -13,6 +13,11 @@ export type Gs1Data = {
   expiry?: CodeDate
   mfg?: CodeDate
   serial?: string
+  /**
+   * Free text from AI 240 (additional product identification) or 241 (customer part number), when it holds
+   * words: a few makers put the product name there. Indian GS1 codes mostly carry only GTIN, batch and dates.
+   */
+  productText?: string
 }
 
 const GS = '\x1d'
@@ -59,6 +64,7 @@ function fromPairs(pairs: [string, string][], form: Gs1Data['form']): Gs1Data | 
     else if (ai === '21') out.serial = v
     else if (ai === '17' || ai === '15') out.expiry ??= parseYymmdd(v)
     else if (ai === '11') out.mfg = parseYymmdd(v)
+    else if ((ai === '240' || ai === '241') && /[A-Za-z]{3}/.test(v)) out.productText ??= v.replace(/\s+/g, ' ').slice(0, 40)
   }
   if (out.expiry === undefined) delete out.expiry
   if (out.mfg === undefined) delete out.mfg
@@ -143,7 +149,7 @@ export function parseGs1Element(text: string): Gs1Data | null {
   return raw ? fromPairs(raw, 'element') : null
 }
 
-const DL_KEYS: Record<string, string> = { gtin: '01', lot: '10', ser: '21', exp: '17', '01': '01', '10': '10', '21': '21', '17': '17', '11': '11', '15': '15', '22': '22', '235': '235' }
+const DL_KEYS: Record<string, string> = { gtin: '01', lot: '10', ser: '21', exp: '17', '01': '01', '10': '10', '21': '21', '17': '17', '11': '11', '15': '15', '22': '22', '235': '235', '240': '240', '241': '241' }
 
 /** GS1 Digital Link: https://any.host/[prefix/]01/{gtin}/10/{batch}/21/{serial}?17=YYMMDD */
 export function parseDigitalLink(text: string): Gs1Data | null {

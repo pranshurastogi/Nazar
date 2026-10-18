@@ -1,8 +1,8 @@
 import { matchKey, confusionKey } from '@/lib/source/match'
 import { parseGs1, type CodeDate } from './gs1'
-import { batchCandidates, isPlausibleBatch, parseBatchUrl, parseLabelText } from './labels'
+import { batchCandidates, isPlausibleBatch, parseBatchUrl, parseLabelText, parseNameText } from './labels'
 import { confidenceOf, type OcrResult } from './ocr'
-import { parsePackLabel, type PackLabel } from './pack'
+import { isBareForm, isIngredientWord, parseBrand, parsePackLabel, type PackLabel } from './pack'
 
 /** Where a read came from. Codes carry error correction; printed text does not. */
 export type ReadSource = 'qr' | 'datamatrix' | 'barcode' | 'text'
@@ -15,6 +15,16 @@ export type ScanRead = {
   source: ReadSource
   /** What kind of payload the code held, for the "how we read it" line. */
   kind: 'gs1' | 'url' | 'label' | 'bare' | 'ocr'
+  /** A product name the code itself carries (GS1 AI 240/241, a "Product:" field or a ?product= link). Rare on Indian packs. */
+  name?: string
+}
+
+/** A name from a code, kept only when it reads like a brand: never an ingredient alone or a bare form. */
+function codeName(text: string, gs1Text?: string): string | undefined {
+  const v = gs1Text ?? parseNameText(text) ?? (/^https?:/i.test(text.trim()) ? undefined : parseBrand(text)?.value)
+  const name = v?.replace(/\s+/g, ' ').trim()
+  if (!name || isBareForm(name) || (name.split(' ').length === 1 && isIngredientWord(name))) return undefined
+  return name
 }
 
 const LINEAR = /code_?128|code_?39|code_?93|codabar|itf|ean|upc|databar/i
@@ -31,12 +41,19 @@ export function interpretCode(text: string, format: string): ScanRead | null {
   const gs1 = parseGs1(text)
   if (gs1 && (gs1.batch || gs1.expiry || gs1.gtin)) {
     const batch = gs1.batch && isPlausibleBatch(gs1.batch) ? gs1.batch.toUpperCase() : undefined
-    return { batch, expiry: gs1.expiry, mfg: gs1.mfg, gtin: gs1.gtin, source, kind: 'gs1' }
+    const name = gs1.productText ? codeName(text, gs1.productText) : undefined
+    return { batch, expiry: gs1.expiry, mfg: gs1.mfg, gtin: gs1.gtin, source, kind: 'gs1', ...(name ? { name } : {}) }
   }
   const url = parseBatchUrl(text)
-  if (url) return { ...url, source, kind: 'url' }
+  if (url) {
+    const name = codeName(text)
+    return { ...url, source, kind: 'url', ...(name ? { name } : {}) }
+  }
   const label = parseLabelText(text)
-  if (label.batch || label.expiry) return { ...label, source, kind: 'label' }
+  if (label.batch || label.expiry) {
+    const name = codeName(text)
+    return { ...label, source, kind: 'label', ...(name ? { name } : {}) }
+  }
   // A 1D code that holds only the batch, as some Indian packs print. Long all-digit values are product codes (EAN/GTIN).
   const bare = text.trim()
   if (LINEAR.test(format) && !/^\d{8,}$/.test(bare) && isPlausibleBatch(bare)) return { batch: bare.toUpperCase(), source, kind: 'bare' }
@@ -54,13 +71,24 @@ export function interpretOcr(text: string): ScanRead | null {
 /** The whole label from one OCR pass: product, composition, maker, licence, MRP, plus batch and dates. */
 export function readPack(r: OcrResult): PackLabel {
   const conf = (v: string) => confidenceOf(r, v)
-  const pack = parsePackLabel(r.text, conf)
+  const pack = parsePackLabel(r.text, conf, r.lines)
   const label = parseLabelText(r.text)
   const batch = batchCandidates(r.text)[0]
   if (batch) pack.batch = { value: batch, confidence: Math.min(0.9, conf(batch) / 100) }
   if (label.mfg) pack.mfg = { value: label.mfg, confidence: 0.8 }
   if (label.expiry) pack.expiry = { value: label.expiry, confidence: 0.8 }
   return pack
+}
+
+/**
+ * Adds the name a code carries to the printed-label read. A code is error-corrected, so its name wins over a
+ * weakly read brand; a well-read printed brand stays. Returns a label even when no text was read.
+ */
+export function withCodeName(pack: PackLabel | null | undefined, name: string | undefined): PackLabel | null {
+  if (!name) return pack ?? null
+  const base: PackLabel = pack ?? { composition: [], rawText: '' }
+  if (base.brand && base.brand.confidence >= 0.8) return base
+  return { ...base, brand: { value: name, confidence: 0.9 } }
 }
 
 /**

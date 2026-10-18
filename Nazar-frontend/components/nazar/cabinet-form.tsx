@@ -7,10 +7,21 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { AddChooser } from '@/components/nazar/cabinet/add-chooser'
-import { AiGuessPanel, type AiState } from '@/components/nazar/cabinet/ai-guess'
+import { AiDetails, AiGuessPanel, readAutoFill, writeAutoFill, type AiState } from '@/components/nazar/cabinet/ai-guess'
 import { FieldSource, SuggestionRow } from '@/components/nazar/cabinet/field-source'
 import { PhotoReading } from '@/components/nazar/cabinet/photo-reading'
-import { applyGuess, fromPhoto, type FieldKey, type PhotoPrefill, type Sources, type Suggestion, type Values } from '@/components/nazar/cabinet/prefill'
+import {
+  aiGeneric,
+  applyGuess,
+  DETAIL_FIELDS,
+  fromPhoto,
+  wantsDetails,
+  type FieldKey,
+  type PhotoPrefill,
+  type Sources,
+  type Suggestion,
+  type Values,
+} from '@/components/nazar/cabinet/prefill'
 import {
   addItem,
   cleanComposition,
@@ -68,6 +79,8 @@ function Field({ id, label, hint, error, below, children }: { id: string; label:
 
 const toDraft = (v: Partial<Values>): Draft => ({ ...EMPTY, name: v.name ?? '', batch: v.batch ?? '', expiry: v.expiry || null, composition: v.composition ?? '', maker: v.maker ?? '' })
 const toValues = (d: Draft): Values => ({ name: d.name, batch: d.batch, expiry: d.expiry ?? '', composition: d.composition, maker: d.maker })
+const normName = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const idleAi = (): AiState => (aiOff ? { kind: 'disabled', message: aiOff } : { kind: 'idle' })
 
 export function CabinetFormDialog({
   open,
@@ -99,7 +112,15 @@ export function CabinetFormDialog({
   const [edited, setEdited] = useState<ReadonlySet<FieldKey>>(() => new Set())
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [ai, setAi] = useState<AiState>({ kind: 'idle' })
+  /** "Get salts and details": a name was read but no ingredients. */
+  const [details, setDetails] = useState<AiState>({ kind: 'idle' })
+  /** The generic line under the brand ("Paracetamol Tablets IP 650 mg"), from the label or the AI. */
+  const [generic, setGeneric] = useState<string | null>(null)
+  const [autoFill, setAutoFill] = useState(false)
   const gen = useRef(0)
+  /** The latest form state, so an AI answer that lands after the person typed merges into what they typed. */
+  const latest = useRef<{ draft: Draft; sources: Sources; edited: ReadonlySet<FieldKey>; generic: string | null }>({ draft: EMPTY, sources: {}, edited: new Set(), generic: null })
+  latest.current = { draft, sources, edited, generic }
   const headingRef = useRef<HTMLHeadingElement>(null)
   const thumbRef = useRef<string | null>(null)
 
@@ -116,7 +137,9 @@ export function CabinetFormDialog({
     setSources({})
     setEdited(new Set())
     setSuggestions([])
-    setAi(aiOff ? { kind: 'disabled', message: aiOff } : { kind: 'idle' })
+    setAi(idleAi())
+    setDetails(idleAi())
+    setGeneric(null)
     setThumbUrl(null)
   }
 
@@ -127,6 +150,7 @@ export function CabinetFormDialog({
     }
     setErrors({})
     resetPhoto()
+    setAutoFill(readAutoFill())
     if (editing) {
       setDraft({ name: editing.name, batch: editing.batch, expiry: editing.expiry, note: editing.note, composition: (editing.composition ?? []).join(', '), maker: editing.maker ?? '' })
       setExtra(!!(editing.composition?.length || editing.maker))
@@ -186,10 +210,15 @@ export function CabinetFormDialog({
       const read = await readPackPhoto(file, (s) => mine === gen.current && setStage(s))
       if (mine !== gen.current) return
       const pre = fromPhoto(read)
+      const next = { ...toDraft(pre.values), note: latest.current.draft.note }
       setPhoto(pre)
       setSources(pre.sources)
-      setDraft((d) => ({ ...toDraft(pre.values), note: d.note }))
+      setDraft(next)
+      setGeneric(pre.generic ?? null)
       setExtra(!!(pre.values.composition || pre.values.maker))
+      latest.current = { draft: next, sources: pre.sources, edited: new Set(), generic: pre.generic ?? null }
+      // Opt-in: with the switch on, a weak read asks the AI by itself. Only the label text is sent.
+      if (readAutoFill() && pre.weak && !pre.empty && !aiOff && pre.text.trim().length >= 3) void runAi('guess', pre, true)
     } catch {
       if (mine !== gen.current) return
       setPhotoFailed(true)
@@ -205,26 +234,44 @@ export function CabinetFormDialog({
     focusHeading()
   }
 
-  const guess = async () => {
-    if (!photo) return
+  /**
+   * Asks the AI about the label text (never the photo). 'guess' fills any missing field; 'details' ("Get salts
+   * and details") fills only the empty composition and maker, using the name already known as the hint.
+   */
+  const runAi = async (mode: 'guess' | 'details', pre: PhotoPrefill, auto = false) => {
     const mine = gen.current
-    setAi({ kind: 'loading' })
-    const r = await apiIdentifyMedicine(photo.text, photo.hints)
+    const setState = mode === 'guess' ? setAi : setDetails
+    setState({ kind: 'loading', auto })
+    const name = latest.current.draft.name.trim()
+    const hints = mode === 'details' && name ? { ...pre.hints, product: [name, latest.current.generic].filter(Boolean).join(' ') } : pre.hints
+    const r = await apiIdentifyMedicine(pre.text, hints)
     if (mine !== gen.current) return
     if (!r.ok) {
       if (r.kind === 'disabled') {
         aiOff = 'AI guessing isn’t available right now.'
         setAi({ kind: 'disabled', message: aiOff })
-      } else if (r.kind === 'limited') setAi({ kind: 'limited', message: r.message, minutes: r.retryAfterSec ? Math.max(1, Math.ceil(r.retryAfterSec / 60)) : null })
-      else setAi({ kind: 'error', message: r.message })
+        setDetails({ kind: 'disabled', message: aiOff })
+      } else if (r.kind === 'limited') setState({ kind: 'limited', message: r.message, minutes: r.retryAfterSec ? Math.max(1, Math.ceil(r.retryAfterSec / 60)) : null })
+      else setState({ kind: 'error', message: r.message })
       return
     }
-    const merged = applyGuess(toValues(draft), sources, edited, r.data)
+    const now = latest.current
+    const merged = applyGuess(toValues(now.draft), now.sources, now.edited, r.data, mode === 'details' ? DETAIL_FIELDS : undefined)
     setDraft((d) => ({ ...d, name: merged.values.name, batch: merged.values.batch.toUpperCase(), expiry: merged.values.expiry || null, composition: merged.values.composition, maker: merged.values.maker }))
     setSources(merged.sources)
-    setSuggestions(merged.suggestions)
+    setSuggestions((list) => (mode === 'details' ? [...list.filter((x) => !DETAIL_FIELDS.includes(x.field)), ...merged.suggestions] : merged.suggestions))
+    // The AI's generic line goes under the name when the name is its brand and the label gave none.
+    const g = aiGeneric(r.data)
+    if (!now.generic && g && normName(merged.values.name) === normName(r.data.guess.brand)) setGeneric(g)
     if (merged.filled.some((k) => k === 'composition' || k === 'maker') || merged.suggestions.some((s) => s.field === 'composition' || s.field === 'maker')) setExtra(true)
-    setAi({ kind: 'done', filled: merged.filled.length, suggested: merged.suggestions.length, confidence: r.data.confidence, model: r.data.model })
+    setState({ kind: 'done', filled: merged.filled.length, suggested: merged.suggestions.length, confidence: r.data.confidence, model: r.data.model })
+  }
+
+  const guess = () => photo && runAi('guess', photo)
+  const getDetails = () => photo && runAi('details', photo)
+  const onAutoFill = (on: boolean) => {
+    writeAutoFill(on)
+    setAutoFill(on)
   }
 
   const useSuggestion = (s: Suggestion) => {
@@ -288,9 +335,15 @@ export function CabinetFormDialog({
   const below = (k: FieldKey) => {
     const src = sources[k]
     const sug = suggestions.find((s) => s.field === k)
-    if (!src && !sug) return undefined
+    const genericLine = k === 'name' && generic && normName(generic) !== normName(draft.name) ? generic : null
+    if (!src && !sug && !genericLine) return undefined
     return (
       <>
+        {genericLine && (
+          <p className="text-sm leading-5 text-muted-foreground" data-name-generic>
+            <span className="text-xs font-semibold tracking-wide uppercase">Generic</span> <span className="text-foreground">{genericLine}</span>
+          </p>
+        )}
         {src && (
           <div className="flex flex-wrap gap-1.5">
             <FieldSource source={src} field={LABEL[k]} />
@@ -317,6 +370,9 @@ export function CabinetFormDialog({
           ? 'No batch number was read'
           : 'The label was hard to read'
   const showAi = !!photo && photo.weak && !photo.empty
+  // A name but no salts: offer the small "Get salts and details" (the full guess covers it on a weak read).
+  const showDetails =
+    !!photo && details.kind !== 'disabled' && (details.kind !== 'idle' || (!showAi && wantsDetails(toValues(draft), photo.text)))
   const head =
     step === 'choose'
       ? { eyebrow: 'My medicine cabinet', title: 'Add a medicine', desc: 'Saved only on this device. Nazar re-checks the batch each time you open your cabinet.' }
@@ -404,7 +460,17 @@ export function CabinetFormDialog({
                 </div>
               )}
 
-              {showAi && <AiGuessPanel state={ai} text={photo.text} reason={weakReason} onGuess={guess} />}
+              {showAi && (
+                <AiGuessPanel
+                  state={ai}
+                  text={photo.text}
+                  reason={weakReason}
+                  onGuess={guess}
+                  prominent={!photo.values.name}
+                  autoFill={autoFill}
+                  onAutoFill={onAutoFill}
+                />
+              )}
 
               <Field id={ids.name} label="Medicine name" error={errors.name} below={below('name')}>
                 <input
@@ -419,6 +485,7 @@ export function CabinetFormDialog({
                   className={fieldCls}
                 />
               </Field>
+              {showDetails && <AiDetails state={details} onRun={getDetails} name={draft.name.trim()} />}
               <Field id={ids.batch} label="Batch number" hint="After “B.No.” on the pack" error={errors.batch} below={below('batch')}>
                 <input
                   id={ids.batch}

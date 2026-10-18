@@ -2,10 +2,19 @@
 // stays in the page. The engine and English model are downloaded once and cached by the browser.
 import type Tesseract from 'tesseract.js'
 
-export type OcrResult = { text: string; confidence: number; words: { text: string; confidence: number }[] }
+export type OcrResult = {
+  text: string
+  confidence: number
+  words: { text: string; confidence: number }[]
+  /**
+   * Each printed line with the height of its letters (median word box, in pixels of the prepared image) and
+   * its confidence. The brand is usually the tallest line on the front, so the Pack Reader weighs it by this.
+   */
+  lines?: { text: string; height: number; confidence: number }[]
+}
 
-/** Letters, digits and the punctuation used on labels (batch, composition, MRP, % w/v). Drops OCR noise like | ~ « ». */
-const WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.:-/()#,%&+;' "
+/** Letters, digits and the punctuation used on labels (batch, composition, MRP, % w/v), plus ® and ™ beside a brand. Drops OCR noise like | ~ « ». */
+const WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.:-/()#,%&+;'®™ "
 const IDLE_MS = 120_000
 
 let workerP: Promise<Tesseract.Worker> | null = null
@@ -46,11 +55,23 @@ export function recognize(canvas: HTMLCanvasElement, layout: 'block' | 'page'): 
     // 6 = a single uniform block (the cropped label area), 3 = automatic page layout (a whole photo).
     await w.setParameters({ tessedit_pageseg_mode: (layout === 'block' ? '6' : '3') as unknown as Tesseract.PSM })
     const { data } = await w.recognize(canvas, {}, { text: true, blocks: true })
-    const words = (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines.flatMap((l) => l.words.map((x) => ({ text: x.text, confidence: x.confidence })))))
-    return { text: data.text, confidence: data.confidence, words }
+    const allLines = (data.blocks ?? []).flatMap((b) => b.paragraphs.flatMap((p) => p.lines))
+    const words = allLines.flatMap((l) => l.words.map((x) => ({ text: x.text, confidence: x.confidence })))
+    const lines = allLines.map((l) => ({ text: l.text.trim(), height: lineHeight(l), confidence: l.confidence })).filter((l) => l.text)
+    return { text: data.text, confidence: data.confidence, words, lines }
   })
   queue = job.catch(() => {})
   return job
+}
+
+/** Letter height of a line: the median height of its word boxes (single characters and punctuation left out). */
+function lineHeight(line: Tesseract.Line): number {
+  const hs = line.words
+    .filter((w) => w.text.replace(/[^A-Za-z0-9]/g, '').length >= 2)
+    .map((w) => w.bbox.y1 - w.bbox.y0)
+    .sort((a, b) => a - b)
+  if (hs.length) return hs[Math.floor(hs.length / 2)]!
+  return Math.max(0, line.bbox.y1 - line.bbox.y0)
 }
 
 /** OCR confidence for one value: the mean of the words that make it up, else the page mean. */

@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, CalendarClock, LoaderCircle, QrCode, RotateCcw, ScanText, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CalendarClock, LoaderCircle, Pill, QrCode, RotateCcw, ScanText, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { AboutMedicine } from '@/components/nazar/medicine/about-medicine'
 import { queryFromPack } from '@/components/nazar/medicine/query'
 import type { CodeDate } from '@/lib/scan/gs1'
 import { hasConfusableChars } from '@/lib/scan/labels'
-import type { PackLabel } from '@/lib/scan/pack'
+import { packSummary, type PackLabel } from '@/lib/scan/pack'
 import { formatCodeDate, isExpired, type ReadSource, type ScanRead } from '@/lib/scan/read'
 import { validateBatch } from '@/lib/source/match'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,8 @@ export type Found = {
   expiry?: CodeDate
   mfg?: CodeDate
   gtin?: string
+  /** A product name carried by the code itself (rare on Indian packs); merged into the label read. */
+  codeName?: string
   /** Live reads: how many of the recent frames agreed. */
   votes?: { votes: number; of: number }
   /** OCR confidence, 0-100. Codes have none: they are error-corrected. */
@@ -41,6 +43,38 @@ function confidenceLabel(f: Found): { text: string; tone: 'good' | 'ok' | 'low' 
   if (f.source !== 'text') return { text: f.kind === 'bare' ? 'Medium confidence' : 'High confidence', tone: f.kind === 'bare' ? 'ok' : 'good' }
   const pct = Math.round(f.confidence ?? 0)
   return { text: `${pct}% confidence`, tone: pct >= 85 ? 'ok' : 'low' }
+}
+
+/** The medicine this pack is, brand first: "DOLO-650 · Paracetamol 650 mg · Micro Labs". */
+function MedicineLine({ pack }: { pack?: PackLabel }) {
+  const { name, detail } = packSummary(pack)
+  if (!name) return null
+  const low = (pack?.brand ?? pack?.product)!.confidence < 0.6
+  return (
+    <div className="-mx-5 -mt-5 mb-4 flex items-start gap-3 rounded-t-2xl border-b bg-muted/40 px-5 py-4" data-scan-medicine>
+      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-background text-foreground ring-1 ring-border" aria-hidden="true">
+        <Pill className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-bold tracking-[0.14em] text-muted-foreground uppercase">{pack?.brand ? 'Brand on the pack' : 'Medicine on the pack'}</p>
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-xl leading-tight font-semibold tracking-tight break-words" data-scan-brand>
+            {name}
+          </span>
+          {low && (
+            <span className="rounded-full bg-caution-soft px-2 py-0.5 text-[11px] font-semibold text-caution" title="Read with low confidence">
+              check
+            </span>
+          )}
+        </p>
+        {detail && (
+          <p className="mt-0.5 text-sm leading-5 text-muted-foreground break-words" data-scan-generic>
+            {detail}
+          </p>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck: (batch: string, pack?: PackLabel) => void; onRescan: () => void }) {
@@ -95,6 +129,7 @@ export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck
         else inputRef.current?.focus()
       }}
     >
+      <MedicineLine pack={pack} />
       <div className="flex items-center gap-3">
         <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
           {found.source === 'text' ? <ScanText className="size-5" /> : <QrCode className="size-5" />}
