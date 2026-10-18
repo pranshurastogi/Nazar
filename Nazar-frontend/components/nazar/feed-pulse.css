@@ -1,0 +1,55 @@
+/* India pulse (components/nazar/feed-pulse.tsx). Keyframes are prefixed so they never replace
+   Tailwind's own `pulse` / `spin`. Reduced motion turns every animation off. */
+
+.feed-pulse-sweep {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 22%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--primary) 5%, transparent) 70%, color-mix(in oklab, var(--primary) 14%, transparent) 98%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--primary) 35%, transparent);
+  opacity: 0;
+  animation: feedpulse-sweep 7s cubic-bezier(0.45, 0, 0.55, 1) 1.2s infinite;
+}
+
+@keyframes feedpulse-sweep {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 1;
+  }
+  70%,
+  100% {
+    transform: translateX(460%);
+    opacity: 0;
+  }
+}
+
+/* A tile with a severity-5 case breathes once when the map first draws. */
+.feed-pulse-ping {
+  animation: feedpulse-ping 1.8s ease-out 0.9s 2 both;
+}
+
+@keyframes feedpulse-ping {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-pulse-sweep {
+    display: none;
+    animation: none;
+  }
+  .feed-pulse-ping {
+    animation: none;
+  }
+}

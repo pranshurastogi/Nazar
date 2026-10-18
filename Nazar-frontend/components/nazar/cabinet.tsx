@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import {
-  BookOpen,
   ChevronDown,
   CircleHelp,
   Clock,
@@ -24,8 +23,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useShell } from '@/components/nazar/app-shell'
 import { CabinetFormDialog } from '@/components/nazar/cabinet-form'
+import { CabinetShelf, EmptyShelf } from '@/components/nazar/cabinet-shelf'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
-import { Rings } from '@/components/nazar/rings'
 import { timeAgo } from '@/components/nazar/status-pill'
 import {
   expiryStatus,
@@ -41,6 +40,7 @@ import {
   type CabinetDraft,
   type CabinetItem,
 } from '@/lib/cabinet'
+import { serif } from '@/lib/fonts'
 import { checkBatch, type CheckResult, type ResultState } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
@@ -312,11 +312,20 @@ export function Cabinet() {
     })
   }
 
+  /** Opens an item's row in the list and brings it into view (from the banner or a shelf capsule). */
+  const openItem = (id: string, focus = false) => {
+    setOpenId(id)
+    requestAnimationFrame(() => {
+      const row = listRef.current?.querySelector<HTMLElement>(`[data-cabinet-item="${id}"]`)
+      const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      row?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+      if (focus) row?.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true })
+    })
+  }
+
   const review = () => {
     const first = flagged[0]
-    if (!first) return
-    setOpenId(first.id)
-    requestAnimationFrame(() => listRef.current?.querySelector(`[data-cabinet-item="${first.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    if (first) openItem(first.id)
   }
 
   const download = () => {
@@ -355,7 +364,7 @@ export function Cabinet() {
             <ShieldCheck className="size-3.5" aria-hidden="true" /> Private by design
           </p>
           <h2 className="mt-3 text-[clamp(2rem,6vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.045em]">
-            Your medicines, <span className="text-muted-foreground">kept in view.</span>
+            Your medicines, <span className={cn(serif.className, 'font-normal tracking-[-0.01em] whitespace-nowrap text-primary italic')}>kept in view.</span>
           </h2>
           <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
             Save the batches you keep at home. Nazar re-checks each one against regulator alerts every time you open this page. The list lives only in this browser and is never sent to any server.
@@ -415,7 +424,17 @@ export function Cabinet() {
           )}
         </AnimatePresence>
 
-        <div className="mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
+        {hydrated && items.length > 0 && (
+          <CabinetShelf
+            items={list}
+            now={now}
+            checkingId={progress?.current ?? null}
+            progress={progress}
+            onOpen={(id) => openItem(id, true)}
+          />
+        )}
+
+        <div className={cn('mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1', hydrated && !items.length && 'sr-only')}>
           <p className="text-sm" aria-live="polite" data-cabinet-count>
             {hydrated ? (
               <>
@@ -451,23 +470,9 @@ export function Cabinet() {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <div className="mt-3 flex flex-col items-center rounded-2xl border border-dashed px-6 py-12 text-center" data-cabinet-empty>
-            <Rings className="size-28"><BookOpen /></Rings>
-            <p className="mt-4 text-lg font-semibold">Your cabinet is empty</p>
-            <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">
-              Add the medicines you keep at home. Each batch is re-checked against regulator alerts whenever you come back.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              <Button className="h-12 px-5 font-semibold" onClick={() => openForm()}>
-                <Plus /> Add a medicine
-              </Button>
-              <Button variant="outline" className="h-12 px-4" onClick={() => openForm(null, { batch: 'SR-13', name: 'COLDRIF syrup' })}>
-                Try adding <span className="font-mono font-semibold">SR-13</span>
-              </Button>
-            </div>
-          </div>
+          <EmptyShelf onAdd={() => openForm()} onTry={() => openForm(null, { batch: 'SR-13', name: 'COLDRIF syrup' })} />
         ) : (
-          <ul ref={listRef} className="mt-3 grid gap-3" aria-label="Medicines in your cabinet">
+          <ul ref={listRef} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3" aria-label="Medicines in your cabinet">
             <AnimatePresence initial={false}>
               {list.map((item) => (
                 <motion.li

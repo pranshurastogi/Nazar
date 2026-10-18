@@ -1,0 +1,49 @@
+/* "The life of one alert" (components/nazar/more/journey.tsx). Keyframes are prefixed hw- so
+   they never replace Tailwind's own; everything here is decoration, the text never depends on it. */
+
+/* The stage's lab-bench dot grid. */
+.hw-dots {
+  background-image: radial-gradient(color-mix(in srgb, var(--foreground) 11%, transparent) 1px, transparent 1.3px);
+  background-size: 16px 16px;
+  background-position: 8px 8px;
+}
+
+/* Chapters fade up the first time they scroll in (phones and tablets). Only after hydration,
+   so the page is fully readable without JavaScript, and never with reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-hw-ready] .hw-reveal {
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  [data-hw-ready] [data-chapter]:not([data-seen]) .hw-reveal {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  /* The reading line that sweeps the notice in chapter 2. */
+  .hw-scanwrap {
+    animation: hw-scan 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+}
+
+@keyframes hw-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hw-scanwrap {
+    display: none;
+  }
+}

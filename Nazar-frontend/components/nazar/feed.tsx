@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { useShell } from '@/components/nazar/app-shell'
+import { FeedPulse } from '@/components/nazar/feed-pulse'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
 import {
@@ -23,6 +24,7 @@ import {
 } from '@/lib/source'
 import { feedKey, notDemo } from '@/lib/source/prefetch'
 import { peek, revalidate } from '@/lib/source/swr'
+import { serif } from '@/lib/fonts'
 import { cn } from '@/lib/utils'
 
 // The Feed tab: every alert Nazar holds, newest first, from whichever source answers
@@ -284,12 +286,14 @@ export function Feed() {
       <section className="max-w-2xl">
         <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">Regulator alerts</p>
         <h2 className="mt-3 text-[clamp(2rem,6vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.045em]">
-          Every alert, <span className="text-muted-foreground">newest first.</span>
+          Every alert, <span className={cn(serif.className, 'pr-1 text-[1.1em] font-normal tracking-normal text-primary')}>newest first.</span>
         </h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
           Batches named by CDSCO, state drug controllers and WHO, read from their own documents. Open any alert for the proof.
         </p>
       </section>
+
+      <FeedPulse state={f.state} serious={f.serious} peds={f.peds} source={f.source} onState={(state) => update({ state })} />
 
       <section aria-label="Filter alerts" className="mt-7 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] md:items-end md:gap-4">

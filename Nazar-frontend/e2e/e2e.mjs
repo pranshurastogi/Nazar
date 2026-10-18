@@ -295,6 +295,8 @@ if (MODE === 'fallback') {
   ok('feed: loads demo alerts, labelled Demo data', (await feedRows()) === 3 && (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && (await feedCount()).startsWith('3 alerts') && (await body()).includes('Demo data: the Nazar API and Arkiv could not answer'))
   ok('feed: retracted demo alert is not in the feed', !(await rowTexts()).some(t => t.includes('DEMO-RT1')))
   ok('feed: no Load more at the end of demo data', (await body()).includes('End of the feed') && !(await body()).includes('Load more alerts'))
+  await waitFor(`!document.querySelector('[data-feed-pulse-loading]')`, 8000)
+  ok('feed pulse: with no snapshot it is left out quietly (no empty chart)', !(await js(`!!document.querySelector('[data-feed-pulse], [data-feed-pulse-loading]')`)))
   await shot('feed-desktop')
   await pick('feed-state', 'IN-TN')
   ok('feed: Made in Tamil Nadu narrows to COLDRIF', (await feedRows()) === 1 && (await rowTexts())[0].includes('COLDRIF') && (await rowTexts())[0].includes('Made in Tamil Nadu') && (await js(`location.search`)) === '?state=IN-TN')
@@ -453,9 +455,16 @@ if (MODE === 'fallback') {
   ok('more: /more with More marked current', (await js(`location.pathname`)) === '/more' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'More')
   ok('more: renders every section', (await js(`[...document.querySelectorAll('[data-more-section]')].map(s => s.id).join()`)) === 'how,sources,proof,mcp,privacy,settings,about')
   const mb = await body()
-  ok('more: How it works lists the pipeline and four answers', ['Regulator documents', 'Read', 'Resolved', 'Published on Arkiv', 'You check', 'Four honest answers', 'Flagged', 'Retracted', 'No alert found', "Can't tell"].every(t => mb.includes(t)))
+  ok('more: How it works tells one alert in six chapters, in order', (await js(`[...document.querySelectorAll('#how [data-chapter-title]')].map(h => h.textContent.trim()).join('|')`)) === 'A regulator publishes a notice|Nazar reads it|It becomes a case|It is written to Arkiv|You check your batch|Anyone can verify')
+  ok('more: the story is COLDRIF SR-13 from WHO N°5/2025, with the four answers', ['COLDRIF', 'SR-13', 'Sresan Pharmaceutical', 'Medical Product Alert N°5/2025', '48.6%', 'Four honest answers', 'Flagged', 'Retracted', 'No alert found', "Can't tell"].every(t => mb.includes(t)))
+  ok('more: desktop TOC links to every section', (await js(`[...document.querySelectorAll('nav[data-toc="rail"] a')].map(a => a.getAttribute('href')).join()`)) === '#how,#sources,#proof,#mcp,#privacy,#settings,#about' && (await js(`[...document.querySelectorAll('nav[data-toc="rail"] a')].every(a => !!document.getElementById(a.getAttribute('href').slice(1)))`)) && (await js(`!!document.querySelector('nav[data-toc="rail"]').offsetParent`)))
+  await js(`(() => { const el = document.querySelector('[data-chapter="3"]'); const r = el.getBoundingClientRect(); scrollTo(0, scrollY + r.top + r.height / 2 - innerHeight / 2) })()`); await wait(900)
+  ok('more: the sticky stage follows the chapter on screen', (await js(`document.querySelector('[data-stage]')?.dataset.active`)) === '3' && (await js(`document.querySelectorAll('[data-stage] [data-lit="true"]').length`)) === 4)
+  await js(`document.getElementById('sources').scrollIntoView({ block: 'start' })`); await wait(400)
+  ok('more: TOC marks the section being read', (await js(`document.querySelector('nav[data-toc="rail"] a[aria-current]')?.getAttribute('href')`)) === '#sources')
   await waitFor(`document.querySelector('[data-sources-from]')?.dataset.sourcesFrom !== 'loading'`)
   ok('more: sources fall back to the built-in list', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'static' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 9)
+  ok('more: hero counts sources it can read and invents no alert count offline', (await js(`document.querySelector('[data-stat="sources"] [data-stat-value]').innerText`)) === String(await js(`document.querySelectorAll('[data-source-row][data-enabled="true"]:not([data-source-row="curated"])').length`)) && !/\d/.test(await js(`document.querySelector('[data-stat="alerts"] [data-stat-value]').innerText`)))
   ok('more: disabled sources say why (Telangana, Karnataka, Kerala)', (await js(`['tg-dca','ka-dc','kl-dc'].every(id => { const r = document.querySelector('[data-source-row="' + id + '"]'); return r && r.dataset.enabled === 'false' && r.innerText.includes('Off') })`)) && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('outside India'))
   ok('more: each source links to its regulator', (await js(`document.querySelector('[data-source-row="tn-dc"] a').href`)) === 'https://drugscontrol.tn.gov.in/list_nsq_drugs.html')
   ok('more: publisher wallet shown with explorer link', (await js(`document.querySelector('[data-publisher]').innerText`)) === PUB && (await js(`document.querySelector('a[aria-label="Open publisher wallet in the Arkiv explorer"]').href`)) === `https://tiramisu.explorer.arkiv.network/address/${PUB}`)
@@ -525,6 +534,7 @@ if (MODE === 'fallback') {
   await shot('cabinet-360-dark-open')
   ok('360: More tab in the bottom nav', await navTo('More') && (await js(`location.pathname`)) === '/more')
   ok('360: More fits without horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  ok('360: How it works is a stepper with each picture inline, and the TOC is a chip row', (await js(`[...document.querySelectorAll('[data-inline-scene]')].filter(e => e.offsetParent).length`)) === 6 && !(await js(`document.querySelector('[data-stage]')?.offsetParent ?? null`)) && (await js(`!!document.querySelector('nav[data-toc="chips"]').offsetParent && !document.querySelector('nav[data-toc="rail"]').offsetParent`)))
   await js(`window.scrollTo(0, 0)`); await shot('more-360-dark')
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-proof')
   await js(`document.getElementById('settings').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-settings')
@@ -533,6 +543,45 @@ if (MODE === 'fallback') {
   ok('360: Check tab returns home', await navTo('Check') && (await js(`location.pathname`)) === '/')
   await vp(360, 800, false, true); await js(`localStorage.setItem('theme', 'light')`); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1500); await cabinetIdle()
   ok('reduced motion: cabinet renders and settles', (await items()).length === 3)
+  // ---- Cabinet shelf ("Your shelf, watched"): capsules mirror the list in honest colours, under the sentinel eye
+  const shelf = () => js(`[...document.querySelectorAll('[data-shelf-item]')].map(li => li.dataset.shelfBatch + ':' + li.dataset.shelfState).join()`)
+  const shelfGreen = () => js(`[...document.querySelectorAll('[data-shelf], [data-shelf] *')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderTopColor].some(v => { const m = v.match(/\\d+(\\.\\d+)?/g); if (!m || (m[3] !== undefined && Number(m[3]) === 0)) return false; const [r,g,b] = m.map(Number); return g > r + 40 && g > b + 40 }) })`)
+  ok('shelf: reduced motion still shows every capsule with its state', (await shelf()) === 'SR-13:flagged,XY-9:no_alert,AB1234:no_alert', await shelf())
+  await click('Re-check all'); await wait(200)
+  ok('shelf: reduced motion runs a re-check with no beam and no glow pulse', (await js(`(() => { const b = document.querySelector('[data-shelf-beam]'); return !b || getComputedStyle(b).display === 'none' })()`)) && (await js(`getComputedStyle(document.querySelector('[data-shelf-state="flagged"] .cab-pill')).animationName`)) === 'none')
+  await cabinetIdle(); await wait(300)
+  ok('shelf: each capsule is a button labelled with name, batch and state', await js(`(() => { const f = document.querySelector('[data-shelf-batch="SR-13"] button')?.getAttribute('aria-label') || ''; const q = document.querySelector('[data-shelf-batch="AB1234"] button')?.getAttribute('aria-label') || ''; return f.startsWith('COLDRIF syrup, batch SR-13. Flagged') && /batch AB1234\\. No alert found\\. Expired/.test(q) })()`))
+  ok('shelf: expired and expires-soon markers sit on their capsules', (await js(`document.querySelector('[data-shelf-batch="AB1234"] [data-shelf-expiry]')?.dataset.shelfExpiry`)) === 'expired' && (await js(`document.querySelector('[data-shelf-batch="XY-9"] [data-shelf-expiry]')?.dataset.shelfExpiry`)) === 'soon' && !(await js(`!!document.querySelector('[data-shelf-batch="SR-13"] [data-shelf-expiry]')`)))
+  // A full shelf at 360 dark, normal motion: 13 items (two flagged), the page re-checks on load.
+  const shelfItems = [['COLDRIF syrup', 'SR-13'], ['Respifresh TR', 'R01GL2523'], ['Sample tabs', 'DEMO-RT1'], ["Dad's BP tablets", 'AB1234'], ['Kids syrup', 'XY-9'], ['Vitamin D3', 'VD-2210'], ['Cetirizine 10', 'CTZ-88'], ['Pantoprazole 40', 'PNT40-77'], ['Metformin 500 SR', 'MF5-0921'], ['ORS sachets', 'ORS-117'], ['Azithromycin 250', 'AZ-2501'], ['Ibuprofen 400', 'IBU-4400'], ['Paracetamol 650', 'PCM-650']].map(([name, batch]) => ({ id: 'shelf-' + batch, name, batch, expiry: null, note: '', addedAt: 1, last: null }))
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark'); localStorage.setItem('nazar:cabinet', ${JSON.stringify(JSON.stringify(shelfItems))})`); await send('Page.reload')
+  ok('shelf: a scan beam sweeps the shelf while the page re-checks', await waitFor(`(() => { const b = document.querySelector('[data-shelf-beam]'); return !!b && getComputedStyle(b).animationName === 'cab-sweep' })()`, 8000) && (await js(`document.querySelector('[data-shelf] [data-sentinel]')?.dataset.state`)) === 'scanning')
+  await waitFor(`!document.querySelector('[data-shelf-beam]') && !document.querySelector('[data-shelf-state="pending"]')`, 60000); await wait(500)
+  const shelfRows = await js(`new Set([...document.querySelectorAll('[data-shelf-item]')].map(li => Math.round(li.getBoundingClientRect().top))).size`)
+  ok('shelf: 13 medicines sit as 13 capsules on rows of shelves', (await js(`document.querySelectorAll('[data-shelf-item]').length`)) === 13 && shelfRows >= 4, String(shelfRows))
+  ok('shelf: flagged batches show the flagged state, first on the shelf', (await shelf()).startsWith('SR-13:flagged,R01GL2523:flagged,DEMO-RT1:retracted') && (await js(`document.querySelector('[data-shelf-summary]')?.dataset.shelfSummary`)) === 'flagged' && (await js(`document.querySelector('[data-shelf-counts]')?.innerText || ''`)).includes('2 flagged') && (await js(`document.querySelector('[data-shelf] [data-sentinel]')?.dataset.state`)) === 'flagged', await shelf())
+  ok('shelf: no green anywhere on the shelf', (await shelfGreen()) === false)
+  ok('shelf: fits 360 with no horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const u = document.querySelector('[data-shelf] ul'); return u.scrollWidth <= u.clientWidth + 1 })()`)))
+  await js(`document.querySelector('[data-shelf]').scrollIntoView({ block: 'start' }); window.scrollBy(0, -12)`); await shot('cabinet-360-dark-shelf')
+  await js(`document.querySelector('[data-shelf-batch="R01GL2523"] button').click()`); await wait(900)
+  ok('shelf: tapping a capsule opens its row in the list and moves focus there', (await js(`document.querySelector('[data-batch="R01GL2523"] button[aria-expanded]')?.getAttribute('aria-expanded')`)) === 'true' && (await js(`document.activeElement?.closest('[data-cabinet-item]')?.dataset.batch`)) === 'R01GL2523')
+  // Every batch with no alert: a neutral slate line with the time, never "safe" or "all clear".
+  await js(`localStorage.setItem('nazar:cabinet', ${JSON.stringify(JSON.stringify(shelfItems.slice(3, 5)))})`); await send('Page.reload'); await wait(800)
+  await waitFor(`!!document.querySelector('[data-shelf]') && !document.querySelector('[data-shelf-beam]') && !document.querySelector('[data-shelf-state="pending"]')`, 20000); await wait(300)
+  const quietText = await js(`document.querySelector('[data-shelf]')?.innerText || ''`)
+  ok('shelf: all no-alert says "No alerts for these batches as of <time>", in slate, never safe', (await js(`document.querySelector('[data-shelf-summary]')?.dataset.shelfSummary`)) === 'no_alert' && /No alerts for these batches as of \d{1,2}:\d{2}\s?[ap]m/i.test(quietText) && quietText.includes('not a safety certificate') && !/\b(safe|genuine|approved|all clear)\b/i.test(quietText.replace(/not a safety (certificate|check)/gi, '')) && (await js(`document.querySelector('[data-shelf] [data-sentinel]')?.dataset.state`)) === 'no_alert' && (await shelfGreen()) === false, quietText.slice(0, 160))
+  // Empty cabinet: an inviting empty shelf with one clear action and the privacy promise.
+  await js(`localStorage.setItem('nazar:cabinet', '[]')`); await send('Page.reload'); await wait(1200)
+  ok('shelf: empty cabinet shows an empty shelf, "Add your first medicine" and the on-device promise', (await js(`!!document.querySelector('[data-shelf-empty] [data-sentinel]')`)) && (await js(`!!document.querySelector('[data-shelf-add]')`)) && (await js(`document.querySelector('[data-shelf-privacy]')?.innerText || ''`)).includes('Saved only on this phone'))
+  await js(`document.querySelector('[data-shelf-add]').click()`); await wait(500)
+  ok('shelf: "Add your first medicine" opens the form', await formOpen())
+  await escape()
+  ok('shelf: empty shelf fits 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await vp(1440, 900, false, true); await send('Page.navigate', { url: URL + 'more' }); await wait(1500)
+  await js(`document.querySelector('[data-chapter="5"]').scrollIntoView({ block: 'center' })`); await wait(500)
+  ok('reduced motion: How it works is static, with every chapter picture shown and nothing hidden', !(await js(`!!document.querySelector('[data-stage]')`)) && (await js(`[...document.querySelectorAll('[data-inline-scene]')].filter(e => e.offsetParent && getComputedStyle(e).opacity === '1').length`)) === 6 && (await js(`[...document.querySelectorAll('#how [data-chapter-title]')].filter(h => h.offsetParent).length`)) === 6)
+  ok('reduced motion: More fits at 1440', (await js(`document.documentElement.scrollWidth`)) <= 1440)
+  await vp(360, 800, false, true)
 }
 // ==== end Cabinet / More ====
 
@@ -660,6 +709,14 @@ if (MODE === 'mock' || MODE === 'live') {
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
   ok('feed: nav link routes client-side (no reload)', await openFeed())
   ok('feed: answered by the API, labelled Live · Nazar API', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'api' && (await js(`[...document.querySelectorAll('[data-source]')].some(e => e.innerText === 'Live · Nazar API')`)))
+  const allCountBefore = await feedCount()
+  // India pulse: drawn from the site's snapshot while the list comes from the API; a tile sets the API's state filter.
+  if (await waitFor(`!!document.querySelector('[data-feed-pulse] [data-pulse-tile="IN-MH"]')`, 10000)) {
+    await js(`document.querySelector('[data-pulse-tile="IN-MH"]').click()`); await feedIdle()
+    ok('feed pulse: Maharashtra tile filters the API list', (await js(`location.search`)) === '?state=IN-MH' && (await js(`document.getElementById('feed-state').value`)) === 'IN-MH' && (await feedRows()) > 0 && (await rowTexts()).every(t => t.includes('Made in Maharashtra')), String(await feedRows()))
+    await js(`document.querySelector('[data-pulse-clear]').click()`); await feedIdle()
+    ok('feed pulse: Clear restores the full list', (await js(`location.search`)) === '' && (await feedCount()) === allCountBefore && !(await js(`!!document.querySelector('[data-pulse-tile][aria-pressed="true"]')`)))
+  } else ok('feed pulse: drawn from the site snapshot next to the API list', false)
   const allCount = await feedCount(); const firstRows = await feedRows()
   ok('feed: first page has rows and a count', firstRows > 0 && /^[\d,]+ alerts?/.test(allCount), `${firstRows} rows · ${allCount}`)
   ok('feed: rows with an entity key carry a Live on Arkiv badge', (await js(`document.querySelectorAll('[data-live-arkiv]').length`)) === firstRows)
@@ -711,6 +768,8 @@ if (MODE === 'mock') {
   await navTo('More'); await waitFor(`['api','static'].includes(document.querySelector('[data-sources-from]')?.dataset.sourcesFrom)`)
   ok('more: sources come live from GET /v1/sources', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'api' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 2)
   ok('more: API source shows its last run; disabled one its reason', (await js(`document.querySelector('[data-source-row="cdsco-online"]').innerText`)).includes('Last run 5 min ago') && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('refuses connections from outside India'))
+  await waitFor(`document.querySelector('[data-stat="alerts"]')?.getAttribute('aria-busy') !== 'true'`, 8000)
+  ok('more: hero reads its sources from the API and shows no alert count the API did not give', (await js(`document.querySelector('[data-stat="sources"]').innerText`)).includes('Live from the Nazar API') && (await js(`document.querySelector('[data-stat="sources"] [data-stat-value]').innerText`)) === '1' && !/\d/.test(await js(`document.querySelector('[data-stat="alerts"] [data-stat-value]').innerText`)))
 }
 
 // ---- Instant checks from the on-device snapshot (mock): answer at once, then the live API confirms.
@@ -1047,6 +1106,7 @@ if (MODE === 'mock') {
   await escape()
   await send('Page.navigate', { url: new globalThis.URL('/more', URL).href }); await wait(1500)
   ok('arkiv 360: More links to the Arkiv directory', (await js(`document.querySelector('[data-arkiv-link]')?.getAttribute('href')`)) === '/arkiv')
+  ok('arkiv: More hero counts the alerts from GET /v1/arkiv/summary', await waitFor(`document.querySelector('[data-stat="alerts"] [data-stat-value]')?.innerText === '1,404'`, 10000), await js(`document.querySelector('[data-stat="alerts"]')?.innerText`))
 }
 
 if (MODE === 'fallback') {
@@ -1148,6 +1208,34 @@ if (MODE === 'fallback') {
   await send('Page.navigate', { url: new globalThis.URL('/feed', URL).href }); await wait(1500)
   await waitFor(`!!document.querySelector('[data-feed-source]')`, 15000)
   ok('saved copy: the Feed shows real alerts and says they are the saved copy', (await js(`document.querySelector('[data-feed]')?.dataset.feedSource`)) === 'snapshot' && !!(await js(`document.querySelector('[data-feed-saved-copy]')?.innerText`)))
+  {
+    // India pulse, drawn from the same saved copy: honest counts, a labelled tile map that drives the list.
+    const P = `document.querySelector('[data-feed-pulse]')`
+    const facts = await js(`fetch('/data/snapshot.json').then(r => r.json()).then(f => { const rows = Object.values(f.alerts).flat().filter(r => r[19] !== 1); return { total: rows.length, tn: rows.filter(r => r[13] === 'IN-TN').length, undated: rows.filter(r => r[20] === 0).length } })`)
+    ok('feed pulse: renders from the snapshot with its date', (await waitFor(`!!${P}`, 8000)) && Number(await js(`${P}.dataset.pulseTotal`)) === facts.total && /as of \d{1,2} \w{3} \d{4}/.test(await js(`${P}.innerText`)), `${await js(`${P}?.dataset.pulseTotal`)} vs ${facts.total}`)
+    ok('feed pulse: compact on a phone, map behind "Show the map"', (await js(`getComputedStyle(document.getElementById('pulse-body')).display`)) === 'none' && (await js(`document.querySelector('[data-pulse-toggle]').getAttribute('aria-expanded')`)) === 'false')
+    await js(`document.querySelector('[data-pulse-toggle]').click()`); await wait(400)
+    ok('feed pulse: "Show the map" opens it', (await js(`getComputedStyle(document.getElementById('pulse-body')).display`)) !== 'none' && (await js(`document.querySelector('[data-pulse-toggle]').getAttribute('aria-expanded')`)) === 'true')
+    ok('feed pulse: every state tile is a labelled button; the map group and a text summary are labelled', (await js(`(() => { const t = [...document.querySelectorAll('[data-pulse-tile]')]; return t.length === 36 && t.every(b => b.tagName === 'BUTTON' && /^.+: [\\d,]+ alerts?/.test(b.getAttribute('aria-label'))) })()`)) && (await js(`!!document.querySelector('[data-feed-pulse] [role="group"][aria-label]')`)) && (await js(`[...document.querySelectorAll('[data-feed-pulse] .sr-only')].some(e => e.textContent.includes("From Nazar's snapshot"))`)))
+    const tnLabel = await js(`document.querySelector('[data-pulse-tile="IN-TN"]').getAttribute('aria-label')`)
+    ok('feed pulse: the Tamil Nadu tile says its count from the snapshot', tnLabel.startsWith(`Tamil Nadu: ${facts.tn} alert`), tnLabel)
+    ok('feed pulse: undated alerts are kept off the timeline and counted in a note', facts.undated === 0 || (await js(`document.querySelector('[data-pulse-undated]')?.innerText || ''`)).startsWith(`${facts.undated.toLocaleString('en-IN')} alert`))
+    const green = await js(`(() => { const x = document.createElement('canvas').getContext('2d'); const rgb = v => { x.clearRect(0, 0, 1, 1); x.fillStyle = '#000'; x.fillStyle = v; x.fillRect(0, 0, 1, 1); return x.getImageData(0, 0, 1, 1).data }; const el = ${P}; return [el, ...el.querySelectorAll('*')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor].some(v => { const [r, g, b, a] = rgb(v); return a > 0 && g > r + 40 && g > b + 40 }) }) })()`)
+    ok('feed pulse: no green anywhere (empty states are neutral)', green === false)
+    await js(`document.querySelector('[data-pulse-tile="IN-TN"]').click()`); await feedIdle()
+    ok('feed pulse: tapping Tamil Nadu filters the list to it', (await js(`location.search`)) === '?state=IN-TN' && (await js(`document.getElementById('feed-state').value`)) === 'IN-TN' && (await rowTexts()).every(t => t.includes('Made in Tamil Nadu')) && (await feedCount()).startsWith(`${facts.tn} alert`) && (await js(`document.querySelector('[data-pulse-tile="IN-TN"]').getAttribute('aria-pressed')`)) === 'true', await feedCount())
+    await js(`document.querySelector('[data-pulse-tile="IN-TN"]').focus()`)
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 }); await wait(150)
+    ok('feed pulse: arrow keys move between neighbouring states', (await js(`document.activeElement?.dataset.pulseTile`)) === 'IN-PY')
+    ok('feed pulse: Clear is visible while a state is chosen', await js(`(() => { const b = document.querySelector('[data-pulse-clear]'); return !!b && b.offsetParent !== null && /Clear/.test(b.textContent) })()`))
+    await js(`document.querySelector('[data-pulse-clear]').click()`); await feedIdle()
+    ok('feed pulse: Clear removes the state filter', (await js(`location.search`)) === '' && !(await js(`!!document.querySelector('[data-pulse-tile][aria-pressed="true"]')`)))
+    await vp(360, 800, false, true); await send('Page.reload'); await wait(1500); await feedIdle()
+    await waitFor(`!!${P}`, 8000); await js(`document.querySelector('[data-pulse-toggle]').click()`); await wait(300)
+    ok('feed pulse: no horizontal overflow at 360 with the map open', (await js(`document.documentElement.scrollWidth`)) <= 360)
+    ok('feed pulse: reduced motion draws it still (no entrance, sweep or ping)', (await js(`${P}.dataset.motion`)) === 'reduce' && (await js(`(() => { const t = document.querySelector('[data-pulse-tile]'); const s = getComputedStyle(t); return s.opacity === '1' && (s.transform === 'none' || s.transform === 'matrix(1, 0, 0, 1, 0, 0)') })()`)) && !(await js(`!!document.querySelector('[data-feed-pulse] .feed-pulse-sweep, [data-feed-pulse] .feed-pulse-ping')`)))
+    await vp(390, 844, false)
+  }
   fb.savedCopy = false
 }
 // ======== end Saved copy ========

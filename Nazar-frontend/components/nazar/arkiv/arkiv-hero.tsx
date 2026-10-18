@@ -1,16 +1,14 @@
 'use client'
 
-import { Instrument_Serif } from 'next/font/google'
 import { ArrowUpRight, Landmark, PenLine, SearchCheck } from 'lucide-react'
 
 import SculptureHero from '@/components/ui/liquid-sculpture-hero'
+import { serif } from '@/lib/fonts'
 import { explorerAddress, PUBLISHER } from '@/lib/source/config'
 
 // The top of /arkiv: what this page is, in one picture. Nazar's own mark is rebuilt from GPU
 // particles that scatter under the cursor and settle back, the way scattered regulator notices
 // settle into one public record. Without WebGL2 (or with reduced motion) it is the still mark.
-
-const serif = Instrument_Serif({ weight: '400', style: ['italic'], subsets: ['latin'], display: 'swap' })
 
 const MARK = '/brand/nazar-mark.png'
 
