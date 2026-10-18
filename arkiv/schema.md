@@ -8,7 +8,9 @@ This file covers what we write, why each field is an attribute or payload, how l
 
 | Role | Address | Writes |
 |---|---|---|
-| Publisher | `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` | `notice`, `alert`, `retraction`, `heartbeat`, `snapshot` |
+| Publisher | `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` | `notice`, `alert`, `heartbeat`; `retraction` and `snapshot` are defined but none are on chain yet |
+
+**On chain today:** `notice`, `alert` and `heartbeat` entities. `retraction` has a working write path (`pnpm cli retract <rid> --reason <reason>`), but no correction has been needed yet. `snapshot` is specified below and has a builder (`buildSnapshot` in `schema.ts`), but nothing writes it yet: the offline pack is served by the API and the site instead (see [`snapshot`](#snapshot-daily-offline-pack)).
 
 Explorer: <https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2>
 
@@ -75,6 +77,8 @@ Anything a query filters or ranges over is a typed attribute. Months are stored 
 
 ### `retraction`: a correction, never a silent edit
 
+**Status:** defined, not written yet. `pnpm cli retract <rid> --reason correction --live` publishes one (`retract` in `Nazar-backend/src/arkiv/publisher.ts`), but no published alert has needed a correction so far.
+
 | Attribute | Type |
 |---|---|
 | `alert` | key, the alert it corrects |
@@ -99,6 +103,8 @@ Anything a query filters or ranges over is a typed attribute. Months are stored 
 - `/v1/pipeline/status` reports the last beat (`mode`, `action`, `txHash`, `ageMs`, and `stale` after 20 minutes). In live mode it also reports the newest heartbeat read from Arkiv (Q6).
 
 ### `snapshot`: daily offline pack
+
+**Status:** defined, not written yet. `buildSnapshot` in `Nazar-backend/src/arkiv/schema.ts` builds the entity, but no job publishes it. The offline pack the app saves on the device comes from the Nazar API (`/v1/snapshot`, built in `Nazar-backend/src/api/snapshot.ts`), or from the site's own static copy when the API is down. It does not come from Arkiv.
 
 | Attribute | Type |
 |---|---|
