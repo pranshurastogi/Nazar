@@ -8,6 +8,8 @@
 
 Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself on Arkiv.
 
+**[Open the live app →](https://nazar-nu.vercel.app)**
+
 [![CI](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/ci.yml)
 [![Pipeline](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml/badge.svg)](https://github.com/pranshurastogi/Nazar/actions/workflows/pipeline.yml)
 
@@ -177,6 +179,11 @@ pnpm cli sources | discover | harvest | extract <sha|file> | run | publish | che
 Nazar uses Arkiv as its data layer. The full data contract is in [`arkiv/schema.md`](arkiv/schema.md), and building notes are in [`arkiv/friction.md`](arkiv/friction.md).
 
 - **Publisher wallet:** `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` ([explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2))
+- **Live on Tiramisu since 18 Oct 2026:** **17 notices, 1,144 alerts and the pipeline heartbeat**, all created by the publisher, written in 106 atomic transactions for about 0.25 GLM. You can recount them with the query below.
+  - First transactions: [WHO alert N°5/2025 notice + COLDRIF/Respifresh/ReLife](https://tiramisu.explorer.arkiv.network/tx/0x9f12a1ce1e9ea0e34e4f7026ee499c403327d9526d39e3d53b682dfd7d4f898c) and [curated seed](https://tiramisu.explorer.arkiv.network/tx/0x6a996737a022ef78d5f0dca83204793c260cea33c33410b8c761acfad0c96c9a).
+  - Example SR-13 alert entity: [`0x346f83d7…80fe54`](https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54). It is `readonly` and allows `permissionlessExtension`, with severity 5, `peds=1` and `exp_ym=202704`, and its `notice` attribute links to the WHO notice entity.
+  - Heartbeat entity: [`0x00c58f01…268d`](https://tiramisu.explorer.arkiv.network/entity/0x00c58f01535a96bca043e9e2136c4ee46ec57c94a8938994d8791a28825b268d).
+- **Live app:** <https://nazar-nu.vercel.app>. It reads these entities straight from Arkiv in the browser, with no Nazar server involved.
 - **Entities:** `notice`, `alert`, `retraction`, `heartbeat`, `snapshot`. Each carries `project=nazar-in-batch-alerts`, `t` and `v`.
 - **Typed attributes for what we query:** `batch`, `sev`, `peds`, `exp_ym`, `alert_ym`, `state`, `case`, `rid`, `notice` (key)… Display detail goes in the JSON payload.
 - **Lifetimes follow product logic.** An alert lives until the batch expires + 180 days, and a notice lives 5 years. A retraction lives for the alert's remaining life + 1 year. The heartbeat lives 20 minutes and is renewed every 5.
@@ -232,7 +239,7 @@ Nazar/
 - [x] Real pipeline: CDSCO (API + PDFs), Tamil Nadu, Maharashtra, WHO; OCR and grounded LLM fallback
 - [x] Arkiv data contract, publisher (atomic, idempotent), reader, heartbeat; dry-run verified with gas estimates
 - [x] Web app reads the API, then Arkiv directly, then demo data
-- [ ] Fund the publisher wallet and publish live to Tiramisu
+- [x] Fund the publisher wallet and publish live to Tiramisu (17 notices, 1,144 alerts, heartbeat)
 - [ ] Telangana and Karnataka adapters from an Indian host; Kerala when its site is back
 - [ ] Strip Scan (QR + on-device OCR), Batch Passport timeline, Keep Alive, Shelf Sweep CSV, MCP server
 - [ ] Hindi and Kannada, then 10 languages with read-aloud

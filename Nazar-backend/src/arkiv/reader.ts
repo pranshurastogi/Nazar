@@ -109,9 +109,17 @@ export class ArkivReader {
   }
 
   /** Cursor pagination helper shared by every list query. */
-  async page<T>(t: string, filters: Expression[], decode: (e: Entity) => T, o: { limit?: number; cursor?: string | null } = {}): Promise<Page<T>> {
+  async page<T>(
+    t: string,
+    filters: Expression[],
+    decode: (e: Entity) => T,
+    o: { limit?: number; cursor?: string | null; blockNumber?: string | null } = {},
+  ): Promise<Page<T>> {
     let q = this.query(t, ...filters).limit(Math.min(Math.max(o.limit ?? 50, 1), MAX_PAGE))
+    // A cursor is only valid at the block its first page was read at; pin it, or the node rejects it
+    // once new blocks arrive ("cursor belongs to a different query, block or select").
     if (o.cursor) q = q.cursor(o.cursor)
+    if (o.cursor && o.blockNumber) q = q.atBlock(BigInt(o.blockNumber))
     const res = await q.fetch()
     return {
       items: res.entities.map((e) => decode(e as unknown as Entity)),
@@ -122,10 +130,13 @@ export class ArkivReader {
 
   /** Walks every page up to `max` items (the node caps a page at 200). */
   async all<T>(t: string, filters: Expression[], decode: (e: Entity) => T, max = 1000): Promise<T[]> {
-    let res = await this.query(t, ...filters).limit(Math.min(max, MAX_PAGE)).fetch()
+    const limit = Math.min(max, MAX_PAGE)
+    let res = await this.query(t, ...filters).limit(limit).fetch()
+    const block = res.blockNumber
     const out: T[] = res.entities.map((e) => decode(e as unknown as Entity))
-    while (res.hasNextPage() && out.length < max) {
-      res = await res.next()
+    while (res.hasNextPage() && res.cursor && out.length < max) {
+      // Rebuild the query pinned to the first page's block: page.next() alone loses the block.
+      res = await this.query(t, ...filters).limit(limit).atBlock(block).cursor(res.cursor).fetch()
       out.push(...res.entities.map((e) => decode(e as unknown as Entity)))
     }
     return out.slice(0, max)

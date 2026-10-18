@@ -62,6 +62,13 @@ These are notes taken while building, with dates. Each entry says what happened,
 - **Cost:** one extra read per failed beat, and a near miss: an earlier version created a duplicate heartbeat on any failure.
 - **Would help:** a typed `EntityNotFound`/`EntityExpired` mutation error from the write path.
 
+## 11. `page.next()` fails once new blocks arrive (18 Oct)
+
+- **What happened:** we paged through our 1,144 live alerts with `page.next()`. The second page failed with `QueryError (cursor, -32005): cursor belongs to a different query, block or select — start a new page-through`. The first page was read at block N, `next()` sent only the cursor, and the node evaluated it at the new head.
+- **Cost:** our "Load more" in the Feed and the backend's full scans broke as soon as a block passed between pages. On a 2-second chain, that is almost always.
+- **Fix we use:** rebuild the query with `.atBlock(page.blockNumber).cursor(page.cursor)`.
+- **Would help:** have `page.next()` pin the block automatically, since a cursor is only valid at one block. At least mention this in the pagination docs.
+
 ## What worked well
 
 - **Typed values:** `i32`, `u64` and `key` attributes, plus the query builder (`eq`, `gte`, `createdBy`, cursor `next()`), made the batch lookup and range queries straightforward.

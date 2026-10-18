@@ -112,7 +112,15 @@ function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 type Attr = { type?: string; value?: unknown } | undefined
-type RawEntity = { key?: Hex; creator?: Hex; attributes?: Readonly<Record<string, unknown>>; payload?: Uint8Array; toJson(): unknown }
+type RawEntity = {
+  key?: Hex
+  creator?: Hex
+  attributes?: Readonly<Record<string, unknown>>
+  payload?: Uint8Array
+  expiresAt?: bigint
+  creationFlags?: { readonly: boolean; permissionlessExtension: boolean }
+  toJson(): unknown
+}
 
 /** The SDK narrows entity types per selection; we read them through one loose shape. */
 const entitiesOf = (page: { entities: readonly unknown[] }) => page.entities as readonly RawEntity[]
@@ -156,6 +164,9 @@ export function decodeAlert(e: RawEntity): ArkivAlert {
     confidence: (n(a.conf) ?? 0) / 100,
     method: s(a.method) ?? 'text',
     tier: s(a.tier) ?? 'auto',
+    noticeKey: s(a.notice),
+    expiresAtBlock: typeof e.expiresAt === 'bigint' ? e.expiresAt.toString() : null,
+    flags: e.creationFlags ? { readonly: !!e.creationFlags.readonly, permissionlessExtension: !!e.creationFlags.permissionlessExtension } : null,
     payload: payloadOf(e),
   }
 }
@@ -163,10 +174,10 @@ export function decodeAlert(e: RawEntity): ArkivAlert {
 const mine = (t: string) => [eq('project', str(PROJECT)), eq('t', str(t))]
 const anyOf = (exprs: Expression[]) => (exprs.length === 1 ? exprs[0]! : or(exprs))
 
-const ALERT_FIELDS = { key: true, attributes: true, payload: true, creator: true } as const
+const ALERT_FIELDS = { key: true, attributes: true, payload: true, creator: true, expiresAt: true, creationFlags: true } as const
 
 /** The slice of the SDK's QueryResult we use, independent of the selection's entity type. */
-type Page = { entities: readonly unknown[]; hasNextPage(): boolean; next(): Promise<Page> }
+type Page = { entities: readonly unknown[]; hasNextPage(): boolean; next(): Promise<Page>; cursor?: string; blockNumber: bigint }
 
 /**
  * Nazar may not have published anything yet (fresh deploy, testnet reset). An empty
@@ -264,12 +275,17 @@ export async function arkivAlerts(q: { minSeverity?: number; peds?: boolean; lim
 export type ArkivFeedQuery = { minSeverity?: number; peds?: boolean; state?: string; source?: string; sinceYm: number; limit: number }
 export type ArkivFeedPage = { items: Alert[]; next: ((signal?: AbortSignal) => Promise<ArkivFeedPage>) | null }
 
-async function feedPage(page: Page, signal?: AbortSignal): Promise<ArkivFeedPage> {
+async function feedPage(page: Page, filters: Expression[], limit: number, signal?: AbortSignal): Promise<ArkivFeedPage> {
   const alerts = await withRetractions(entitiesOf(page).map(decodeAlert), signal)
+  const cursor = page.cursor
+  // A cursor is only valid at the block its first page was read at, so the next page is pinned there
+  // (page.next() alone loses the block and the node rejects the cursor once new blocks arrive).
+  const nextPage = () =>
+    arkiv().select(ALERT_FIELDS).where(filters).createdBy(PUBLISHER).limit(limit).atBlock(page.blockNumber).cursor(cursor!).fetch() as Promise<Page>
   return {
     items: newestActive(alerts),
     // Cursor pages are not cached, but still pass the gate so a throttled node is left alone.
-    next: page.hasNextPage() ? (sig) => abortable(gated(null, 0, () => page.next()), sig).then((p) => feedPage(p, sig)) : null,
+    next: page.hasNextPage() && cursor ? (sig) => abortable(gated(null, 0, nextPage), sig).then((p) => feedPage(p, filters, limit, sig)) : null,
   }
 }
 
@@ -287,7 +303,7 @@ export async function arkivFeed(q: ArkivFeedQuery, signal?: AbortSignal): Promis
   const name = `feed:${q.sinceYm}:${q.minSeverity ?? 0}:${q.peds ? 1 : 0}:${q.state ?? ''}:${q.source ?? ''}`
   const page = await alertQuery(name, filters, q.limit, TTL.list, signal)
   if (!page.entities.length && !(await arkivHasData(signal))) return null
-  return feedPage(page, signal)
+  return feedPage(page, filters, q.limit, signal)
 }
 
 /** Last time the pipeline reported in, from its on-chain heartbeat (expires after 20 minutes). */
@@ -300,4 +316,11 @@ export async function arkivHeartbeat(signal?: AbortSignal): Promise<number | nul
     .map((e) => n(((e.attributes ?? {}) as Record<string, Attr>).last_ok))
     .filter((t): t is number => t !== null && Number.isFinite(t))
   return times.length ? Math.max(...times) : null
+}
+
+export type BlockTiming = { currentBlock: bigint; currentBlockTime: number; blockDuration: number }
+
+/** Current block and block time, to turn an entity's expiry block into a date. Cached, and only read when a proof is opened. */
+export function arkivBlockTiming(signal?: AbortSignal): Promise<BlockTiming> {
+  return abortable(gated('block-timing', TTL.status, () => arkiv().getBlockTiming()), signal)
 }
