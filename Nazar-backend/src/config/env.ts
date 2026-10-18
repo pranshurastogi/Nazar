@@ -86,6 +86,8 @@ const EnvSchema = z.object({
   NAZAR_IP_SALT: optional,
   /** Upstream LLM calls allowed per UTC day across all clients (cache hits are free). */
   NAZAR_LLM_DAILY_CAP: z.coerce.number().int().min(0).default(500),
+  /** Same, for pack identification from label text (POST /v1/medicine/identify); its own budget. */
+  NAZAR_LLM_IDENTIFY_DAILY_CAP: z.coerce.number().int().min(0).default(500),
 
   // API
   PORT: z.coerce.number().int().default(8787),

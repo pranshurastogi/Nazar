@@ -24,33 +24,41 @@ export function cacheKey(input: ExplainInput): string {
   return sha256(JSON.stringify({ c: composition, f: norm(input.form), p: norm(input.product || input.brand) }))
 }
 
-export class MedicineCache {
+/** Same label text, same key: case, spacing and Unicode width do not matter. The text itself is never stored. */
+export function identifyCacheKey(text: string): string {
+  return sha256(`identify␟${text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()}`)
+}
+
+/** One table per answer kind: medicine_cache (explainer cards), medicine_identify_cache (pack identification). */
+export class MedicineCache<T = MedicineInfo> {
   constructor(
     private readonly db: DatabaseSync,
     private readonly ttlMs = CACHE_TTL_MS,
+    private readonly table = 'medicine_cache',
   ) {
-    db.exec('CREATE TABLE IF NOT EXISTS medicine_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, model TEXT NOT NULL, created_ms INTEGER NOT NULL)')
+    if (!/^[a-z_]+$/.test(table)) throw new Error(`bad cache table name: ${table}`)
+    db.exec(`CREATE TABLE IF NOT EXISTS ${table} (key TEXT PRIMARY KEY, data TEXT NOT NULL, model TEXT NOT NULL, created_ms INTEGER NOT NULL)`)
   }
 
-  get(key: string, now: number): { info: MedicineInfo; model: string; createdMs: number } | null {
-    const r = this.db.prepare('SELECT data, model, created_ms FROM medicine_cache WHERE key = ?').get(key) as { data: string; model: string; created_ms: number } | undefined
+  get(key: string, now: number): { info: T; model: string; createdMs: number } | null {
+    const r = this.db.prepare(`SELECT data, model, created_ms FROM ${this.table} WHERE key = ?`).get(key) as { data: string; model: string; created_ms: number } | undefined
     if (!r) return null
     if (now - r.created_ms > this.ttlMs) {
-      this.db.prepare('DELETE FROM medicine_cache WHERE key = ?').run(key)
+      this.db.prepare(`DELETE FROM ${this.table} WHERE key = ?`).run(key)
       return null
     }
     try {
-      return { info: JSON.parse(r.data) as MedicineInfo, model: r.model, createdMs: r.created_ms }
+      return { info: JSON.parse(r.data) as T, model: r.model, createdMs: r.created_ms }
     } catch {
       return null
     }
   }
 
-  put(key: string, info: MedicineInfo, model: string, now: number) {
-    this.db.prepare('INSERT OR REPLACE INTO medicine_cache (key, data, model, created_ms) VALUES (?, ?, ?, ?)').run(key, JSON.stringify(info), model, now)
+  put(key: string, info: T, model: string, now: number) {
+    this.db.prepare(`INSERT OR REPLACE INTO ${this.table} (key, data, model, created_ms) VALUES (?, ?, ?, ?)`).run(key, JSON.stringify(info), model, now)
   }
 
   size(): number {
-    return (this.db.prepare('SELECT COUNT(*) n FROM medicine_cache').get() as { n: number }).n
+    return (this.db.prepare(`SELECT COUNT(*) n FROM ${this.table}`).get() as { n: number }).n
   }
 }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { redactSecrets } from '../../lib/errors.ts'
 import { MedicineInfo } from '../schema.ts'
-import { MAX_OUTPUT_TOKENS, ProviderError, UPSTREAM_TIMEOUT_MS, type MedicineProvider } from './types.ts'
+import { MAX_OUTPUT_TOKENS, ProviderError, UPSTREAM_TIMEOUT_MS, type GenerateRequest, type MedicineProvider } from './types.ts'
 
 /**
  * Google Gemini over plain fetch. The key travels only in the X-goog-api-key header (never in the URL,
@@ -31,6 +31,15 @@ export function toGeminiSchema(s: JsonSchema): GeminiSchema {
 }
 
 export const MEDICINE_GEMINI_SCHEMA = toGeminiSchema(z.toJSONSchema(MedicineInfo) as JsonSchema)
+
+const converted = new WeakMap<z.ZodType, GeminiSchema>()
+/** responseSchema for a request: MedicineInfo unless the caller passes its own zod schema (converted once). */
+export function geminiSchemaFor(schema?: z.ZodType): GeminiSchema {
+  if (!schema || schema === MedicineInfo) return MEDICINE_GEMINI_SCHEMA
+  let out = converted.get(schema)
+  if (!out) converted.set(schema, (out = toGeminiSchema(z.toJSONSchema(schema) as JsonSchema)))
+  return out
+}
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[]
@@ -71,7 +80,7 @@ export class GeminiProvider implements MedicineProvider {
   }
 
   /** Primary model, one retry on a transient failure, then the fallback model. */
-  async generate(req: { system: string; user: string; signal?: AbortSignal }): Promise<unknown> {
+  async generate(req: GenerateRequest): Promise<unknown> {
     try {
       return await this.withThinkingFallback(this.model, req)
     } catch (err) {
@@ -86,7 +95,7 @@ export class GeminiProvider implements MedicineProvider {
     return this.withThinkingFallback(this.fallbackModel, req)
   }
 
-  private async withThinkingFallback(model: string, req: { system: string; user: string; signal?: AbortSignal }): Promise<unknown> {
+  private async withThinkingFallback(model: string, req: GenerateRequest): Promise<unknown> {
     try {
       return await this.call(model, req, true)
     } catch (err) {
@@ -96,7 +105,7 @@ export class GeminiProvider implements MedicineProvider {
     }
   }
 
-  private async call(model: string, { system, user, signal }: { system: string; user: string; signal?: AbortSignal }, lowThinking: boolean): Promise<unknown> {
+  private async call(model: string, { system, user, signal, schema, maxOutputTokens }: GenerateRequest, lowThinking: boolean): Promise<unknown> {
     const timeout = AbortSignal.timeout(this.timeoutMs)
     let res: Response
     try {
@@ -109,9 +118,9 @@ export class GeminiProvider implements MedicineProvider {
           contents: [{ role: 'user', parts: [{ text: user }] }],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            maxOutputTokens: maxOutputTokens ?? MAX_OUTPUT_TOKENS,
             responseMimeType: 'application/json',
-            responseSchema: MEDICINE_GEMINI_SCHEMA,
+            responseSchema: geminiSchemaFor(schema),
             // Low thinking keeps the whole budget for the answer (default thinking spent ~600 tokens and truncated it).
             ...(lowThinking ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
           },

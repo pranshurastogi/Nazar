@@ -3,7 +3,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import { errorMessage } from '../../lib/errors.ts'
 import { MedicineInfo } from '../schema.ts'
-import { ProviderError, UPSTREAM_TIMEOUT_MS, type MedicineProvider } from './types.ts'
+import { ProviderError, UPSTREAM_TIMEOUT_MS, type GenerateRequest, type MedicineProvider } from './types.ts'
 
 /**
  * Claude via the official SDK (optional; NAZAR_LLM_PROVIDER=anthropic). Structured output comes from
@@ -28,7 +28,7 @@ export class AnthropicProvider implements MedicineProvider {
     this.client = o.client ?? (new Anthropic({ apiKey: o.apiKey, maxRetries: 1, timeout: UPSTREAM_TIMEOUT_MS }) as unknown as AnthropicLike)
   }
 
-  async generate({ system, user, signal }: { system: string; user: string; signal?: AbortSignal }): Promise<unknown> {
+  async generate({ system, user, signal, schema }: GenerateRequest): Promise<unknown> {
     let res: Awaited<ReturnType<AnthropicLike['messages']['parse']>>
     try {
       res = await this.client.messages.parse({
@@ -37,7 +37,7 @@ export class AnthropicProvider implements MedicineProvider {
         max_tokens: 2048,
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: [{ role: 'user', content: user }],
-        output_config: { effort: 'low', format: zodOutputFormat(MedicineInfo) },
+        output_config: { effort: 'low', format: zodOutputFormat(schema ?? MedicineInfo) },
       }, signal ? { signal } : undefined)
     } catch (err) {
       const status = err instanceof Anthropic.APIError ? err.status : undefined

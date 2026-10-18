@@ -14,8 +14,9 @@ import { PRODUCT_CLASSES } from '../domain/vocab.ts'
 import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
 import { ExplainError, MedicineExplainer } from '../medicine/explain.ts'
+import { MedicineIdentifier } from '../medicine/identify.ts'
 import { clientIp } from '../medicine/limits.ts'
-import { ExplainInput, MAX_BODY_BYTES } from '../medicine/schema.ts'
+import { ExplainInput, IDENTIFY_MAX_BODY_BYTES, IdentifyInput, MAX_BODY_BYTES } from '../medicine/schema.ts'
 import { mcpHandler, type McpHttpOptions } from '../mcp/http.ts'
 import { readProof, type ProofClient } from '../mcp/proof.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
@@ -73,6 +74,8 @@ export interface AppDeps {
   snapshot?: SnapshotService
   /** "About this medicine" (POST /v1/medicine/explain); defaults to one built from env. */
   medicine?: Pick<MedicineExplainer, 'explain'>
+  /** Pack identification from OCR'd label text (POST /v1/medicine/identify); defaults to one built from env. */
+  identify?: Pick<MedicineIdentifier, 'identify'>
   /** MCP server (/mcp). arkiv_proof reads entities live through `proofClient` (null disables it) and trusts `publisher`. */
   mcp?: { proofClient?: ProofClient | null; publisher?: Hex | null; limits?: McpHttpOptions }
 }
@@ -379,26 +382,38 @@ export function createApp(deps: AppDeps) {
   })
 
   // ---- About this medicine: general LLM reference text + Nazar's own alert count. Opt-in from the app.
-  let medicine = deps.medicine
-  app.post('/v1/medicine/explain', async (c) => {
-    if (Number(c.req.header('content-length') ?? 0) > MAX_BODY_BYTES) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${MAX_BODY_BYTES} bytes`)
+  const readJson = async (c: Context, max: number): Promise<unknown> => {
+    if (Number(c.req.header('content-length') ?? 0) > max) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${max} bytes`)
     const raw = await c.req.text()
-    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${MAX_BODY_BYTES} bytes`)
-    let body: unknown
+    if (Buffer.byteLength(raw) > max) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${max} bytes`)
     try {
-      body = JSON.parse(raw)
+      return JSON.parse(raw)
     } catch {
       throw new HttpError(400, 'BAD_REQUEST', 'body must be JSON')
     }
-    const input = parse(ExplainInput, body)
-    const socket = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress
+  }
+  const callerIp = (c: Context) => clientIp(c.req.header(), (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress)
+
+  let medicine = deps.medicine
+  app.post('/v1/medicine/explain', async (c) => {
+    const input = parse(ExplainInput, await readJson(c, MAX_BODY_BYTES))
     medicine ??= new MedicineExplainer({ ledger })
-    const result = await medicine.explain(input, clientIp(c.req.header(), socket))
+    const result = await medicine.explain(input, callerIp(c))
     c.header('Cache-Control', 'no-store')
     return c.json(result)
   })
 
-  // ---- MCP: the same answers for AI assistants (see src/mcp). Read-only; no Gemini explainer here.
+  // ---- Add to cabinet from a photo: the device OCRs the label and sends text only; values are grounded in that text.
+  let identifier = deps.identify
+  app.post('/v1/medicine/identify', async (c) => {
+    const input = parse(IdentifyInput, await readJson(c, IDENTIFY_MAX_BODY_BYTES))
+    identifier ??= new MedicineIdentifier({ ledger })
+    const result = await identifier.identify(input, callerIp(c))
+    c.header('Cache-Control', 'no-store')
+    return c.json(result)
+  })
+
+  // ---- MCP: the same answers for AI assistants (see src/mcp). Read-only; no Gemini explainer or pack identification here.
   const proofClient = deps.mcp?.proofClient === undefined ? () => publicClient() : deps.mcp.proofClient ? () => deps.mcp!.proofClient! : null
   const proofPublisher = deps.mcp?.publisher !== undefined ? deps.mcp.publisher : (deps.publisher ?? null)
   const mcp = mcpHandler(

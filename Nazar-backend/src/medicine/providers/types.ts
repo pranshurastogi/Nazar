@@ -1,3 +1,5 @@
+import type { z } from 'zod'
+
 import { NazarError } from '../../lib/errors.ts'
 
 /**
@@ -8,7 +10,17 @@ import { NazarError } from '../../lib/errors.ts'
 export interface MedicineProvider {
   readonly id: 'gemini' | 'anthropic'
   readonly model: string
-  generate(req: { system: string; user: string; signal?: AbortSignal }): Promise<unknown>
+  generate(req: GenerateRequest): Promise<unknown>
+}
+
+export interface GenerateRequest {
+  system: string
+  user: string
+  signal?: AbortSignal
+  /** Structured-output schema; defaults to MedicineInfo (the explainer card). */
+  schema?: z.ZodType
+  /** Output budget; defaults to MAX_OUTPUT_TOKENS. */
+  maxOutputTokens?: number
 }
 
 /** Upstream failure (network, HTTP error, refusal, truncated or empty output). Message is already redacted. */

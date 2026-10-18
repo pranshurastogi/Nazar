@@ -109,6 +109,8 @@ To publish for real:
 | `GET /v1/alerts/:rid`, `GET /v1/search?q=`, `GET /v1/cases/:caseId` | one alert, full-text search, Batch Passport |
 | `GET /v1/notices`, `GET /v1/sources` | source documents, adapter status |
 | `GET /v1/pipeline/status` | heartbeat, recent runs, wallet balance |
+| `POST /v1/medicine/explain` | "About this medicine": general reference card from the LLM (no doses, never "safe") plus Nazar's own alert counts |
+| `POST /v1/medicine/identify` | "Add to cabinet from a photo": `{ text, hints? }` (OCR'd label text, never the image) → `{ guess, confidence, evidence }`. Every value is grounded in the text: a batch or expiry not printed on the label is dropped. 10/min and 50/day per client, `NAZAR_LLM_IDENTIFY_DAILY_CAP` per day overall |
 
 `/v1/check` answers from the ledger first. If the ledger has nothing, it falls back to the Arkiv reader, which always filters by the `project` tag and the publisher's `$creator`.
 
@@ -122,7 +124,7 @@ https://nazar-api-production.up.railway.app/mcp
 
 - **Transport:** Streamable HTTP, **stateless**: every POST gets a fresh server and transport, no sessions, JSON responses (no SSE). `GET`/`DELETE` return 405. CORS is open on `/mcp` only. No auth; read-only.
 - **Limits:** 60 tool calls per minute and 240 requests per minute per client (salted, in-memory IP hash, as for the medicine explainer), 64 KB request bodies. Logs record the tool name, outcome and duration, never arguments.
-- **Honesty rules** are sent as the server `instructions`: four states, never "safe", "No alert found" is not a safety certificate, cite the regulator notice and the Arkiv entity, a look-alike is never a flag. General medicine information (the Gemini explainer) is deliberately **not** exposed.
+- **Honesty rules** are sent as the server `instructions`: four states, never "safe", "No alert found" is not a safety certificate, cite the regulator notice and the Arkiv entity, a look-alike is never a flag. General medicine information (the Gemini explainer) and pack identification are deliberately **not** exposed.
 
 | Tool | Does |
 |---|---|

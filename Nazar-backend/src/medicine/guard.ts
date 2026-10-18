@@ -31,6 +31,12 @@ export function saysSafe(s: string): boolean {
 const clean = (s: string, max: number) => s.replace(/\s+/g, ' ').trim().slice(0, max)
 const allowed = (s: string) => s.length > 0 && !looksLikeDosing(s) && !saysSafe(s)
 
+/** One short text value, cleaned; null when empty, dose-like or calling the medicine safe. */
+export function guardText(s: string, max = 200): string | null {
+  const c = clean(s, max)
+  return allowed(c) ? c : null
+}
+
 function list(items: string[], maxItems: number, maxLen = 160): string[] {
   const seen = new Set<string>()
   const out: string[] = []

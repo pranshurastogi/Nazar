@@ -62,6 +62,8 @@ export interface ClientLimits {
 }
 
 export const DEFAULT_CLIENT_LIMITS: ClientLimits = { perMinute: 5, perDay: 30 }
+/** Pack identification (POST /v1/medicine/identify) has its own, separate budget per client. */
+export const DEFAULT_IDENTIFY_LIMITS: ClientLimits = { perMinute: 10, perDay: 50 }
 
 /** Per-client limit: both the minute and the day bucket must have a token. */
 export class ClientLimiter {

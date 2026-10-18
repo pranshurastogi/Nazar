@@ -74,3 +74,80 @@ export interface ExplainResponse {
   model: string
   generatedAt: string
 }
+
+// ---- POST /v1/medicine/identify: guess a medicine from text OCR'd off a pack label (never the image).
+
+export const IDENTIFY_MAX_BODY_BYTES = 8192
+export const IDENTIFY_MAX_TEXT = 4000
+
+export const IdentifyInput = z
+  .object({
+    /** OCR text from the label, read on the device. */
+    text: z.string().trim().min(3).max(IDENTIFY_MAX_TEXT),
+    /** What the on-device Pack Reader already parsed. Context for the model only; never used as evidence. */
+    hints: z
+      .object({
+        product: text(120).optional(),
+        batch: text(40).optional(),
+        expiry: text(20).optional(),
+        manufacturer: text(200).optional(),
+        composition: z.array(text(160)).max(8).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+export type IdentifyInput = z.infer<typeof IdentifyInput>
+
+export const IDENTIFY_FIELDS = ['product', 'brand', 'composition', 'form', 'manufacturer', 'batch', 'expiry'] as const
+export type IdentifyField = (typeof IDENTIFY_FIELDS)[number]
+
+/**
+ * What the model must return. Unknown text fields are "" (not null) so one flat schema works for
+ * every provider's structured output; the server turns "" into null after grounding.
+ */
+export const IdentifyAnswer = z.object({
+  product: z.string().describe('Product name as printed, with obvious OCR errors fixed, e.g. "Dolo 650 Tablets". "" if not found.'),
+  brand: z.string().describe('Brand name only, e.g. "Dolo 650". "" for an unbranded generic or if not found.'),
+  composition: z.array(z.string()).describe('Active ingredients with strengths as printed, e.g. "Paracetamol IP 650 mg". Empty if none are printed.'),
+  form: z.string().describe('Dosage form, e.g. "tablet", "capsule", "syrup", "injection". "" if not printed.'),
+  manufacturer: z.string().describe('Manufacturer or marketer as printed, e.g. "Micro Labs Limited". "" if not found.'),
+  batch: z.string().describe('Batch or lot number exactly as printed after "B. No." or "Batch". "" if not printed. Never guess.'),
+  expiry: z.string().describe('Expiry month as YYYY-MM, only if an expiry date is printed. "" otherwise.'),
+  evidence: z
+    .array(
+      z.object({
+        field: z.enum(IDENTIFY_FIELDS),
+        quote: z.string().describe('The exact characters from the label text that support this field, copied as they appear, OCR errors included.'),
+      }),
+    )
+    .describe('At least one quote for every field you filled.'),
+  confidence: z.enum(['high', 'medium', 'low']),
+})
+export type IdentifyAnswer = z.infer<typeof IdentifyAnswer>
+
+export interface IdentifyGuess {
+  product: string | null
+  brand: string | null
+  composition: string[]
+  form: string | null
+  manufacturer: string | null
+  batch: string | null
+  /** YYYY-MM. */
+  expiry: string | null
+}
+
+export interface IdentifyEvidence {
+  field: IdentifyField
+  /** The span of the submitted label text that backs the field, exactly as submitted. */
+  quote: string
+}
+
+export interface IdentifyResponse {
+  guess: IdentifyGuess
+  confidence: 'high' | 'medium' | 'low'
+  evidence: IdentifyEvidence[]
+  aiGenerated: true
+  model: string
+  cached: boolean
+}
