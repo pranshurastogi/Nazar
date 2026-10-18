@@ -65,9 +65,17 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 |:---:|:---:|:---:|
 | ![Arkiv directory: live counts of notices, alerts and heartbeat with the live query panel](docs/screenshots/arkiv-directory-desktop.png) | ![Directory filtered to paediatric alerts at severity 4 or above, with the matching Arkiv query](docs/screenshots/arkiv-filtered-desktop.png) | ![Entity drawer: official publisher, flags, expiry estimate and typed attributes](docs/screenshots/arkiv-entity-drawer-desktop.png) |
 
-| Flagged on mobile | "How do we know?" | Strip Scan | Label mismatch |
+**About this medicine (opt-in, AI-generated, kept apart from the official verdict):**
+
+![Medicine card under a flagged SR-13 result: the official "don't use it" banner first, then AI-generated general information in six story cards with a not-medical-advice footer](docs/screenshots/medicine-card-desktop.png)
+
+| Pack Reader | Medicine card on mobile | QR scan | Label mismatch |
 |:---:|:---:|:---:|:---:|
-| ![Flagged result for SR-13 on mobile, dark mode](docs/screenshots/mobile-result-dark.png) | ![Proof sheet with publisher, notice, Arkiv entity and source hash](docs/screenshots/mobile-proof-dark.png) | ![Scanner read SR-13 from a GS1 QR code, with expiry](docs/screenshots/mobile-scanner-dark.png) | ![Scanner warning that the QR code and the printed batch disagree](docs/screenshots/mobile-scanner-mismatch-dark.png) |
+| ![Pack Reader: batch DOBS3975 read from printed text at 91% confidence, with product, composition, form, pack size, maker, state, licence and MRP from the label](docs/screenshots/mobile-pack-reader-dark.png) | ![AI-generated card for Paracetamol 650 mg: uses, prescription status, look-alike names and Nazar's alert count](docs/screenshots/mobile-medicine-card-dark.png) | ![Scanner read SR-13 from a GS1 QR code, with expiry](docs/screenshots/mobile-scanner-dark.png) | ![Scanner warning that the QR code and the printed batch disagree](docs/screenshots/mobile-scanner-mismatch-dark.png) |
+
+| Flagged on mobile | "How do we know?" |
+|:---:|:---:|
+| ![Flagged result for SR-13 on mobile, dark mode](docs/screenshots/mobile-result-dark.png) | ![Proof sheet with publisher, notice, Arkiv entity and source hash](docs/screenshots/mobile-proof-dark.png) |
 
 | Medicine cabinet | More | First-run guide |
 |:---:|:---:|:---:|
