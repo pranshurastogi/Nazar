@@ -1,0 +1,28 @@
+# Nazar
+
+> Nazar ("Har batch par nazar", an eye on every batch) checks any Indian medicine batch number against alerts published by CDSCO, state drug regulators and WHO, and answers with exactly one of four states: Flagged, Retracted, No alert found, or Can't tell. It never says a medicine is "safe"; "No alert found" is not a safety certificate. Every alert is a public, readonly entity on the Arkiv Tiramisu testnet, created by one publisher wallet, so anyone can verify it without trusting Nazar. Built for the Arkiv Global Tour, Best Indian Use Case track.
+
+## Live
+
+- [Web app](https://nazar-nu.vercel.app): check a batch, alerts, cabinet, shelf sweep, Arkiv directory, AI assistant guide
+- [REST API](https://nazar-api-production.up.railway.app/health): base URL https://nazar-api-production.up.railway.app, e.g. GET /v1/check?batch=SR-13
+- [MCP server](https://nazar-nu.vercel.app/ai): https://nazar-api-production.up.railway.app/mcp, stateless Streamable HTTP, read-only, no key
+- [Publisher on the Arkiv explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2): 0xd06d85Eb20f126f796E4a341b711B1a757c66bD2, project tag "nazar-in-batch-alerts"
+- [Alerts RSS feed](https://nazar-api-production.up.railway.app/v1/alerts.rss): also .atom and .json
+
+## Docs
+
+- [README](README.md): overview, the four answers, try it in 60 seconds, documentation index
+- [For judges](docs/for-judges.md): a 2-minute verification tour, why Arkiv is essential, real vs demo, limits
+- [Features](docs/features.md): every feature in depth, with screenshots
+- [Use the data on Arkiv](docs/arkiv.md): entity types, SDK examples, raw query strings
+- [Use Nazar from AI agents (MCP)](docs/mcp.md): setup per client, tools, honesty rules, worked example
+- [REST API](docs/api.md): every endpoint, errors, rate limits, CORS, caching
+- [How it works](docs/architecture.md): pipeline, extraction, severity, automation, fallback chain, privacy
+- [Development](docs/development.md): run it, environment variables, deploy, tests, structure
+
+## Reference
+
+- [Arkiv query reference](arkiv/README.md): runnable query scripts and the query table
+- [Arkiv data contract](arkiv/schema.md): attributes, lifetimes, flags, write rules
+- [Backend internals](Nazar-backend/README.md): sources, extraction, resolve, publishing, CLI

@@ -2,7 +2,7 @@
 
 Everything about how Nazar uses Arkiv lives in this folder: the data contract, real entities read from the chain, and a runnable script for every query the app runs. No account, key or Nazar server is needed to read any of it.
 
-This is the deep reference. For a quick start (why Arkiv, the entity table and copy-paste SDK examples), see [**Use the data on Arkiv directly**](../README.md#use-the-data-on-arkiv-directly) in the main README. AI agents can do the same through the [MCP server](../README.md#use-nazar-from-ai-agents-mcp).
+This is the deep reference. For a quick start (why Arkiv, the entity table and copy-paste SDK examples), see [**Use the data on Arkiv directly**](../docs/arkiv.md). AI agents can do the same through the [MCP server](../docs/mcp.md), and scripts through the [REST API](../docs/api.md#arkiv). How the data gets here: [How Nazar works](../docs/architecture.md).
 
 | | |
 |---|---|
