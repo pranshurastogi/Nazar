@@ -127,7 +127,7 @@ function SeverityTile({ value }: { value: number }) {
       )}
     >
       <span className="font-mono text-base leading-none font-semibold" aria-hidden="true">{value}</span>
-      <span className="text-[9px] leading-none font-bold tracking-wider uppercase opacity-80" aria-hidden="true">sev</span>
+      <span className="text-[9px] leading-none font-bold tracking-wider uppercase" aria-hidden="true">sev</span>
       <span className="sr-only">Severity {value} of 5</span>
     </span>
   )

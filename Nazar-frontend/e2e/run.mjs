@@ -36,7 +36,10 @@ const waitFor = async (url, ms = 30_000) => {
 }
 
 const profile = mkdtempSync(path.join(tmpdir(), 'nazar-e2e-'))
-const server = spawn('pnpm', ['exec', 'next', 'start', '--port', PORT], { cwd: root, stdio: 'ignore' })
+// The share page (/b/[batch]) checks on the server, where CDP cannot mock; outside live mode it is
+// pointed at no API so it shows its deterministic fallback. E2E_SHARE_API_ORIGIN overrides.
+const serverEnv = modes.includes('live') ? process.env : { ...process.env, NAZAR_API_ORIGIN: process.env.E2E_SHARE_API_ORIGIN || 'off' }
+const server = spawn('pnpm', ['exec', 'next', 'start', '--port', PORT], { cwd: root, stdio: 'ignore', env: serverEnv })
 const chrome = spawn(chromePath, ['--headless=new', `--remote-debugging-port=${CDP}`, `--user-data-dir=${profile}`, '--hide-scrollbars', '--no-first-run', '--no-sandbox', 'about:blank'], { stdio: 'ignore' })
 
 let failed = false

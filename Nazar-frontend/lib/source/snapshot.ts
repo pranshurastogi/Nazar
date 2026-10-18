@@ -10,11 +10,14 @@ import type { Alert, CheckResult } from './types'
 // Nazar-backend/src/api/snapshot.ts; the matching rules are the same ones the API uses:
 // exact matchKey → flagged / retracted, a confusionKey look-alike → "did you mean", never a flag.
 
+// Row[20] dateKnown (0 = the regulator gave no date; alertYm is when Nazar first saw the row) and
+// Row[21] productClass ('medicine' | 'cosmetic' | 'hygiene') were appended later; older snapshots
+// saved on the device lack them, so treat missing as dateKnown 1 and 'medicine'.
 type Row = [
   string | null, number, string, string | null, string | null,
   string, string, string, string, number, 0 | 1, string | null,
   0 | 1, string | null, number | null, number | null, number, 0 | 1,
-  0 | 1, 0 | 1,
+  0 | 1, 0 | 1, (0 | 1)?, string?,
 ]
 
 export type SnapshotFile = {
@@ -98,6 +101,8 @@ function toDto(key: string, r: Row, i: number, notices: SnapshotFile['notices'])
     sourceId: n[4],
     entityKey: null,
     retracted: r[19] === 1,
+    dateKnown: r[20] !== 0,
+    productClass: (r[21] ?? 'medicine') as AlertDTO['productClass'],
   }
 }
 

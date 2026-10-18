@@ -51,7 +51,7 @@ async function getJson<T>(path: string, { signal, timeoutMs = 4000 }: Opts = {})
   }
 }
 
-type CheckResponse = {
+export type CheckResponse = {
   state: CheckResult['state']
   batch: string
   asOf: string
@@ -63,7 +63,11 @@ type CheckResponse = {
 const STATES = new Set(['flagged', 'retracted', 'no_alert', 'unreadable'])
 
 export async function apiCheck(batch: string, opts?: Opts): Promise<CheckResult> {
-  const r = await getJson<CheckResponse>(`/v1/check?batch=${encodeURIComponent(batch)}`, opts)
+  return parseCheck(await getJson<CheckResponse>(`/v1/check?batch=${encodeURIComponent(batch)}`, opts), batch)
+}
+
+/** Maps a /v1/check body onto a result; also used by the server-rendered share page. Throws on a malformed body. */
+export function parseCheck(r: CheckResponse | null | undefined, batch: string): CheckResult {
   if (!r || !STATES.has(r.state) || !Array.isArray(r.alerts)) throw new ApiError('Unexpected /v1/check response')
   const asOf = r.asOf && !Number.isNaN(Date.parse(r.asOf)) ? new Date(r.asOf) : new Date()
   const alerts = orderAlerts(r.alerts.map(fromDto))
@@ -141,6 +145,19 @@ export async function apiSources(opts?: Opts): Promise<SourceInfo[]> {
 }
 
 // ---- About this medicine (opt-in; general AI-written reference text, never regulator data)
+
+/**
+ * Notice entity keys by the notice's SHA-256, from GET /v1/notices. The alert DTO names its
+ * notice by SHA only, so the proof looks the Arkiv notice entity up here.
+ */
+export async function apiNoticeKeys(opts?: Opts): Promise<Map<string, string>> {
+  const r = await getJson<{ items?: { sha?: unknown; entityKey?: unknown }[] }>('/v1/notices?limit=200', { timeoutMs: 8000, ...opts })
+  const out = new Map<string, string>()
+  for (const n of Array.isArray(r?.items) ? r.items : []) {
+    if (typeof n?.sha === 'string' && typeof n.entityKey === 'string' && /^0x[0-9a-fA-F]{64}$/.test(n.entityKey)) out.set(n.sha.toLowerCase(), n.entityKey)
+  }
+  return out
+}
 
 export type MedicineQuery = { product?: string; brand?: string; composition?: string[]; form?: string; manufacturer?: string; batch?: string }
 

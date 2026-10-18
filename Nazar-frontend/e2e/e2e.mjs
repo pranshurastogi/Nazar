@@ -107,6 +107,7 @@ let mockResponse = function mockResponse(url) {
     ] }
   }
   if (u.pathname === '/v1/snapshot') return mock.snapshot ? SNAPSHOT_FIXTURE : null
+  if (u.pathname === '/v1/notices') return { items: [{ sha: 'a'.repeat(64), entityKey: NOTICE_KEY, title: 'Notice' }] }
   if (u.pathname === '/v1/check') {
     const b = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     const asOf = new Date().toISOString()
@@ -197,14 +198,26 @@ if (MODE === 'fallback') {
   ok('bad input is answered on the device', (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'local')
   await typeBatch('(N)25567'); ok('CDSCO-style batch (N)25567 is readable, not "can\'t tell"', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && !(await body()).includes("We couldn't read the batch number clearly"))
   await typeBatch('5R-13'); ok('look-alike suggests SR-13, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
-  await click('SR-13'); await waitIdle(); ok('suggestion click checks SR-13', (await body()).includes('This batch failed a government quality test'))
+  {
+    const sec = `document.querySelector('section[data-state]')`
+    const text = await js(`${sec}?.innerText || ''`)
+    ok('look-alike: asks "Did you mean SR-13?" in the amber Can\'t tell card, never "couldn\'t read" or a flag', (await js(`${sec}.dataset.state`)) === 'unreadable' && (await js(`${sec}.querySelector('[data-verdict-headline]')?.innerText`)) === 'Did you mean SR-13?' && !text.includes("couldn't read") && !/flagged/i.test(text) && /can.t tell/i.test(text), text.slice(0, 160))
+    ok('look-alike: says 5R-13 has no alert and is one character from SR-13', text.includes('5R-13 has no alert, but it is one character away from SR-13') && text.includes('Check the batch number on the pack again.'))
+  }
+  ok('look-alike: Check SR-13 button is a 44px target', (await js(`(() => { const b = document.querySelector('[data-lookalike-check]'); return !!b && b.textContent.trim() === 'Check SR-13' && b.getBoundingClientRect().height >= 44 })()`)))
+  await click('Check SR-13'); await waitIdle(); ok('suggestion click checks SR-13', (await body()).includes('This batch failed a government quality test'))
   await typeBatch('AB1234'); const b = await body()
   ok('no alert state + not a safety certificate', b.includes('No official alert for this batch as of') && b.includes('This is not a safety certificate'))
   const green = await js(`(() => { const el = document.querySelector('[aria-live="polite"]'); const all = [el, ...el.querySelectorAll('*')]; return all.some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderColor].some(v => { const m = v.match(/\\d+(\\.\\d+)?/g); if (!m) return false; const [r,g,bl] = m.map(Number); return g > r + 40 && g > bl + 40 }) }) })()`)
   ok('no-alert card uses no green', green === false)
+  ok('sentinel eye: slate for no alert (never green), decorative to screen readers', (await js(`(() => { const e = document.querySelector('main [data-sentinel]'); return e?.dataset.state + ':' + e?.getAttribute('aria-hidden') })()`)) === 'no_alert:true')
+  await typeBatch('SR-13'); ok('sentinel eye: turns to the flagged state for SR-13', (await js(`document.querySelector('main [data-sentinel]')?.dataset.state`)) === 'flagged')
+  await typeBatch('5R-13'); ok("sentinel eye: Can't tell for a look-alike, not flagged", (await js(`document.querySelector('main [data-sentinel]')?.dataset.state`)) === 'unreadable')
+  await typeBatch('AB1234')
   ok('never says safe', !/\bsafe\b/i.test((await body()).replace(/not a safety certificate|never certifies a medicine as safe/gi, '')))
 
   ok('no horizontal overflow at 390', (await js(`document.documentElement.scrollWidth`)) <= 390)
+  ok('Try chips are 44px tap targets', (await js(`(() => { const c = [...document.querySelectorAll('[data-try-chip]')]; return c.length === 4 && c.every(b => b.getBoundingClientRect().height >= 44) })()`)), String(await js(`[...document.querySelectorAll('[data-try-chip]')].map(b => Math.round(b.getBoundingClientRect().height)).join()`)))
 
   // ---- Live wiring on the home page (fallback)
   ok('status pill: offline · demo data (compact on mobile)', (await js(`document.querySelector('[data-status]')?.dataset.status`)) === 'offline' && (await js(`document.querySelector('[data-status]').getAttribute('aria-label')`)) === 'Status: Offline · demo data')
@@ -426,7 +439,7 @@ if (MODE === 'fallback') {
   // ---- More
   ok('nav: More link routes client-side', await navTo('More'))
   ok('more: /more with More marked current', (await js(`location.pathname`)) === '/more' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'More')
-  ok('more: renders every section', (await js(`[...document.querySelectorAll('[data-more-section]')].map(s => s.id).join()`)) === 'how,sources,proof,privacy,settings,about')
+  ok('more: renders every section', (await js(`[...document.querySelectorAll('[data-more-section]')].map(s => s.id).join()`)) === 'how,sources,proof,mcp,privacy,settings,about')
   const mb = await body()
   ok('more: How it works lists the pipeline and four answers', ['Regulator documents', 'Read', 'Resolved', 'Published on Arkiv', 'You check', 'Four honest answers', 'Flagged', 'Retracted', 'No alert found', "Can't tell"].every(t => mb.includes(t)))
   await waitFor(`document.querySelector('[data-sources-from]')?.dataset.sourcesFrom !== 'loading'`)
@@ -466,6 +479,25 @@ if (MODE === 'fallback') {
   await noToasts(); await js(`window.scrollTo(0, 0)`); await shot('more-desktop')
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-desktop-proof')
 
+  // ---- More › Use Nazar in your AI assistant (/more#mcp)
+  const MCP = 'https://nazar-api-production.up.railway.app/mcp'
+  ok('more: footer links to /more#mcp', (await js(`document.querySelector('footer a[data-mcp-link]')?.getAttribute('href')`)) === '/more#mcp')
+  await send('Page.navigate', { url: new globalThis.URL('/more#mcp', URL).href }); await wait(1500)
+  await waitFor(`!!document.getElementById('mcp-title')`)
+  ok('more: /more#mcp renders the AI assistant section', (await js(`document.getElementById('mcp-title')?.innerText`)) === 'Use Nazar in your AI assistant' && (await js(`document.querySelector('[data-mcp-endpoint]')?.innerText`)) === MCP && (await js(`[...document.querySelectorAll('nav[aria-label="On this page"] a')].some(a => a.getAttribute('href') === '#mcp')`)))
+  ok('more: #mcp scrolls the section into view', await js(`(() => { const r = document.getElementById('mcp').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0 })()`))
+  const mcpCopies = await js(`document.querySelectorAll('#mcp button[aria-label^="Copy"]').length`)
+  ok('more: MCP section has labelled copy buttons', mcpCopies >= 3, String(mcpCopies))
+  const mt = await js(`document.getElementById('mcp').innerText`)
+  ok('more: MCP section lists the six tools, example and honesty note', ['check_batch', 'search_alerts', 'recent_alerts', 'get_case', 'list_sources', 'arkiv_proof', 'Is batch SR-13 of Coldrif flagged?', 'not a safety certificate'].every(t => mt.includes(t)) && !/\bsafe\b/i.test(mt.replace(/not a safety certificate/gi, '')))
+  await js(`window.__copied = []; navigator.clipboard.writeText = async t => { window.__copied.push(t) }`)
+  await js(`document.querySelector('[aria-label="Copy Claude Code command"]').click()`); await wait(200)
+  ok('more: Claude Code command copies', (await js(`window.__copied[0]`)) === `claude mcp add --transport http nazar ${MCP}`)
+  await js(`document.querySelector('[data-mcp-tab="cursor"]').click()`); await wait(200)
+  await js(`document.querySelector('[aria-label="Copy Cursor config"]').click()`); await wait(200)
+  ok('more: Cursor tab shows and copies its config', (await js(`!document.getElementById('mcp-panel-cursor').hidden && document.getElementById('mcp-panel-claude-code').hidden`)) && JSON.parse((await js(`window.__copied[1] || '{}'`))).mcpServers?.nazar?.url === MCP)
+  await js(`document.querySelector('[data-mcp-tab="claude-code"]').click()`); await noToasts(); await js(`document.getElementById('mcp').scrollIntoView({ block: 'start' })`); await shot('more-desktop-mcp')
+
   // ---- 360px dark: nav reaches each route, no overflow; screenshots with flagged + expired + no-alert items
   await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark'); localStorage.setItem('nazar:cabinet', JSON.stringify(${JSON.stringify(parsed?.items ?? [])}))`)
   await send('Page.navigate', { url: URL }); await wait(1500); await settle()
@@ -484,6 +516,8 @@ if (MODE === 'fallback') {
   await js(`window.scrollTo(0, 0)`); await shot('more-360-dark')
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-proof')
   await js(`document.getElementById('settings').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-settings')
+  await js(`document.getElementById('mcp').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-mcp')
+  ok('360: MCP section fits; code blocks scroll inside their box', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`[...document.querySelectorAll('#mcp pre')].filter(p => p.offsetParent).every(p => p.getBoundingClientRect().right <= 360)`)))
   ok('360: Check tab returns home', await navTo('Check') && (await js(`location.pathname`)) === '/')
   await vp(360, 800, false, true); await js(`localStorage.setItem('theme', 'light')`); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1500); await cabinetIdle()
   ok('reduced motion: cabinet renders and settles', (await items()).length === 3)
@@ -523,6 +557,8 @@ if (MODE === 'mock' || MODE === 'live') {
     await js(`[...document.querySelectorAll('[aria-label="Notice timeline"] button')][1].click()`); await wait(900)
     p = await proofText()
     ok('timeline opens proof for the machine-read notice', p.includes('Tamil Nadu Drugs Control') && p.includes('Machine-read, awaiting pharmacist confirmation') && p.includes('OCR of a scanned page · 82% confidence'))
+    await waitFor(`!!document.querySelector('[role="dialog"] [data-notice-key]')`, 5000)
+    ok('proof sheet: notice entity key looked up by SHA (GET /v1/notices) when the alert DTO lacks it, shortened with an explorer link', (await js(`document.querySelector('[role="dialog"] [data-notice-key]')?.innerText || ''`)) === '0x5e1f…0ffe' && (await js(`document.querySelector('[role="dialog"] a[aria-label="Open notice entity in the Arkiv explorer"]')?.href`)) === 'https://tiramisu.explorer.arkiv.network/entity/' + NOTICE_KEY && !(await proofText()).includes('Linked inside the alert'))
     ok('proof sheet: creator equal to the configured publisher is "Official Nazar publisher"', (await js(`document.querySelector('[role="dialog"] [data-publisher-check]')?.dataset.publisherCheck`)) === 'official' && p.includes('Official Nazar publisher'))
     await shot('mock-proof-machine-read'); await escape()
     // ---- About this medicine: opt-in AI card, kept apart from (and after) the official verdict.
@@ -638,11 +674,11 @@ if (MODE === 'mock' || MODE === 'live') {
     await pick('feed-source', 'mh-fda')
     const t = await rowTexts()
     ok('feed: source filter works even when the server ignores it', t.length === MH_ROWS && t.every(x => x.includes('Food and Drug Administration, Maharashtra')), String(t.length))
-    ok("feed: Maharashtra rows say \"Listed on the regulator's page · first seen\" instead of a date", t.every(x => x.includes("Listed on the regulator's page · first seen Sep 2025") || x.includes("Listed on the regulator's page · first seen Aug 2025")), t[0])
+    ok("feed: Maharashtra rows say \"Date not given · first seen\" instead of a date", t.every(x => x.includes('Date not given · first seen Sep 2025') || x.includes('Date not given · first seen Aug 2025')), t[0])
     await js(`document.querySelector('[data-alert-row]').click()`); await wait(800)
     await js(`[...document.querySelectorAll('[data-feed] button')].find(b => b.textContent.includes('How do we know'))?.click()`); await wait(900)
     const p = await proofText()
-    ok('feed: Maharashtra proof shows the honest date line', p.includes("Listed on the regulator's page · first seen"), p.slice(0, 160))
+    ok('feed: Maharashtra proof shows the honest date line', p.includes('Date not given · first seen'), p.slice(0, 160))
     await escape(); await press('Reset filters')
   }
   await js(`document.querySelector('[data-alert-row]').click()`); await wait(900)
@@ -957,7 +993,8 @@ if (MODE === 'mock') {
 
   await js(`document.querySelector('[data-type-tab="notice"]').click()`); await arkivIdle()
   ok('arkiv: Notices tab lists notices with t = notice', (await arkivRows()) === 3 && (await arkivQuery()).includes("t = str('notice')") && (await js('location.search')) === '?type=notice')
-  await js(`document.querySelector('[data-entity-row] button').click()`); await waitFor(`!!document.querySelector('[data-notice-alerts]')`); await wait(500)
+  ok('arkiv: loaded rows are listed newest first (Oct 2026 notice before Aug)', (await js(`document.querySelector('[data-entity-row]')?.dataset.entityRow`)) === NOTICE_KEYS[2])
+  await js(`document.querySelector('[data-entity-row="${NOTICE_KEYS[0]}"] button').click()`); await waitFor(`!!document.querySelector('[data-notice-alerts]')`); await wait(500)
   await js(`document.querySelector('[data-notice-alerts]').click()`); await wait(600); await arkivIdle()
   ok("arkiv: a notice's alerts are one click away (notice = key(...))", (await arkivQuery()).includes(`notice = key(${NOTICE_KEYS[0]})`) && (await js('location.search')).includes('notice=' + NOTICE_KEYS[0]) && (await arkivRows()) === 10)
   await js(`document.querySelector('[data-type-tab="heartbeat"]').click()`); await arkivIdle()
@@ -969,6 +1006,8 @@ if (MODE === 'mock') {
   await js(`document.querySelector('[data-mode="browser"]').click()`); await arkivIdle()
   ok('arkiv: browser mode sends the query to Arkiv itself (URL via=browser)', (await js('location.search')).includes('via=browser') && (await js(`document.querySelector('[data-mode-note]').innerText`)).includes('public Arkiv RPC'))
   ok('arkiv: a 429 from Arkiv shows the rate-limit state', (await resultsKind()) === 'error' && (await js(`document.querySelector('[data-results-error]')?.dataset.resultsError`)) === 'throttled' && mock.arkivHits <= 2, String(mock.arkivHits))
+  const waitText = await js(`document.querySelector('[data-results-error]')?.innerText || ''`)
+  ok('arkiv: the retry wait reads in minutes (Retry-After 120 → about 2 min), never raw seconds', waitText.includes('Try again in about 2 min.') && !/\d+ s\b/.test(waitText), waitText)
   mock.arkiv429 = false
   await js(`document.querySelector('[data-mode="api"]').click()`); await arkivIdle()
   ok('arkiv: back to the API mode', (await arkivRows()) === 25 && !(await js('location.search')).includes('via='))
@@ -979,6 +1018,12 @@ if (MODE === 'mock') {
   ok('arkiv 360: filters restored from the URL', (await arkivQuery()).includes('sev = i32(5)') && (await js(`document.getElementById('f-sev-min').value`)) === '5')
   ok('arkiv 360: no horizontal scroll', await noHScroll(), String(await js('document.documentElement.scrollWidth')))
   ok('arkiv 360: bottom nav keeps four items', (await js(`document.querySelectorAll('nav[aria-label="Mobile navigation"] a').length`)) === 4)
+  const firstRowY = await js(`Math.round(document.querySelector('[data-entity-row]').getBoundingClientRect().top + scrollY)`)
+  ok('arkiv 360: filters and the query fold away on phones, with a jump link to the entities', (await js(`document.querySelector('[data-filter-toggle]')?.getAttribute('aria-expanded')`)) === 'false' && (await js(`document.getElementById('f-sev-min').offsetParent === null && document.querySelector('[data-query-toggle]')?.getAttribute('aria-expanded') === 'false' && !!document.querySelector('[data-jump-entities]')?.offsetParent`)), 'first entity at ' + firstRowY + 'px')
+  ok('arkiv 360: the first screen has a one-tap way to the entities (hero "Browse entities")', await js(`(() => { const a = [...document.querySelectorAll('[data-arkiv-hero] a')].find(x => x.textContent.includes('Browse entities')); if (!a) return false; const r = a.getBoundingClientRect(); return a.getAttribute('href') === '#arkiv-results' && r.top + scrollY < 780 && r.height >= 44 })()`))
+  ok('arkiv 360: hero headline and the three-step explainer render', await js(`(() => { const h = document.querySelector('[data-arkiv-hero]'); return !!h && /Every alert/.test(h.innerText) && h.querySelectorAll('ol li').length === 3 })()`))
+  await js(`document.querySelector('[data-filter-toggle]').click()`); await wait(200)
+  ok('arkiv 360: Show opens the filters', (await js(`document.getElementById('f-sev-min').offsetParent !== null && document.querySelector('[data-filter-toggle]').getAttribute('aria-expanded') === 'true'`)))
   await arkivShot('360-dark-overview')
   await js(`document.getElementById('arkiv-results').scrollIntoView()`); await wait(300)
   await arkivShot('360-dark-results')
@@ -1004,6 +1049,72 @@ if (MODE === 'fallback') {
   await arkivShot('fallback-desktop')
 }
 // ======== end Arkiv directory ========
+
+// ======== Share links (fallback): deep link, result-card share, public /b/[batch] page. Self-contained block. ========
+if (MODE === 'fallback') {
+  const origin = new globalThis.URL(URL).origin
+  const onNewDoc = async src => (await send('Page.addScriptToEvaluateOnNewDocument', { source: src })).result?.identifier
+  const dropNewDoc = id => id && send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id })
+  const openCheck = async q => { await send('Page.navigate', { url: new globalThis.URL('/' + q, URL).href }); await wait(1500); await waitIdle(); await wait(300) }
+  const cardState = () => js(`document.querySelector('section[data-state]')?.dataset.state || null`)
+  await vp(390, 844, false)
+  await send('Page.navigate', { url: URL }); await wait(1200)
+  await js(`localStorage.clear(); localStorage.setItem('nazar:onboarded', '1'); localStorage.setItem('theme', 'light')`)
+
+  // Deep link: /?batch= and /?b= fill in the box and run the check on load, then drop the parameter.
+  await openCheck('?batch=SR-13')
+  ok('share: /?batch=SR-13 runs the check on load', (await cardState()) === 'flagged' && (await js(`document.getElementById('batch')?.value`)) === 'SR-13')
+  ok('share: deep link parameter is dropped after the check', (await js(`location.search`)) === '')
+  await openCheck('?b=demo-rt1')
+  ok('share: /?b= alias works (DEMO-RT1 retracted)', (await cardState()) === 'retracted' && (await js(`document.getElementById('batch')?.value`)) === 'DEMO-RT1')
+
+  // Without the Web Share API: Copy link and WhatsApp carry the absolute /b/ link.
+  const noShare = await onNewDoc(`Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true })`)
+  await openCheck('?batch=SR-13')
+  ok('share: Save and Share sit right after "What to do", before the on-chain proof', await js(`(() => { const a = document.querySelector('section[data-state="flagged"] [data-share-actions]'); const p = document.querySelector('section[data-state="flagged"] [data-onchain-proof]'); return !!a && !!a.previousElementSibling?.textContent.includes('What to do') && !!a.querySelector('[data-save-cabinet]') && (!p || !!(a.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)) })()`))
+  await js(`window.__copied = []; navigator.clipboard.writeText = async t => { window.__copied.push(t) }`)
+  ok('share: Copy link is offered when the Web Share API is missing', await js(`(() => { const b = document.querySelector('[data-copy-link]'); if (!b) return false; b.click(); return true })()`))
+  await wait(300)
+  const copied = await js(`window.__copied`)
+  ok('share: Copy link copies the absolute /b/SR-13 link', copied?.[0] === `${origin}/b/SR-13`, JSON.stringify(copied))
+  const wa = await js(`document.querySelector('[data-whatsapp]')?.href || ''`)
+  const waText = wa.startsWith('https://wa.me/?text=') ? decodeURIComponent(wa.slice('https://wa.me/?text='.length)) : ''
+  ok('share: WhatsApp message names the batch, its state and the /b/ link', waText.includes('COLDRIF batch SR-13: Flagged by') && waText.includes(`${origin}/b/SR-13`), waText)
+  await dropNewDoc(noShare)
+
+  // With the Web Share API: the native sheet gets the link as its url.
+  const stubShare = await onNewDoc(`window.__shared = []; Object.defineProperty(Navigator.prototype, 'share', { value: async d => { window.__shared.push(d) }, configurable: true })`)
+  await openCheck('?batch=SR-13')
+  ok('share: Share button uses the Web Share API when present', await js(`(() => { const b = document.querySelector('[data-share]'); if (!b) return false; b.click(); return true })()`))
+  await wait(300)
+  const shared = await js(`window.__shared?.[0] || null`)
+  ok('share: shared data carries the /b/SR-13 url and the summary', shared?.url === `${origin}/b/SR-13` && /COLDRIF batch SR-13: Flagged by/.test(shared?.text || '') && !/\b(safe|genuine|approved)\b/i.test(shared?.text || ''), JSON.stringify(shared))
+  await dropNewDoc(stubShare)
+  await typeBatch('ZZ-404')
+  ok('share: a no-alert share still says it is not a safety certificate', decodeURIComponent((await js(`document.querySelector('[data-whatsapp]')?.href || ''`))).includes('This is not a safety certificate'))
+
+  // Public share page. Its server fetch is not mocked (run.mjs points NAZAR_API_ORIGIN at nothing), so it shows the neutral state.
+  await send('Page.navigate', { url: new globalThis.URL('/b/SR-13', URL).href }); await wait(1800)
+  const sp = await js(`({ title: document.title, state: document.querySelector('[data-share-page]')?.dataset.shareState, batch: document.querySelector('[data-share-batch]')?.innerText, text: document.body.innerText, cta: document.querySelector('[data-share-cta]')?.getAttribute('href'), ctaText: document.querySelector('[data-share-cta]')?.innerText.trim(), og: document.querySelector('meta[property="og:image"]')?.content || '', tw: document.querySelector('meta[name="twitter:image"]')?.content || '', ogTitle: document.querySelector('meta[property="og:title"]')?.content || '', fits: document.documentElement.scrollWidth <= innerWidth + 1 })`)
+  ok('share page: title names the batch', /^Batch SR-13 · .*Nazar$/.test(sp.title), sp.title)
+  ok('share page: shows the batch and a state (neutral when the API is unreachable)', sp.batch === 'SR-13' && (sp.state === 'unavailable' ? sp.text.includes('Open in Nazar to check') : ['flagged', 'retracted', 'no_alert', 'unreadable'].includes(sp.state)), String(sp.state))
+  ok('share page: "Check your own batch" links to /?batch=SR-13', sp.cta === '/?batch=SR-13' && sp.ctaText === 'Check your own batch', `${sp.cta} ${sp.ctaText}`)
+  ok('share page: og:image and twitter:image point at the per-batch card', /\/b\/SR-13\/opengraph-image/.test(sp.og) && /\/b\/SR-13\/opengraph-image/.test(sp.tw) && sp.ogTitle === sp.title, `${sp.og} | ${sp.tw}`)
+  ok('share page: no device data and no "safe" wording', !sp.text.includes('Recent checks') && !sp.text.includes('cabinet') && !/\b(safe|genuine|approved)\b/i.test(sp.text))
+  ok('share page: fits 390 without horizontal scroll', sp.fits)
+  await shot('share-page-390')
+  const img = await fetch(new globalThis.URL('/b/SR-13/opengraph-image', URL)).catch(() => null)
+  const imgType = img?.headers.get('content-type') || ''
+  const imgBytes = img?.ok ? (await img.arrayBuffer()).byteLength : 0
+  ok('share page: Open Graph image renders as a PNG', img?.status === 200 && imgType.startsWith('image/png') && imgBytes > 5000, `${img?.status} ${imgType} ${imgBytes}`)
+  if (img?.ok) fs.writeFileSync(`${OUT}/share-og-SR-13.png`, Buffer.from(await (await fetch(new globalThis.URL('/b/SR-13/opengraph-image', URL))).arrayBuffer()))
+  await send('Page.navigate', { url: new globalThis.URL('/b/!!', URL).href }); await wait(1500)
+  ok("share page: an unreadable batch is Can't tell, never an error page", (await js(`document.querySelector('[data-share-page]')?.dataset.shareState`)) === 'unreadable' && /Can't tell/.test(await js(`document.title`)))
+  await send('Page.navigate', { url: new globalThis.URL('/b/SR-13', URL).href }); await wait(1500)
+  await js(`document.querySelector('[data-share-cta]').click()`); await wait(1500); await waitIdle(); await wait(300)
+  ok('share page: CTA opens Check and runs the batch', (await js(`location.pathname`)) === '/' && (await cardState()) === 'flagged')
+}
+// ======== end Share links ========
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))

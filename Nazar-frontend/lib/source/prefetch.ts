@@ -6,11 +6,12 @@ import { prefetch } from './swr'
 
 export const HOME_KEYS = {
   severe: 'alerts:sev4',
-  child: 'alerts:peds-sev4',
+  child: 'alerts:peds',
 } as const
 
 export const loadSevere = () => loadAlerts({ minSeverity: 4, limit: 20 })
-export const loadChild = () => loadAlerts({ peds: true, minSeverity: 4, limit: 20 })
+// Every Child Shield alert, the same set the Feed filter and the Arkiv overview count.
+export const loadChild = () => loadAlerts({ peds: true, limit: 20 })
 
 export const feedKey = (q: FeedFilters) =>
   `feed:${JSON.stringify([q.minSeverity ?? 0, !!q.peds, q.state ?? '', q.source ?? ''])}`

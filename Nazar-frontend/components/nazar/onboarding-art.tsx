@@ -5,6 +5,8 @@ import { motion } from 'motion/react'
 import { CircleHelp, FileText, Hash, History, Lock, Search, Smartphone, TriangleAlert } from 'lucide-react'
 
 import { NazarMark } from '@/components/nazar/logo'
+import { stateName } from '@/lib/source/labels'
+import { STATIC_SOURCES } from '@/lib/source/sources'
 import { cn } from '@/lib/utils'
 
 /** Subtle dot grid behind every illustration. */
@@ -21,12 +23,24 @@ export function DotGrid({ className }: { className?: string }) {
   )
 }
 
-const SOURCES = [
-  { label: 'CDSCO', pos: 'left-[-14%] top-[14%]', d: 0.2 },
-  { label: 'Tamil Nadu', pos: 'right-[-18%] top-[4%]', d: 0.35 },
-  { label: 'Kerala', pos: 'left-[-8%] bottom-[8%]', d: 0.5 },
-  { label: 'Telangana', pos: 'right-[-14%] bottom-[18%]', d: 0.65 },
+const SPOTS = [
+  { pos: 'left-[-14%] top-[14%]', d: 0.2 },
+  { pos: 'right-[-18%] top-[4%]', d: 0.35 },
+  { pos: 'left-[-8%] bottom-[8%]', d: 0.5 },
+  { pos: 'right-[-14%] bottom-[18%]', d: 0.65 },
 ]
+
+/**
+ * The regulators the pipeline actually reads right now: enabled sources only (switched-off
+ * ones like Kerala and Telangana stay out), named by state or authority, curators excluded.
+ */
+const SOURCES = [
+  ...new Set(
+    STATIC_SOURCES.filter((s) => s.enabled && s.id !== 'curated').map((s) => (s.jurisdiction === 'IN' ? s.authority : (stateName(s.jurisdiction) ?? s.authority))),
+  ),
+]
+  .slice(0, SPOTS.length)
+  .map((label, i) => ({ label, ...SPOTS[i]! }))
 
 /** Step 1: the nazar eye at the centre of pulsing rings, with the regulators it watches. */
 export function WatchArt() {
@@ -142,7 +156,7 @@ export function BatchArt() {
 }
 
 const STATES = [
-  { icon: TriangleAlert, label: 'Flagged', note: 'Failed a government test', tone: 'text-flagged bg-flagged-soft border-flagged-border', tile: 'bg-flagged text-white' },
+  { icon: TriangleAlert, label: 'Flagged', note: 'Failed a government test', tone: 'text-flagged bg-flagged-soft border-flagged-border', tile: 'bg-flagged text-white dark:text-background' },
   { icon: History, label: 'Retracted', note: 'Alert was withdrawn', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },
   { icon: Search, label: 'No alert found', note: 'Not a safety certificate', tone: 'text-quiet bg-quiet-soft border-quiet-border', tile: 'bg-quiet text-white dark:text-background' },
   { icon: CircleHelp, label: "Can't tell", note: 'Batch number unclear', tone: 'text-caution bg-caution-soft border-caution-border', tile: 'bg-caution text-white dark:text-background' },

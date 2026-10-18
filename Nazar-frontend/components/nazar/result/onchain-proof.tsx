@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { BadgeCheck, Boxes, ExternalLink, FileText, Fingerprint, Infinity as KeepAlive, Link2, Lock, ShieldAlert, Unlink, LoaderCircle } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
-import { estimateExpiry, explorerAddress, PUBLISHER, type Alert } from '@/lib/source'
+import { estimateExpiry, EXPLORER_URL, explorerAddress, noticeKeyFor, PUBLISHER, type Alert } from '@/lib/source'
 import { cn } from '@/lib/utils'
 import { CopyButton, IconLink, shorten } from './shared'
 
@@ -12,7 +12,7 @@ import { CopyButton, IconLink, shorten } from './shared'
 // Arkiv notice entity that records it, and this alert entity, plus who signed it and in
 // which transaction. Every hash can be copied and opened in the Arkiv explorer.
 
-const ENTITY_URL = (key: string) => `https://tiramisu.explorer.arkiv.network/entity/${key}`
+const ENTITY_URL = (key: string) => `${EXPLORER_URL}/entity/${key}`
 
 /** Alerts are created read-only with permissionless extension (arkiv/schema.md); used when the answer did not carry flags. */
 const SCHEMA_FLAGS = { readonly: true, permissionlessExtension: true }
@@ -82,6 +82,26 @@ function ExpiryLine({ block }: { block: string }) {
 }
 
 /**
+ * The notice entity key: carried by alerts read from Arkiv, looked up by the notice's SHA-256
+ * for alerts answered by the Nazar API (its alert DTO names the notice by SHA only).
+ */
+function useNoticeKey(alert: Alert) {
+  const [found, setFound] = useState<{ sha: string; key: string | null } | null>(null)
+  const sha = !alert.noticeKey && alert.entityKey ? alert.sourceSha : null
+  useEffect(() => {
+    if (!sha) return
+    let live = true
+    noticeKeyFor(sha).then((key) => live && setFound({ sha, key }), () => live && setFound({ sha, key: null }))
+    return () => {
+      live = false
+    }
+  }, [sha])
+  if (alert.noticeKey) return { key: alert.noticeKey, looking: false }
+  if (!sha) return { key: null, looking: false }
+  return found?.sha === sha ? { key: found.key, looking: false } : { key: null, looking: true }
+}
+
+/**
  * `variant="card"` is the compact module inside a result card; `variant="sheet"` is the
  * full version in the "How do we know?" sheet, with the transaction as its own row.
  */
@@ -91,6 +111,7 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
   const official = !!alert.creator && alert.creator.toLowerCase() === PUBLISHER.toLowerCase()
   const flags = alert.flags ?? (published ? SCHEMA_FLAGS : null)
   const entityHref = alert.explorer.entity ?? (alert.entityKey ? ENTITY_URL(alert.entityKey) : null)
+  const notice = useNoticeKey(alert)
 
   const nodes: NodeSpec[] = [
     {
@@ -117,18 +138,18 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
       key: 'notice',
       icon: Boxes,
       label: 'Arkiv notice entity',
-      value: alert.noticeKey ? (
-        <Mono value={alert.noticeKey} />
+      value: notice.key ? (
+        <span data-notice-key={notice.key}><Mono value={notice.key} /></span>
       ) : (
-        <span className="text-muted-foreground">{published ? 'Linked inside the alert' : 'Not on Arkiv'}</span>
+        <span className="text-muted-foreground">{!published ? 'Not on Arkiv' : notice.looking ? 'Looking up…' : 'Named in the alert entity'}</span>
       ),
-      actions: alert.noticeKey ? (
+      actions: notice.key ? (
         <>
-          <CopyButton value={alert.noticeKey} what="notice entity key" />
-          <IconLink href={ENTITY_URL(alert.noticeKey)} label="Open notice entity in the Arkiv explorer" />
+          <CopyButton value={notice.key} what="notice entity key" />
+          <IconLink href={ENTITY_URL(notice.key)} label="Open notice entity in the Arkiv explorer" />
         </>
       ) : undefined,
-      missing: !alert.noticeKey,
+      missing: !notice.key,
     },
     {
       key: 'alert',

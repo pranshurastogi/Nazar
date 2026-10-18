@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import type { PackLabel } from '@/lib/scan/pack'
 import type { Alert, CheckResult } from '@/lib/source'
 import { cn } from '@/lib/utils'
-import { ResultActions } from './result/actions'
+import { ResultActions, ShareSave } from './result/actions'
 import { ChildShield } from './result/child-shield'
 import { NoticeTimeline } from './result/notice-timeline'
 import { OnchainProof } from './result/onchain-proof'
@@ -64,10 +64,11 @@ export function ResultCard({
       <VerdictHeader result={result} alert={alert} />
       {alert?.peds && result.state === 'flagged' && <ChildShield />}
       <VerdictBody result={result} alert={alert} onCheck={onCheck} />
+      <ShareSave result={result} saveable={saveable} />
       {alerts.length > 1 && <NoticeTimeline alerts={alerts} onOpen={openProof} />}
       {alert && <OnchainProof alert={alert} />}
       <Separator />
-      <ResultActions result={result} alert={alert} saveable={saveable} onProof={openProof} />
+      <ResultActions result={result} alert={alert} onProof={openProof} />
       <ProofDrawer alert={proof} open={proofOpen} onOpenChange={setProofOpen} />
     </section>
     {/* AI text lives outside the verdict card, below it, and only loads when asked for. */}

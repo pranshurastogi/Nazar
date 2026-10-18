@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Bell, FileText } from 'lucide-react'
+import { Activity, ArrowDown, Bell, FileText } from 'lucide-react'
 
 import { API_URL } from '@/lib/source'
 import {
@@ -27,6 +27,7 @@ import {
 import { SUMMARY_KEY } from '@/lib/source/prefetch'
 import { peek, put, revalidate } from '@/lib/source/swr'
 import { cn } from '@/lib/utils'
+import { ArkivHero } from './arkiv-hero'
 import { EntityDrawer } from './entity-drawer'
 import { FilterPanel } from './filters'
 import { DirectoryHeader, Overview, type SummaryState } from './overview'
@@ -59,6 +60,7 @@ export function ArkivDirectory() {
   const [autoSwitched, setAutoSwitched] = useState(false)
   const [reload, setReload] = useState(0)
   const req = useRef(0)
+  const recount = useRef(false)
 
   // Filters and mode come from the URL once, on the client.
   useEffect(() => {
@@ -78,7 +80,21 @@ export function ArkivDirectory() {
     const cached = peek<ArkivSummary>(SUMMARY_KEY)
     setSummary((s) => (s.kind === 'ok' ? s : cached ? { kind: 'ok', data: cached.value, fetchedAt: cached.at } : { kind: 'loading' }))
     ;(force ? apiSummary(signal).then((d) => (put(SUMMARY_KEY, d), d)) : revalidate(SUMMARY_KEY, () => apiSummary())).then(
-      (data) => !signal?.aborted && setSummary({ kind: 'ok', data, fetchedAt: Date.now() }),
+      (data) => {
+        if (signal?.aborted) return
+        setSummary({ kind: 'ok', data, fetchedAt: Date.now() })
+        // The API recounts in the background when it hands back old counts; pick the new ones up once.
+        if (data.stale && !data.error && !recount.current) {
+          recount.current = true
+          setTimeout(() => {
+            if (signal?.aborted) return
+            apiSummary(signal).then(
+              (d) => !signal?.aborted && !d.stale && (put(SUMMARY_KEY, d), setSummary({ kind: 'ok', data: d, fetchedAt: Date.now() })),
+              () => {},
+            )
+          }, 8000)
+        }
+      },
       (err) => {
         if (signal?.aborted) return
         const e = asReadError(err)
@@ -178,10 +194,20 @@ export function ArkivDirectory() {
 
   return (
     <div className="space-y-4" data-arkiv-directory>
+      <ArkivHero />
       <DirectoryHeader summary={summary} block={block} onRefresh={() => loadSummary(undefined, true)} />
 
+      {/* On phones the entities sit below the overview; one tap gets there. */}
+      <a
+        href="#arkiv-results"
+        className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border bg-card px-4 text-sm font-semibold text-primary focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none lg:hidden"
+        data-jump-entities
+      >
+        Jump to the entities <ArrowDown className="size-4" aria-hidden="true" />
+      </a>
+
       <Overview summary={summary} filters={filters} onApply={apply} />
-      <div>
+      <div id="arkiv-query" className="scroll-mt-6">
         <QueryPanel query={query} sdk={sdk} mode={mode} onMode={(m) => setMode(m)} apiAvailable={!!API_URL} meta={meta} />
       </div>
 

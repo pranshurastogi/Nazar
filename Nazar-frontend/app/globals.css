@@ -78,7 +78,8 @@
   --flagged: hsl(0 72% 44%);
   --flagged-soft: hsl(0 86% 97%);
   --flagged-border: hsl(0 72% 86%);
-  --caution: hsl(32 90% 36%);
+  /* 33% lightness keeps amber text at 4.5:1 or more on caution-soft and the page background. */
+  --caution: hsl(32 90% 33%);
   --caution-soft: hsl(40 90% 95%);
   --caution-border: hsl(38 75% 80%);
   --quiet: hsl(215 18% 40%);

@@ -15,7 +15,20 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://nazar-nu.vercel.ap
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'Nazar · Har batch par nazar',
-  description: 'Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof.',
+  description: 'Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself on Arkiv.',
+  // The images come from app/opengraph-image.jpg and app/twitter-image.jpg.
+  openGraph: {
+    type: 'website',
+    siteName: 'Nazar',
+    title: 'Nazar · Har batch par nazar',
+    description: 'Check any Indian medicine batch against CDSCO and state drug regulator alerts in seconds, with proof you can verify yourself on Arkiv.',
+    locale: 'en_IN',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Nazar · Har batch par nazar',
+    description: 'Check any Indian medicine batch against regulator alerts in seconds, with proof on Arkiv.',
+  },
   applicationName: 'Nazar',
   authors: [{ name: 'Pranshu Rastogi' }],
   creator: 'Pranshu Rastogi',

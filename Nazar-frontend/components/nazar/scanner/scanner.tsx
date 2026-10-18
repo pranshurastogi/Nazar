@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { SentinelEye } from '@/components/ui/sentinel-core'
 import { Rings } from '@/components/nazar/rings'
 import { decodeFrame, decodePhoto, warmDecoders, type DecodedCode } from '@/lib/scan/decode'
 import { confidenceOf, prepareForOcr, recognize, recognizeLabel, releaseOcrSoon, warmOcr } from '@/lib/scan/ocr'
@@ -432,6 +433,12 @@ export function Scanner({
               <div className="relative isolate flex-1 overflow-hidden rounded-2xl bg-black sm:aspect-[4/3] sm:flex-none min-h-[22rem] sm:min-h-0">
                 <video ref={videoRef} data-scan-video playsInline muted autoPlay className="absolute inset-0 size-full object-cover" />
                 <ViewfinderOverlay active={phase.kind === 'live'} />
+                {phase.kind === 'live' && (
+                  <span className="absolute top-3 left-3 inline-flex h-12 items-center gap-2 rounded-full bg-black/55 pr-3.5 pl-2 text-xs font-semibold text-white backdrop-blur-sm" data-scan-eye>
+                    <SentinelEye state="scanning" follow={false} className="w-11" />
+                    Looking
+                  </span>
+                )}
                 <div className="absolute top-3 right-3 flex gap-2">
                   {torch.available && (
                     <Button
@@ -463,7 +470,7 @@ export function Scanner({
             )}
 
             {phase.kind === 'prompt' && (
-              <StatePanel icon={<Camera />} title="Read the pack with your camera">
+              <StatePanel art={<SentinelEye className="w-40" />} title="Read the pack with your camera">
                 <p>Nazar reads the QR code or the printed batch number. The picture is read on this phone and never uploaded.</p>
                 <Button className="mt-5 h-12 w-full rounded-xl text-base font-semibold sm:w-auto sm:px-6" onClick={() => startCamera()}>
                   <Camera data-icon="inline-start" /> Use camera
@@ -474,7 +481,7 @@ export function Scanner({
             {phase.kind === 'blocked' && <BlockedPanel reason={phase.reason} onRetry={() => startCamera()} />}
 
             {phase.kind === 'photo' && (
-              <StatePanel icon={<LoaderCircle className="animate-spin motion-reduce:animate-none" />} title="Reading the photo…" busy>
+              <StatePanel art={<SentinelEye state="scanning" follow={false} className="w-40" />} title="Reading the photo…" busy>
                 <p>Looking for a code, then for the printed B.No. line. This happens on your phone.</p>
               </StatePanel>
             )}
@@ -534,12 +541,15 @@ export function Scanner({
 
 function StatePanel({
   icon,
+  art,
   title,
   tone,
   busy,
   children,
 }: {
-  icon: React.ReactNode
+  icon?: React.ReactNode
+  /** Replaces the ringed icon with a larger illustration (the sentinel eye). */
+  art?: React.ReactNode
   title: string
   tone?: 'caution'
   busy?: boolean
@@ -547,7 +557,7 @@ function StatePanel({
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border bg-card px-5 py-8 text-center sm:py-10" aria-busy={busy || undefined}>
-      <Rings className={cn('size-28', tone === 'caution' && '[&_svg]:text-caution [&>div]:text-caution')}>{icon}</Rings>
+      {art ?? <Rings className={cn('size-28', tone === 'caution' && '[&_svg]:text-caution [&>div]:text-caution')}>{icon}</Rings>}
       <h3 className="mt-4 text-lg font-semibold tracking-tight">{title}</h3>
       <div className="mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">{children}</div>
     </div>

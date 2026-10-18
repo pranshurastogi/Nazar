@@ -5,6 +5,7 @@ import { Activity, CloudOff, FileText, Hourglass, LoaderCircle, RotateCcw, Searc
 import { Button } from '@/components/ui/button'
 import { timeAgo } from '@/components/nazar/status-pill'
 import { attr, type DirectoryEntity, type DirectoryReadError, type DirectoryType } from '@/lib/source/directory'
+import { formatWait } from '@/lib/format-wait'
 import { cn } from '@/lib/utils'
 import { blk, Chip, CopyButton, ExplorerLink, explorerEntity, nf, placeName, shortDate, shortKey, Skeleton, sourceLabel, ym } from './shared'
 
@@ -23,7 +24,7 @@ function SevTile({ value }: { value: number }) {
   return (
     <span className={cn('grid size-10 shrink-0 place-items-center content-center rounded-xl', serious ? 'bg-flagged text-white dark:text-background' : 'bg-flagged-soft text-flagged')}>
       <span className="font-mono text-sm leading-none font-semibold" aria-hidden="true">{value}</span>
-      <span className="text-[8px] leading-none font-bold tracking-wider uppercase opacity-80" aria-hidden="true">sev</span>
+      <span className="text-[8px] leading-none font-bold tracking-wider uppercase" aria-hidden="true">sev</span>
       <span className="sr-only">Severity {value} of 5</span>
     </span>
   )
@@ -113,6 +114,16 @@ function Row({ e, onOpen, onNoticeAlerts }: { e: DirectoryEntity; onOpen: () => 
 
 const TYPE_NOUN: Record<DirectoryType, string> = { alert: 'alerts', notice: 'notices', heartbeat: 'heartbeats' }
 
+/**
+ * Arkiv returns entities in key order, which means nothing to a reader. The loaded rows are
+ * shown newest first instead: by alert or notice month, then by the block that created them.
+ */
+function newestFirst(items: DirectoryEntity[]) {
+  const month = (e: DirectoryEntity) => Number(attr(e, e.type === 'notice' ? 'notice_ym' : 'alert_ym') ?? 0) || 0
+  const born = (e: DirectoryEntity) => Number(e.createdAtBlock ?? 0) || 0
+  return [...items].sort((a, b) => month(b) - month(a) || born(b) - born(a))
+}
+
 export function Results({
   state,
   type,
@@ -140,7 +151,7 @@ export function Results({
         <h2 id="results-title" className="text-base font-semibold tracking-tight">Entities</h2>
         {state.kind === 'ok' && (
           <p className="text-xs text-muted-foreground" data-results-count aria-live="polite">
-            {nf(state.items.length)} {TYPE_NOUN[type]} shown{state.cursor ? ', more available' : ''}
+            {nf(state.items.length)} {TYPE_NOUN[type]} shown{state.items.length > 1 ? ', newest first' : ''}{state.cursor ? ', more available' : ''}
           </p>
         )}
       </div>
@@ -173,7 +184,7 @@ export function Results({
             </p>
             <p className="text-[13px] leading-5 text-foreground/80">
               {state.error.kind === 'throttled'
-                ? `The public Arkiv RPC limits anonymous readers.${state.error.retryInMs ? ` Try again in about ${Math.ceil(state.error.retryInMs / 1000)} s.` : ' Try again shortly.'} Nothing is wrong with the data.`
+                ? `The public Arkiv RPC limits anonymous readers.${state.error.retryInMs ? ` Try again in ${formatWait(state.error.retryInMs)}.` : ' Try again shortly.'} Nothing is wrong with the data.`
                 : state.error.message}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -211,7 +222,7 @@ export function Results({
         {state.kind === 'ok' && state.items.length > 0 && (
           <>
             <ul>
-              {state.items.map((e) => (
+              {newestFirst(state.items).map((e) => (
                 <Row key={e.key} e={e} onOpen={() => onOpen(e)} onNoticeAlerts={() => onNoticeAlerts(e.key)} />
               ))}
             </ul>

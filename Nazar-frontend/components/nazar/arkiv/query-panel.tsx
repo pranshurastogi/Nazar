@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Code2, Copy, Globe, Server, Terminal } from 'lucide-react'
+import { ChevronDown, Code2, Copy, Globe, Server, Terminal } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { copy } from '@/components/nazar/result-card'
@@ -29,6 +29,8 @@ export function QueryPanel({
   meta: string | null
 }) {
   const [tab, setTab] = useState<'query' | 'sdk'>('query')
+  // Folded on phones (the entities matter more there); always open from lg up.
+  const [open, setOpen] = useState(false)
   const text = tab === 'query' ? query : sdk
   return (
     <section aria-labelledby="live-query-title" className="min-w-0 overflow-hidden rounded-2xl border bg-card" data-query-panel data-query={query}>
@@ -37,6 +39,16 @@ export function QueryPanel({
           <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">How it works</p>
           <h2 id="live-query-title" className="text-base font-semibold tracking-tight">Live Arkiv query</h2>
         </div>
+        <Button
+          variant="outline"
+          className="h-10 rounded-xl px-3 text-xs lg:hidden"
+          aria-expanded={open}
+          aria-controls="query-body"
+          onClick={() => setOpen((o) => !o)}
+          data-query-toggle
+        >
+          {open ? 'Hide query' : 'Show query'} <ChevronDown className={cn('transition-transform', open && 'rotate-180')} data-icon="inline-end" />
+        </Button>
         <div role="radiogroup" aria-label="Where the query runs" className="flex rounded-xl border bg-muted/50 p-1">
           {(
             [
@@ -62,6 +74,7 @@ export function QueryPanel({
           ))}
         </div>
       </div>
+      <div id="query-body" className={cn(!open && 'max-lg:hidden')}>
       <p className="px-4 pt-3 text-xs leading-5 text-muted-foreground sm:px-5" data-mode-note>
         {mode === 'browser'
           ? 'Your browser sends this query to the public Arkiv RPC itself. No Nazar server is involved, which is the point: the data does not need us.'
@@ -110,6 +123,7 @@ export function QueryPanel({
         </pre>
       </div>
       {meta && <p className="border-t px-4 py-2.5 font-mono text-[11px] text-muted-foreground sm:px-5" data-query-meta aria-live="polite">{meta}</p>}
+      </div>
     </section>
   )
 }

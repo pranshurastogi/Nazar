@@ -12,6 +12,12 @@ const HEADLINE = {
   unreadable: () => "We couldn't read the batch number clearly",
 } as const
 
+/** The headline. A look-alike is typed, not unreadable, so it asks instead; it is never a flag. */
+function headline(result: CheckResult) {
+  if (result.state === 'unreadable' && result.suggestion) return `Did you mean ${result.suggestion}?`
+  return HEADLINE[result.state](result.asOf)
+}
+
 /** Icon, state badge, headline and the product line. Colour, icon and words always agree. */
 export function VerdictHeader({ result, alert }: { result: CheckResult; alert?: Alert }) {
   const tone = TONE[result.state]
@@ -26,7 +32,7 @@ export function VerdictHeader({ result, alert }: { result: CheckResult; alert?: 
           <Badge className={cn('h-6 px-2.5 text-[11px] font-bold uppercase tracking-wider', tone.icon)}>{tone.label}</Badge>
           {alert && result.state === 'flagged' && <SeverityPips value={alert.severity} />}
         </div>
-        <h3 className="mt-2.5 text-xl font-semibold leading-snug tracking-tight text-balance">{HEADLINE[result.state](result.asOf)}</h3>
+        <h3 className="mt-2.5 text-xl font-semibold leading-snug tracking-tight text-balance" data-verdict-headline>{headline(result)}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {alert ? `${alert.brand} · ${alert.manufacturer} · ` : ''}Batch <span className="font-mono font-semibold text-foreground">{result.batch || '—'}</span>
         </p>

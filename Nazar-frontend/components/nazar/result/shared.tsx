@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 // Small pieces shared by the result card, its proof sheet and the on-chain proof module.
 
 export const TONE: Record<ResultState, { band: string; icon: string; text: string; Icon: typeof Search; label: string }> = {
-  flagged: { band: 'border-flagged-border bg-flagged-soft', icon: 'bg-flagged text-white', text: 'text-flagged', Icon: TriangleAlert, label: 'Flagged' },
+  flagged: { band: 'border-flagged-border bg-flagged-soft', icon: 'bg-flagged text-white dark:text-background', text: 'text-flagged', Icon: TriangleAlert, label: 'Flagged' },
   retracted: { band: 'border-caution-border bg-caution-soft', icon: 'bg-caution text-white dark:text-background', text: 'text-caution', Icon: History, label: 'Retracted' },
   no_alert: { band: 'border-quiet-border bg-quiet-soft', icon: 'bg-quiet text-white dark:text-background', text: 'text-quiet', Icon: Search, label: 'No alert found' },
   unreadable: { band: 'border-caution-border bg-caution-soft', icon: 'bg-caution text-white dark:text-background', text: 'text-caution', Icon: CircleHelp, label: "Can't tell" },

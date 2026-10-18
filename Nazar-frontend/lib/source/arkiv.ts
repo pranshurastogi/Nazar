@@ -4,6 +4,7 @@ import { tiramisu } from '@arkiv-network/sdk/chains'
 import { eq, gte, lte, or, type Expression } from '@arkiv-network/sdk/query'
 import { http, type Hex } from 'viem'
 
+import { formatWait } from '../format-wait'
 import { ARKIV_RPC_URL, PROJECT, PUBLISHER } from './config'
 import type { DirectoryEntity, DirectoryPage, Pred } from './directory'
 import { fromArkiv, type ArkivAlert } from './map'
@@ -28,7 +29,7 @@ const arkiv = () =>
 /** Thrown without touching the network while Arkiv reads are paused after a failure. */
 export class ArkivBackoffError extends Error {
   constructor(readonly retryInMs: number) {
-    super(`Arkiv reads paused for ${Math.ceil(retryInMs / 1000)} s after a failed request`)
+    super(`Arkiv reads paused for ${formatWait(retryInMs)} after a failed request`)
     this.name = 'ArkivBackoffError'
   }
 }

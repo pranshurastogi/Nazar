@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
-import { BookOpen, CircleHelp, Database, History, House, Menu, Moon, ShieldCheck, Sun } from 'lucide-react'
+import { BookOpen, Bot, CircleHelp, Database, History, House, Menu, Moon, ShieldCheck, Sun } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -196,7 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <StatusPill status={status} />
               <Button variant="outline" className="h-11 rounded-full px-3.5" onClick={() => setGuideOpen(true)}>
-                <CircleHelp /> <span className="hidden sm:inline">Guide</span>
+                <CircleHelp aria-hidden="true" /> <span className="sr-only sm:not-sr-only">Guide</span>
               </Button>
               <ThemeToggle />
             </div>
@@ -204,9 +204,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {children}
 
-          <footer className="mt-12 flex flex-col gap-1 border-t pt-6 text-xs text-muted-foreground sm:flex-row sm:justify-between">
+          <footer className="mt-12 flex flex-col gap-1 border-t pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <p>Nazar reports what regulators publish. It never certifies a medicine as safe.</p>
-            <p>© {new Date().getFullYear()} Nazar · Built by Pranshu Rastogi</p>
+            <div className="flex flex-wrap items-center gap-x-3">
+              <Link
+                href="/more#mcp"
+                className="-mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 font-medium text-primary underline-offset-2 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                data-mcp-link
+              >
+                <Bot className="size-3.5" aria-hidden="true" /> Use in your AI assistant
+              </Link>
+              <p>© {new Date().getFullYear()} Nazar · Built by Pranshu Rastogi</p>
+            </div>
           </footer>
         </div>
 

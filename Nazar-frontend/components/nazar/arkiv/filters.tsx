@@ -88,16 +88,33 @@ function KeyInput({ id, value, onChange }: { id: string; value: string; onChange
 export function FilterPanel({ filters, onApply, onReset, sources }: { filters: DirectoryFilters; onApply: Apply; onReset: () => void; sources: string[] }) {
   const n = filterCount(filters)
   const srcOptions: [string, string][] = [...new Set([...Object.keys(SOURCE_LABEL), ...sources])].filter((s) => s !== 'unknown').map((s) => [s, SOURCE_LABEL[s] ?? s])
+  // On phones the controls fold away behind "Show filters" so the entities are not thousands of
+  // pixels down; from lg up they are always open. Hidden controls stay mounted (CSS only).
+  const [open, setOpen] = useState(false)
   return (
-    <section aria-label="Filters" className="rounded-2xl border bg-card p-4 sm:p-5" data-filter-panel>
+    <section aria-label="Filters" className="rounded-2xl border bg-card p-4 sm:p-5" data-filter-panel data-open={open ? 'true' : 'false'}>
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-semibold tracking-tight">
           Filters {n > 0 && <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary" data-filter-count>{n}</span>}
         </h2>
-        <Button variant="ghost" className="h-10 px-3 text-sm" onClick={onReset} disabled={n === 0}>
-          <RotateCcw /> Reset
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" className="h-10 px-3 text-sm" onClick={onReset} disabled={n === 0}>
+            <RotateCcw /> Reset
+          </Button>
+          <Button
+            variant="outline"
+            className="h-10 rounded-xl px-3 text-sm lg:hidden"
+            aria-expanded={open}
+            aria-controls="filter-body"
+            onClick={() => setOpen((o) => !o)}
+            data-filter-toggle
+          >
+            {open ? 'Hide' : 'Show'} <ChevronDown className={cn('transition-transform', open && 'rotate-180')} data-icon="inline-end" />
+          </Button>
+        </div>
       </div>
+
+      <div id="filter-body" className={cn(!open && 'max-lg:hidden')}>
 
       {filters.type === 'heartbeat' && (
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
@@ -205,6 +222,7 @@ export function FilterPanel({ filters, onApply, onReset, sources }: { filters: D
           </div>
         </div>
       )}
+      </div>
     </section>
   )
 }

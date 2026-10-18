@@ -1,4 +1,4 @@
-import { apiAlerts, apiCheck, apiLikelyDown, apiPipelineStatus, apiSources, type PipelineStatusResponse, type SourceInfo } from './api'
+import { apiAlerts, apiCheck, apiLikelyDown, apiNoticeKeys, apiPipelineStatus, apiSources, type PipelineStatusResponse, type SourceInfo } from './api'
 import { API_URL } from './config'
 import type { ArkivFeedPage } from './arkiv'
 import { checkDemo, demoActiveAlerts } from './demo'
@@ -243,4 +243,22 @@ export async function estimateExpiry(expiresAtBlock: string, signal?: AbortSigna
   } catch {
     return null
   }
+}
+
+/** Notice keys from the API, fetched once and shared; refreshed when a SHA is missing and the copy is old. */
+let noticeKeys: { at: number; p: Promise<Map<string, string>> } | null = null
+const NOTICE_KEYS_TTL_MS = 10 * 60 * 1000
+
+/**
+ * The Arkiv entity key of the notice with this SHA-256, when the Nazar API knows it. Used by
+ * the on-chain proof when an alert names its notice by SHA only. Null when unknown or offline.
+ */
+export async function noticeKeyFor(sha: string): Promise<string | null> {
+  if (!API_URL || apiLikelyDown() || !sha) return null
+  const load = () => (noticeKeys = { at: Date.now(), p: apiNoticeKeys().catch(() => ((noticeKeys = null), new Map<string, string>())) })
+  if (!noticeKeys) load()
+  const key = sha.toLowerCase()
+  let map = await noticeKeys!.p
+  if (!map.has(key) && noticeKeys && Date.now() - noticeKeys.at > NOTICE_KEYS_TTL_MS) map = await load().p
+  return map.get(key) ?? null
 }

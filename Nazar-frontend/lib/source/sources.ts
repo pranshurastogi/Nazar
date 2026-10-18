@@ -80,7 +80,7 @@ export const STATIC_SOURCES: SourceInfo[] = [
     description: 'Telangana DCA drug alerts and NSQ / spurious notices.',
     schedule: daily,
     enabled: false,
-    disabledReason: 'The site refuses connections from outside India. It can be switched on from an Indian host.',
+    disabledReason: "Paused: this regulator's website blocks requests from outside India, where Nazar's server runs.",
     lastRun: null,
   },
   {
@@ -91,7 +91,7 @@ export const STATIC_SOURCES: SourceInfo[] = [
     description: 'Karnataka NSQ and spurious drug notices.',
     schedule: daily,
     enabled: false,
-    disabledReason: 'The site is geo-blocked outside India. It can be switched on from an Indian host.',
+    disabledReason: "Paused: this regulator's website blocks requests from outside India, where Nazar's server runs.",
     lastRun: null,
   },
   {
@@ -102,7 +102,7 @@ export const STATIC_SOURCES: SourceInfo[] = [
     description: 'Kerala banned and NSQ drug notices.',
     schedule: daily,
     enabled: false,
-    disabledReason: 'The site currently answers 403 and serves an expired certificate.',
+    disabledReason: "Paused: this regulator's website is refusing requests and its security certificate has expired.",
     lastRun: null,
   },
 ]

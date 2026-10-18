@@ -1,0 +1,220 @@
+/* Sentinel eye (components/ui/sentinel-core.tsx). Keyframes are prefixed so they never replace
+   Tailwind's own `pulse` / `spin` keyframes. Colours come from data-state. */
+
+.sentinel {
+  --iris-1: #6ea8ff;
+  --iris-2: #1446b8;
+  --glow: rgb(59 130 246 / 0.32);
+  --trace: rgb(59 130 246 / 0.55);
+  --pupil-r: 12;
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+  line-height: 0;
+}
+
+.sentinel[data-state='checking'],
+.sentinel[data-state='scanning'] {
+  --iris-1: #7fb3ff;
+  --iris-2: #1a4fd0;
+  --glow: rgb(59 130 246 / 0.45);
+}
+.sentinel[data-state='flagged'] {
+  --iris-1: #ff8f8f;
+  --iris-2: #b4141b;
+  --glow: rgb(220 38 38 / 0.42);
+  --trace: rgb(220 38 38 / 0.6);
+}
+.sentinel[data-state='retracted'],
+.sentinel[data-state='unreadable'] {
+  --iris-1: #f7c272;
+  --iris-2: #a35a05;
+  --glow: rgb(217 119 6 / 0.3);
+  --trace: rgb(217 119 6 / 0.55);
+}
+/* No alert found is slate, never green: it is not a safety signal. */
+.sentinel[data-state='no_alert'] {
+  --iris-1: #a9b5c6;
+  --iris-2: #475569;
+  --glow: rgb(100 116 139 / 0.22);
+  --trace: rgb(100 116 139 / 0.45);
+}
+
+.sentinel::before {
+  content: '';
+  position: absolute;
+  inset: 8% 4%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glow), transparent);
+  filter: blur(6px);
+  transition: background 0.6s ease;
+  animation: sentinel-pulse 4.5s ease-in-out infinite;
+}
+.sentinel[data-state='checking']::before,
+.sentinel[data-state='scanning']::before {
+  animation-duration: 1.6s;
+}
+.sentinel[data-state='flagged']::before {
+  animation-duration: 2.2s;
+}
+.sentinel[data-state='no_alert']::before {
+  animation: none;
+}
+
+.sentinel svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.sentinel .s-stop-1 {
+  stop-color: var(--iris-1);
+  transition: stop-color 0.6s ease;
+}
+.sentinel .s-stop-2 {
+  stop-color: var(--iris-2);
+  transition: stop-color 0.6s ease;
+}
+.sentinel .s-trace {
+  stroke: var(--trace);
+  transition: stroke 0.6s ease;
+}
+.sentinel .s-node {
+  fill: var(--trace);
+  transition: fill 0.6s ease;
+}
+.sentinel .s-outline {
+  stroke: var(--iris-2);
+  transition: stroke 0.6s ease;
+}
+
+/* Squint for "can't tell": the whole eye narrows. Blink is a separate, inner group. */
+.sentinel .s-squint {
+  transform-box: view-box;
+  transform-origin: 100px 60px;
+  transition: transform 0.4s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.sentinel[data-state='unreadable'] .s-squint {
+  transform: scaleY(0.68);
+}
+.sentinel[data-state='flagged'] .s-squint {
+  transform: scaleY(1.06);
+}
+.sentinel .s-blink {
+  transform-box: view-box;
+  transform-origin: 100px 60px;
+  animation: sentinel-blink 7s ease-in-out infinite;
+}
+
+.sentinel .s-iris {
+  transition: transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.sentinel[data-wander='1'] .s-iris {
+  transition-duration: 0.7s;
+}
+.sentinel .s-pupil {
+  r: calc(var(--pupil-r) * 1px);
+  transition: r 0.4s ease;
+}
+.sentinel[data-state='checking'],
+.sentinel[data-state='scanning'] {
+  --pupil-r: 14;
+}
+.sentinel[data-state='flagged'] {
+  --pupil-r: 9;
+}
+.sentinel .s-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sentinel-spin 14s linear infinite;
+}
+.sentinel[data-state='checking'] .s-ring,
+.sentinel[data-state='scanning'] .s-ring {
+  animation-duration: 3s;
+}
+
+.sentinel .s-scan {
+  opacity: 0;
+}
+.sentinel[data-state='checking'] .s-scan,
+.sentinel[data-state='scanning'] .s-scan {
+  animation: sentinel-scan 1.6s ease-in-out infinite;
+}
+
+.sentinel .s-flow {
+  stroke-dasharray: 4 6;
+  animation: sentinel-flow 1.2s linear infinite;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.sentinel[data-state='checking'] .s-flow,
+.sentinel[data-state='scanning'] .s-flow {
+  opacity: 1;
+}
+
+@keyframes sentinel-scan {
+  0%,
+  100% {
+    transform: translateY(-34px);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(34px);
+    opacity: 1;
+  }
+}
+@keyframes sentinel-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.06);
+  }
+}
+@keyframes sentinel-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+@keyframes sentinel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes sentinel-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sentinel::before,
+  .sentinel .s-blink,
+  .sentinel .s-ring,
+  .sentinel .s-flow {
+    animation: none;
+  }
+  .sentinel[data-state='checking'] .s-scan,
+  .sentinel[data-state='scanning'] .s-scan {
+    animation: none;
+    opacity: 0.8;
+  }
+  .sentinel .s-iris,
+  .sentinel .s-squint {
+    transition: none;
+  }
+}

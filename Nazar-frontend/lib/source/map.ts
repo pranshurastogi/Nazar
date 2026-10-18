@@ -29,12 +29,15 @@ export function formatDate(iso: string | null | undefined): string | null {
  */
 const UNDATED_SOURCES = new Set(['mh-fda'])
 
-/** The date line for a notice: its own date, else "first seen" for undated lists, else the alert month. */
-export function noticeDateText(date: string | null | undefined, ym: number | null | undefined, sourceId: string | undefined): string {
+/**
+ * The date line for a notice: its own date, else "first seen" for rows the regulator gave no date
+ * (the API's dateKnown: false, or a known undated list on older servers), else the alert month.
+ */
+export function noticeDateText(date: string | null | undefined, ym: number | null | undefined, sourceId: string | undefined, dateKnown?: boolean): string {
   const own = formatDate(date)
   if (own) return own
   const month = formatYm(ym)
-  if (sourceId && UNDATED_SOURCES.has(sourceId)) return month ? `Listed on the regulator's page · first seen ${month}` : "Listed on the regulator's page"
+  if (dateKnown === false || (sourceId && UNDATED_SOURCES.has(sourceId))) return month ? `Date not given · first seen ${month}` : 'Date not given'
   return month ?? 'Date not listed'
 }
 
@@ -116,6 +119,9 @@ export type AlertDTO = {
   noticeEntityKey?: string | null
   noticeKey?: string | null
   retracted?: boolean
+  /** false when the regulator gave no date for this row (alertYm is when Nazar first saw it). */
+  dateKnown?: boolean
+  productClass?: 'medicine' | 'cosmetic' | 'hygiene'
   explorer?: { entity?: string | null; tx?: string | null }
 }
 
@@ -138,8 +144,9 @@ export function fromDto(d: AlertDTO): Alert {
     state: d.state || null,
     alertYm: d.alertYm ?? null,
     notice: d.noticeTitle || 'Regulator notice',
-    noticeDate: noticeDateText(d.noticeDate, d.alertYm, d.sourceId),
-    noticeOrder: noticeOrder(d.noticeDate, d.alertYm),
+    noticeDate: noticeDateText(d.noticeDate, d.alertYm, d.sourceId, d.dateKnown),
+    // Undated rows sort last in the timeline: their month is only when Nazar first saw them.
+    noticeOrder: d.dateKnown === false ? 0 : noticeOrder(d.noticeDate, d.alertYm),
     noticeUrl: d.noticeUrl || null,
     mfg: formatYm(d.mfgYm),
     expiry: formatYm(d.expYm) ?? 'Not listed',

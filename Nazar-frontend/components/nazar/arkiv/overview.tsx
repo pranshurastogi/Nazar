@@ -19,31 +19,49 @@ export type SummaryState =
   | { kind: 'ok'; data: ArkivSummary; fetchedAt: number }
   | { kind: 'error'; message: string; throttled: boolean; noApi: boolean }
 
+/**
+ * The API marks its counts "stale" as soon as they are 5 minutes old (it then recounts in the
+ * background), but nothing on Arkiv changes between pipeline runs, which come every 6 hours.
+ * So counts only read as out of date after 12 hours; before that they are simply "counted N ago".
+ */
+const STALE_AFTER_MS = 12 * 60 * 60 * 1000
+
 export function DirectoryHeader({ summary, block, onRefresh }: { summary: SummaryState; block: string | null; onRefresh: () => void }) {
   const latest = summary.kind === 'ok' ? summary.data.latestBlock : block
-  const stale = summary.kind === 'ok' && summary.data.stale
-  const live = summary.kind === 'ok' && !stale
-  const label = summary.kind === 'loading' ? 'Reading Arkiv…' : live ? `Live · ${blk(latest)}` : stale ? 'Stale snapshot' : block ? 'Live · results only' : 'Counts unavailable'
+  const countedAt = summary.kind === 'ok' ? Date.parse(summary.data.generatedAt) : NaN
+  const recounting = summary.kind === 'ok' && summary.data.stale
+  const stale = recounting && Number.isFinite(countedAt) && Date.now() - countedAt > STALE_AFTER_MS
+  const live = summary.kind === 'ok' && !recounting
+  const label =
+    summary.kind === 'loading'
+      ? 'Reading Arkiv…'
+      : live
+        ? `Live · ${blk(latest)}`
+        : stale
+          ? `Counts from ${timeAgo(countedAt)}`
+          : recounting
+            ? `Counted ${Number.isFinite(countedAt) ? timeAgo(countedAt) : 'recently'}`
+            : block
+              ? 'Live · results only'
+              : 'Counts unavailable'
   return (
-    <header className="rounded-2xl border bg-card p-4 sm:p-6" data-arkiv-header>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-2xl">
-          <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">Arkiv directory</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">Everything Nazar has published, on chain</h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Arkiv is a public database chain: every Nazar alert, notice and heartbeat below is an entity anyone can query without asking Nazar.
-          </p>
+    <header className="rounded-2xl border bg-card p-4 sm:p-5" data-arkiv-header>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* The hero above introduces the page; this bar is the live state of the data. */}
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">On-chain status</p>
+          <h3 className="mt-0.5 text-base font-semibold tracking-tight">Everything Nazar has published</h3>
         </div>
         <div className="flex items-center gap-2">
           <span
-            data-live={live ? 'live' : stale ? 'stale' : summary.kind}
+            data-live={live ? 'live' : stale ? 'stale' : recounting ? 'recent' : summary.kind}
             className={cn(
               'inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold',
-              live ? 'border-primary/30 bg-primary/10 text-primary' : stale ? 'border-caution-border bg-caution-soft text-caution' : 'text-muted-foreground',
+              live || recounting ? 'border-primary/30 bg-primary/10 text-primary' : stale ? 'border-caution-border bg-caution-soft text-caution' : 'text-muted-foreground',
             )}
             title={summary.kind === 'ok' ? `Counted at block ${summary.data.generatedAtBlock}, ${new Date(summary.data.generatedAt).toLocaleString('en-IN')}` : undefined}
           >
-            <span className={cn('size-2 rounded-full', live ? 'bg-primary motion-safe:animate-pulse' : stale ? 'bg-caution' : 'bg-muted-foreground/50')} aria-hidden="true" />
+            <span className={cn('size-2 rounded-full', live ? 'bg-primary motion-safe:animate-pulse' : recounting && !stale ? 'bg-primary' : stale ? 'bg-caution' : 'bg-muted-foreground/50')} aria-hidden="true" />
             {label}
           </span>
           <Button variant="outline" size="icon" className="size-9 rounded-full" onClick={onRefresh} aria-label="Refresh counts">
@@ -207,7 +225,7 @@ function SeverityStrip({ bySev, total, filters, onApply }: { bySev: Counts; tota
               onClick={() => onApply(on ? { type: 'alert', sevMin: 0, sevMax: 0 } : { type: 'alert', sevMin: s, sevMax: s })}
               className={cn('flex min-h-12 flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-colors', SEV_TONE[s]!.chip, on ? 'ring-2 ring-primary' : 'hover:brightness-95', ring)}
             >
-              <span className="text-[10px] font-bold tracking-wider uppercase opacity-80">Sev {s}</span>
+              <span className="text-[10px] font-bold tracking-wider uppercase">Sev {s}</span>
               <span className="font-mono text-sm font-semibold tabular-nums">{nf(n)}</span>
             </button>
           )

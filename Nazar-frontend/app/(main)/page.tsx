@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   ArrowRight,
   Baby,
@@ -19,6 +20,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { SentinelEye } from '@/components/ui/sentinel-core'
 import { soon, useShell } from '@/components/nazar/app-shell'
 import { CheckingCard } from '@/components/nazar/checking-card'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
@@ -45,6 +47,32 @@ const PENDING_DELAY_MS = 120
 
 function Skeleton({ className }: { className?: string }) {
   return <span aria-hidden="true" className={cn('block animate-pulse rounded bg-muted motion-reduce:animate-none', className)} />
+}
+
+/** Longest value read from a deep link; real batch numbers are at most 24 characters. */
+const DEEP_LINK_MAX = 40
+
+/**
+ * Runs the check named by a deep link (/?batch=SR-13 or /?b=SR-13) once, then drops the
+ * parameter so a reload or a later check does not repeat it. Sits in its own Suspense
+ * boundary because useSearchParams needs one in a prerendered page.
+ */
+function DeepLinkCheck({ onBatch }: { onBatch: (batch: string) => void }) {
+  const params = useSearchParams()
+  const value = (params.get('batch') ?? params.get('b') ?? '').trim().slice(0, DEEP_LINK_MAX)
+  const done = useRef<string | null>(null)
+  useEffect(() => {
+    if (!value || done.current === value) return
+    done.current = value
+    onBatch(value)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('batch')
+      url.searchParams.delete('b')
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+    } catch {}
+  }, [value, onBatch])
+  return null
 }
 
 export default function Page() {
@@ -172,6 +200,9 @@ export default function Page() {
     return () => shell.registerCheck(null)
   }, [shell])
 
+  // Stable for the deep-link effect; always runs the latest check closure.
+  const runDeepLink = useCallback((b: string) => runRef.current(b), [])
+
   const clearRecent = () => {
     setRecent([])
     try {
@@ -183,7 +214,15 @@ export default function Page() {
     <>
         <section className="grid grid-cols-1 items-center gap-8 pt-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:pt-14">
           <div className="max-w-lg">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Har batch par nazar</p>
+            {/* The eye mirrors the check: it watches the batch box, scans while checking, and takes the result's colour. */}
+            <div className="flex items-center justify-between gap-4 md:flex-col-reverse md:items-start md:justify-start">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Har batch par nazar</p>
+              <SentinelEye
+                state={pending ? 'checking' : scanning ? 'scanning' : (result?.state ?? 'idle')}
+                lookAt={inputRef}
+                className="w-24 shrink-0 md:w-44"
+              />
+            </div>
             <h2 className="mt-3 text-[clamp(2.5rem,8vw,3.25rem)] md:text-[2.5rem] xl:text-[3.25rem] font-semibold leading-[0.98] tracking-[-0.05em]">
               Check the batch,
               <br />
@@ -201,7 +240,7 @@ export default function Page() {
                 Look for <span className="font-mono">B.No.</span> on the pack
               </span>
             </div>
-            <div className="mt-3 flex items-center gap-3 rounded-xl border bg-background px-4 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+            <div className="mt-3 flex items-center gap-3 rounded-xl border bg-background px-4 transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/60">
               <Search className="size-5 shrink-0 text-muted-foreground" />
               <input
                 ref={inputRef}
@@ -215,7 +254,7 @@ export default function Page() {
                 autoCapitalize="characters"
                 spellCheck={false}
                 enterKeyHint="search"
-                className="h-14 min-w-0 flex-1 bg-transparent font-mono text-xl tracking-wider uppercase outline-none placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:normal-case placeholder:text-muted-foreground/70"
+                className="h-14 min-w-0 flex-1 bg-transparent font-mono text-xl tracking-wider uppercase outline-none focus-visible:outline-none placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:normal-case placeholder:text-muted-foreground/70"
               />
               {batch && (
                 <button
@@ -251,11 +290,12 @@ export default function Page() {
                 <ScanLine className="size-5" />
               </Button>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
               <span>Try:</span>
-              {['SR-13', 'DEMO-RT1', 'AB1234', '5R-13'].map((b) => (
-                <button key={b} onClick={() => runCheck(b)} className="min-h-8 rounded-full border px-2.5 font-mono font-medium text-foreground hover:bg-muted">
-                  {b}
+              {/* The button is a 44px tap target; the pill inside keeps the chip visually small. */}
+              {['SR-13', 'TG25-2281A', 'AB1234', '5R-13'].map((b) => (
+                <button key={b} onClick={() => runCheck(b)} data-try-chip className="group inline-flex min-h-11 items-center rounded-full font-mono font-medium text-foreground focus-visible:outline-none">
+                  <span className="rounded-full border px-2.5 py-1.5 transition-colors group-hover:bg-muted group-focus-visible:ring-3 group-focus-visible:ring-ring/50">{b}</span>
                 </button>
               ))}
               <span className="ml-auto hidden lg:inline">
@@ -351,6 +391,27 @@ export default function Page() {
                 <Skeleton className="inline-block h-3.5 w-28 align-middle" />
               )}
             </p>
+            {/* Beside the alerts list (md+), the latest children's alerts fill the card instead of empty space. */}
+            {!!childFeed?.items.length && (
+              <ul className="mt-4 hidden divide-y rounded-xl border md:block" aria-label="Latest Child Shield alerts" data-child-list>
+                {childFeed.items.slice(0, 3).map((a) => (
+                  <li key={a.id}>
+                    <button
+                      onClick={() => runCheck(a.batch)}
+                      className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">{a.brand}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          <span className="font-mono">{a.batch}</span> · {a.form} · {a.authority}
+                        </span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
               <Button
                 variant="outline"
@@ -410,6 +471,10 @@ export default function Page() {
             Open Shelf Sweep <ArrowRight data-icon="inline-end" />
           </Button>
         </section>
+
+        <Suspense fallback={null}>
+          <DeepLinkCheck onBatch={runDeepLink} />
+        </Suspense>
 
         <Scanner
           open={scanning}
