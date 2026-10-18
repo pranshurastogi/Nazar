@@ -80,6 +80,8 @@ export type Pulse = {
   hiddenNonMedicine: number
   /** Cosmetics and hygiene rows in the current view (shown or not). */
   nonMedicine: number
+  /** Every alert in the snapshot, before any filter (retractions left out): "N alerts in Nazar's ledger". */
+  ledgerTotal: number
 }
 
 const emptyTally = (): Tally => ({ total: 0, sev5: 0, serious: 0, peds: 0, grave: 0 })
@@ -157,7 +159,7 @@ export function aggregate(s: SnapshotIndex, f: PulseFilter, state = ''): Pulse {
   let maxState = 0
   for (const st of states.values()) maxState = Math.max(maxState, st.total)
 
-  return { asOf: s.generatedAt, tally, states, noState, maxState, months, undated, hiddenNonMedicine, nonMedicine }
+  return { asOf: s.generatedAt, tally, states, noState, maxState, months, undated, hiddenNonMedicine, nonMedicine, ledgerTotal: factsOf(s).length }
 }
 
 const nice = (v: number) => (v < 10 ? Math.round(v) : v < 100 ? Math.round(v / 5) * 5 : Math.round(v / 10) * 10)

@@ -91,6 +91,8 @@ export type AlertQuery = {
   state?: string
   /** Pipeline source id. Older servers ignore it, so callers filter again. */
   source?: string
+  /** 'medicine' leaves out cosmetics and hygiene products. Older servers ignore it, so callers filter again. */
+  productClass?: 'medicine' | 'cosmetic' | 'hygiene'
 }
 
 export async function apiAlerts(q: AlertQuery = {}, opts?: Opts): Promise<{ items: Alert[]; total: number | null }> {
@@ -102,6 +104,7 @@ export async function apiAlerts(q: AlertQuery = {}, opts?: Opts): Promise<{ item
   if (q.sinceYm) params.set('sinceYm', String(q.sinceYm))
   if (q.state) params.set('state', q.state)
   if (q.source) params.set('source', q.source)
+  if (q.productClass) params.set('productClass', q.productClass)
   const r = await getJson<{ items: AlertDTO[]; total?: number }>(`/v1/alerts?${params}`, opts)
   if (!r || !Array.isArray(r.items)) throw new ApiError('Unexpected /v1/alerts response')
   return { items: r.items.map(fromDto), total: typeof r.total === 'number' ? r.total : null }

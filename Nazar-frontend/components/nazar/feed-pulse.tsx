@@ -21,18 +21,21 @@ import './feed-pulse.css'
 // The map follows the Feed's other filters (serious, Child Shield, source) so it always explains
 // the list under it. Without a snapshot it shows nothing rather than an empty chart.
 
-/** [column, row] of each state's tile, west → east, north → south. */
+/**
+ * [column, row] of each state's tile, west → east, north → south. Seven columns, so that on a
+ * 360–390px phone every tile is a 44px target (WCAG 2.5.8) without the page scrolling sideways.
+ */
 const GRID: Record<string, [number, number]> = {
   'IN-JK': [2, 0], 'IN-LA': [3, 0],
-  'IN-CH': [0, 1], 'IN-PB': [1, 1], 'IN-HP': [2, 1], 'IN-UK': [3, 1], 'IN-AR': [7, 1],
-  'IN-HR': [1, 2], 'IN-DL': [2, 2], 'IN-UP': [3, 2], 'IN-BR': [4, 2], 'IN-SK': [5, 2], 'IN-AS': [6, 2], 'IN-NL': [7, 2],
-  'IN-GJ': [0, 3], 'IN-RJ': [1, 3], 'IN-MP': [2, 3], 'IN-CG': [3, 3], 'IN-JH': [4, 3], 'IN-WB': [5, 3], 'IN-ML': [6, 3], 'IN-MN': [7, 3],
-  'IN-DH': [0, 4], 'IN-MH': [1, 4], 'IN-TS': [2, 4], 'IN-OD': [3, 4], 'IN-TR': [6, 4], 'IN-MZ': [7, 4],
+  'IN-CH': [0, 1], 'IN-PB': [1, 1], 'IN-HP': [2, 1], 'IN-UK': [3, 1], 'IN-SK': [4, 1], 'IN-AR': [6, 1],
+  'IN-HR': [1, 2], 'IN-DL': [2, 2], 'IN-UP': [3, 2], 'IN-BR': [4, 2], 'IN-AS': [5, 2], 'IN-NL': [6, 2],
+  'IN-GJ': [0, 3], 'IN-RJ': [1, 3], 'IN-MP': [2, 3], 'IN-CG': [3, 3], 'IN-JH': [4, 3], 'IN-ML': [5, 3], 'IN-MN': [6, 3],
+  'IN-DH': [0, 4], 'IN-MH': [1, 4], 'IN-TS': [2, 4], 'IN-OD': [3, 4], 'IN-WB': [4, 4], 'IN-TR': [5, 4], 'IN-MZ': [6, 4],
   'IN-GA': [0, 5], 'IN-KA': [1, 5], 'IN-AP': [2, 5],
-  'IN-LD': [0, 6], 'IN-KL': [1, 6], 'IN-TN': [2, 6], 'IN-PY': [3, 6], 'IN-AN': [5, 6],
+  'IN-LD': [0, 6], 'IN-KL': [1, 6], 'IN-TN': [2, 6], 'IN-PY': [3, 6], 'IN-AN': [4, 6],
 }
 const CODES = Object.keys(GRID).sort((a, b) => GRID[a][1] - GRID[b][1] || GRID[a][0] - GRID[b][0])
-const COLS = 8
+const COLS = 7
 const ROWS = 7
 
 /** Shading per step (share of the flagged red mixed into the card), lightest first. */
@@ -52,6 +55,9 @@ const SEV_FILL = [26, 40, 56, 78, 100].map(mix)
 const fmt = (n: number) => n.toLocaleString('en-IN')
 const plural = (n: number, one: string, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`
 const short = (code: string) => code.replace(/^IN-/, '')
+/** "18 Oct 2026, 5:03 pm IST": the snapshot's time, always in India time whatever the device says. */
+const asOfIst = (d: Date) =>
+  `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}, ${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST`
 const name = (code: string) => STATE_NAME[code] ?? code
 const ymShort = (ym: number) => {
   const s = formatYm(ym)
@@ -108,7 +114,7 @@ export function FeedPulse({
   const steps = shadeSteps(pulse.maxState)
   const ranked = [...pulse.states.values()].sort((a, b) => b.total - a.total)
   const busiest = ranked[0]?.code ?? 'IN-HP'
-  const asOf = pulse.asOf.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const asOf = asOfIst(pulse.asOf)
   const stOf = (code: string): StateTally => pulse.states.get(code) ?? { code, total: 0, sev5: 0, serious: 0, peds: 0, grave: 0, topFailure: null }
   const following = [serious && 'Serious 4–5', peds && 'Child Shield', source && SOURCE_NAME[source]].filter(Boolean) as string[]
   const active = cursor ?? (state && GRID[state] ? state : busiest)
@@ -179,9 +185,7 @@ export function FeedPulse({
         style={{ backgroundImage: 'radial-gradient(90% 60% at 85% 0%, color-mix(in srgb, var(--flagged) 7%, transparent), transparent 70%)' }}
       />
       <div className="relative p-4 sm:p-5">
-        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">
-          India pulse <span className="font-semibold tracking-[0.06em] whitespace-nowrap text-muted-foreground normal-case">· as of {asOf}</span>
-        </p>
+        <p className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">India pulse</p>
         <div className="mt-1.5">
           <h3 id="pulse-title" className="min-w-0 text-xl leading-tight font-semibold tracking-[-0.03em] sm:text-2xl">
             Where failed batches <span className={cn(serif.className, 'pr-0.5 text-[1.12em] font-normal tracking-normal whitespace-nowrap text-primary')}>were made.</span>
@@ -199,6 +203,14 @@ export function FeedPulse({
             </div>
           ))}
         </dl>
+        {/* Says which count this is: alerts in Nazar's ledger (one per batch notice, duplicates
+            merged, retractions left out), which is not the same number as entities on Arkiv. */}
+        <p className="mt-2 text-xs leading-5 text-pretty text-muted-foreground" data-pulse-source>
+          <span className="font-semibold text-foreground/85">{plural(pulse.ledgerTotal, 'alert')} in Nazar&apos;s ledger</span>
+          <span className="whitespace-nowrap">
+            <span aria-hidden="true"> · </span>as of {asOf}
+          </span>
+        </p>
 
         {(state || following.length > 0) && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -239,71 +251,75 @@ export function FeedPulse({
           Choose a state on the map to show only its alerts in the list below.
         </p>
 
-        <div id="pulse-body" className={cn('mt-5 grid gap-6 md:mt-6 md:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] md:gap-8', !open && 'hidden md:grid')}>
+        <div id="pulse-body" className={cn('mt-5 grid gap-6 md:mt-6 md:grid-cols-[minmax(0,1fr)_minmax(17rem,23rem)] md:gap-8', !open && 'hidden md:grid')}>
           <div className="order-2 flex min-w-0 flex-col gap-4 md:order-1">
             <Readout pulse={pulse} code={shown} month={month} top={ranked} stOf={stOf} selected={!!state && !focus} />
             <Seismograph months={pulse.months} undated={pulse.undated} reduced={reduced} focusYm={month?.ym ?? null} onFocus={(ym) => setFocus(ym ? { kind: 'month', ym } : null)} />
           </div>
 
           <div className="order-1 min-w-0 md:order-2">
-            <div
-              role="group"
-              aria-label="Alerts by the state where the medicine was made. Arrow keys move between states; choose one to filter the list."
-              className="@container relative mx-auto grid max-w-[23rem] gap-[3px] sm:gap-1"
-              style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${ROWS}, auto)` }}
-              onMouseLeave={() => setFocus(null)}
-            >
-              {CODES.map((code) => {
-                const st = stOf(code)
-                const [x, y] = GRID[code]
-                const step = shadeFor(st.total, steps)
-                const selected = state === code
-                const dim = !!state && !selected
-                return (
-                  <motion.button
-                    key={code}
-                    ref={(el: HTMLButtonElement | null) => void (el ? tiles.current.set(code, el) : tiles.current.delete(code))}
-                    type="button"
-                    data-pulse-tile={code}
-                    data-pulse-count={st.total}
-                    aria-label={tileLabel(code)}
-                    aria-pressed={selected}
-                    tabIndex={code === active ? 0 : -1}
-                    onClick={() => onState(selected ? '' : code)}
-                    onKeyDown={(e) => onKey(e, code)}
-                    onFocus={() => {
-                      setCursor(code)
-                      setFocus({ kind: 'state', code })
-                    }}
-                    onBlur={() => setFocus(null)}
-                    onMouseEnter={() => setFocus({ kind: 'state', code })}
-                    initial={reduced ? false : { opacity: 0, scale: 0.55 }}
-                    animate={{ opacity: dim ? 0.5 : 1, scale: 1 }}
-                    transition={reduced ? { duration: 0 } : { opacity: { duration: 0.25, delay: (x + y) * 0.035 }, scale: { type: 'spring', stiffness: 380, damping: 24, delay: (x + y) * 0.035 } }}
-                    whileHover={reduced ? undefined : { scale: 1.06 }}
-                    whileTap={reduced ? undefined : { scale: 0.95 }}
-                    style={{ gridColumn: x + 1, gridRow: y + 1, background: step < 0 ? undefined : mix(SHADE[step]) }}
-                    className={cn(
-                      'relative flex aspect-square min-w-0 flex-col justify-between rounded-[22%] p-[9%] text-left outline-none focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/60',
-                      step < 0 && 'border border-border/80 bg-muted/40 text-muted-foreground',
-                      step >= 0 && step < 3 && 'text-foreground',
-                      step >= 3 && 'text-white dark:text-background',
-                      selected && 'z-10 ring-[2.5px] ring-primary ring-offset-2 ring-offset-card',
-                    )}
-                  >
-                    <span className="flex items-start justify-between gap-0.5">
-                      <span className="text-[clamp(8px,2.7cqw,11px)] leading-none font-bold tracking-wide">{short(code)}</span>
-                      <span className="flex gap-[2px]">
-                        {st.peds > 0 && <Marker kind="peds" />}
-                        {st.sev5 > 0 && <Marker kind="sev5" className={cn(!reduced && 'feed-pulse-ping rounded-full')} />}
+            {/* On a phone the map uses the card's full width (tiles 44px or more); below ~360px it
+                scrolls inside this frame rather than the page. */}
+            <div className="-mx-4 overflow-x-auto px-[3px] py-1.5 min-[360px]:overflow-visible sm:mx-0 sm:px-0" data-pulse-map>
+              <div
+                role="group"
+                aria-label="Alerts by the state where the medicine was made. Arrow keys move between states; choose one to filter the list."
+                className="@container relative mx-auto grid min-w-[20rem] max-w-[23rem] gap-[2px] sm:gap-1 md:min-w-0"
+                style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${ROWS}, auto)` }}
+                onMouseLeave={() => setFocus(null)}
+              >
+                {CODES.map((code) => {
+                  const st = stOf(code)
+                  const [x, y] = GRID[code]
+                  const step = shadeFor(st.total, steps)
+                  const selected = state === code
+                  const dim = !!state && !selected
+                  return (
+                    <motion.button
+                      key={code}
+                      ref={(el: HTMLButtonElement | null) => void (el ? tiles.current.set(code, el) : tiles.current.delete(code))}
+                      type="button"
+                      data-pulse-tile={code}
+                      data-pulse-count={st.total}
+                      aria-label={tileLabel(code)}
+                      aria-pressed={selected}
+                      tabIndex={code === active ? 0 : -1}
+                      onClick={() => onState(selected ? '' : code)}
+                      onKeyDown={(e) => onKey(e, code)}
+                      onFocus={() => {
+                        setCursor(code)
+                        setFocus({ kind: 'state', code })
+                      }}
+                      onBlur={() => setFocus(null)}
+                      onMouseEnter={() => setFocus({ kind: 'state', code })}
+                      initial={reduced ? false : { opacity: 0, scale: 0.55 }}
+                      animate={{ opacity: dim ? 0.5 : 1, scale: 1 }}
+                      transition={reduced ? { duration: 0 } : { opacity: { duration: 0.25, delay: (x + y) * 0.035 }, scale: { type: 'spring', stiffness: 380, damping: 24, delay: (x + y) * 0.035 } }}
+                      whileHover={reduced ? undefined : { scale: 1.06 }}
+                      whileTap={reduced ? undefined : { scale: 0.95 }}
+                      style={{ gridColumn: x + 1, gridRow: y + 1, background: step < 0 ? undefined : mix(SHADE[step]) }}
+                      className={cn(
+                        'relative flex aspect-square min-w-0 flex-col justify-between rounded-[22%] p-[9%] text-left outline-none focus-visible:z-20 focus-visible:ring-3 focus-visible:ring-ring/60',
+                        step < 0 && 'border border-border/80 bg-muted/40 text-muted-foreground',
+                        step >= 0 && step < 3 && 'text-foreground',
+                        step >= 3 && 'text-white dark:text-background',
+                        selected && 'z-10 ring-[2.5px] ring-primary ring-offset-2 ring-offset-card',
+                      )}
+                    >
+                      <span className="flex items-start justify-between gap-0.5">
+                        <span className="text-[clamp(9px,3cqw,12px)] leading-none font-bold tracking-wide">{short(code)}</span>
+                        <span className="flex gap-[2px]">
+                          {st.peds > 0 && <Marker kind="peds" />}
+                          {st.sev5 > 0 && <Marker kind="sev5" className={cn(!reduced && 'feed-pulse-ping rounded-full')} />}
+                        </span>
                       </span>
-                    </span>
-                    <span className={cn('font-mono text-[clamp(9.5px,3.5cqw,14px)] leading-none font-semibold tabular-nums', st.total === 0 && 'opacity-60')}>
-                      {st.total >= 1000 ? `${Math.round(st.total / 100) / 10}k` : st.total}
-                    </span>
-                  </motion.button>
-                )
-              })}
+                      <span className={cn('font-mono text-[clamp(10px,3.9cqw,15px)] leading-none font-semibold tabular-nums', st.total === 0 && 'opacity-60')}>
+                        {st.total >= 1000 ? `${Math.round(st.total / 100) / 10}k` : st.total}
+                      </span>
+                    </motion.button>
+                  )
+                })}
+              </div>
             </div>
 
             <div className="mx-auto mt-3 flex max-w-[23rem] flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[11px] text-muted-foreground">

@@ -151,16 +151,24 @@ function FeedRow({ alert, open, onToggle }: { alert: Alert; open: boolean; onTog
     >
       <SeverityTile value={alert.severity} />
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-semibold sm:text-[15px]">{alert.brand}</span>
+        <span className="flex items-start gap-2">
+          {/* The name gets the width and may take two lines; the on-chain status is a small dot,
+              explained once in the list header. */}
+          <span className="line-clamp-2 min-w-0 text-sm leading-5 font-semibold break-words sm:text-[15px]" data-row-name>
+            {alert.brand}
+            {alert.entityKey && (
+              <span
+                data-live-arkiv
+                role="img"
+                aria-label="Live on Arkiv"
+                title="Live on Arkiv"
+                className="ml-1.5 inline-block size-2 rounded-full bg-primary align-middle ring-2 ring-primary/20"
+              />
+            )}
+          </span>
           {alert.peds && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-flagged-border px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-flagged uppercase">
+            <span className="mt-px inline-flex shrink-0 items-center gap-1 rounded-full border border-flagged-border px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-flagged uppercase">
               <Baby className="size-3" aria-hidden="true" /> Child
-            </span>
-          )}
-          {alert.entityKey && (
-            <span data-live-arkiv className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary uppercase">
-              <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" /> Live on Arkiv
             </span>
           )}
         </span>
@@ -280,6 +288,7 @@ export function Feed() {
   const savedAt = saved ? saved.generatedAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
   const total = page?.total ?? null
   const count = first || !page ? null : total !== null ? plural(total, 'alert') : `${plural(items.length, 'alert')}${page.more ? ' so far' : ''}`
+  const onChain = !first && items.some((a) => a.entityKey)
 
   return (
     <div className="pt-4 md:pt-8">
@@ -349,7 +358,13 @@ export function Feed() {
             <Skeleton className="h-4 w-36" />
           )}
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {onChain && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" data-feed-onchain-key>
+              <span className="size-2 rounded-full bg-primary ring-2 ring-primary/20" aria-hidden="true" />
+              Live on Arkiv
+            </span>
+          )}
           {page && !first && <SourceTag source={page.source} />}
           {!isDefault(f) && (
             <Button variant="ghost" className="h-11 px-3" onClick={() => setFilters(DEFAULTS)}>

@@ -116,8 +116,12 @@ function ShelfItem({ item, checking, now, onOpen }: { item: CabinetItem; checkin
 }
 
 type Part = { text: string; tone?: Tone }
-type Summary = { tone: 'scanning' | 'flagged' | 'caution' | 'pending' | 'no_alert'; title: string; parts: Part[]; note?: string; eye: SentinelState }
+type Summary = { tone: 'flagged' | 'caution' | 'pending' | 'no_alert'; flagged: number; title: string; parts: Part[]; note?: string; eye: SentinelState }
 
+/**
+ * What the shelf says, from the last answers saved on this device. A re-check in progress changes
+ * only the counts line (and the eye), so the header keeps its height while the answers land.
+ */
 function summarise(items: CabinetItem[], progress: { done: number; total: number } | null, now: number): Summary {
   const count = (s: Tone) => items.filter((i) => (i.last?.state ?? 'pending') === s).length
   const flagged = count('flagged')
@@ -126,35 +130,37 @@ function summarise(items: CabinetItem[], progress: { done: number; total: number
   const quiet = count('no_alert')
   const pending = count('pending')
   const latest = items.reduce((m, i) => Math.max(m, i.last?.at ?? 0), 0)
-  const parts: Part[] = [
-    flagged ? { text: `${flagged} flagged`, tone: 'flagged' as const } : null,
-    retracted ? { text: plural(retracted, 'retracted alert'), tone: 'retracted' as const } : null,
-    unreadable ? { text: `${unreadable} can't tell`, tone: 'unreadable' as const } : null,
-    quiet ? { text: `${quiet} no alert found`, tone: 'no_alert' as const } : null,
-    pending ? { text: `${pending} not checked yet`, tone: 'pending' as const } : null,
-    latest ? { text: `as of ${asOf(latest, now)}` } : null,
-  ].filter((p): p is Part => p !== null)
-  // The red banner above already says how many are flagged, so the shelf names what it watches
-  // and lets the coloured counts carry the rest.
+  const parts: Part[] = progress
+    ? [{ text: `Checking ${Math.min(progress.done + 1, progress.total)} of ${progress.total} against regulator alerts…` }]
+    : [
+        flagged ? { text: `${flagged} flagged`, tone: 'flagged' as const } : null,
+        retracted ? { text: plural(retracted, 'retracted alert'), tone: 'retracted' as const } : null,
+        unreadable ? { text: `${unreadable} can't tell`, tone: 'unreadable' as const } : null,
+        quiet ? { text: `${quiet} no alert found`, tone: 'no_alert' as const } : null,
+        pending ? { text: `${pending} not checked yet`, tone: 'pending' as const } : null,
+        latest ? { text: `as of ${asOf(latest, now)}` } : null,
+      ].filter((p): p is Part => p !== null)
+  const eye = (fallback: SentinelState): SentinelState => (progress ? 'scanning' : fallback)
   const watching = `Watching ${plural(items.length, 'medicine')}`
 
-  if (progress) {
+  if (flagged) {
     return {
-      tone: 'scanning',
-      title: 'Scanning your shelf',
-      parts: [{ text: `Checking ${Math.min(progress.done + 1, progress.total)} of ${progress.total} against regulator alerts…` }],
-      eye: 'scanning',
+      tone: 'flagged',
+      flagged,
+      title: flagged === 1 ? '1 medicine in your cabinet has an official alert' : `${flagged} medicines in your cabinet have official alerts`,
+      parts,
+      eye: eye('flagged'),
     }
   }
-  if (flagged) return { tone: 'flagged', title: watching, parts, eye: 'flagged' }
-  if (retracted || unreadable) return { tone: 'caution', title: watching, parts, eye: 'retracted' }
-  if (pending) return { tone: 'pending', title: watching, parts, eye: 'idle' }
+  if (retracted || unreadable) return { tone: 'caution', flagged, title: watching, parts, eye: eye('retracted') }
+  if (pending || !latest) return { tone: 'pending', flagged, title: watching, parts, eye: eye('idle') }
   return {
     tone: 'no_alert',
+    flagged,
     title: `No alerts for ${items.length === 1 ? 'this batch' : 'these batches'} as of ${asOf(latest, now)}`,
-    parts: [],
+    parts: progress ? parts : [],
     note: 'That only means no published alert names them yet. It is not a safety certificate. Nazar checks again each time you open your cabinet.',
-    eye: 'no_alert',
+    eye: eye('no_alert'),
   }
 }
 
@@ -182,6 +188,7 @@ export function CabinetShelf({
   checkingId,
   progress,
   onOpen,
+  onReview,
 }: {
   /** Already ordered: flagged first. */
   items: CabinetItem[]
@@ -189,32 +196,57 @@ export function CabinetShelf({
   checkingId: string | null
   progress: { done: number; total: number } | null
   onOpen: (id: string) => void
+  /** Opens the first flagged medicine's card. */
+  onReview: () => void
 }) {
   const s = summarise(items, progress, now)
   const running = progress !== null
+  const counts = s.parts.length > 0 && (
+    <p className="mt-0.5 flex flex-wrap gap-x-1.5 text-[13px] leading-5 text-muted-foreground" data-shelf-counts>
+      {s.parts.map((p, i) => (
+        <span key={p.text} className={cn(!running && 'whitespace-nowrap')}>
+          <span className={p.tone ? PART_TONE[p.tone] : undefined}>{p.text}</span>
+          {i < s.parts.length - 1 && <span aria-hidden="true"> ·</span>}
+        </span>
+      ))}
+    </p>
+  )
 
   return (
-    <section className="cab-frame mt-5" data-shelf data-shelf-tone={s.tone} aria-labelledby="shelf-title">
-      <div className="flex items-center gap-3 px-4 pt-4 sm:gap-5 sm:px-6 sm:pt-5">
-        <SentinelEye state={s.eye} className="w-[4.25rem] shrink-0 sm:w-28" />
+    <section className="cab-frame" data-shelf data-shelf-tone={s.tone} data-shelf-scanning={running ? '' : undefined} aria-labelledby="shelf-title">
+      <div className="flex items-start gap-3 px-4 pt-4 sm:items-center sm:gap-5 sm:px-6 sm:pt-5">
+        <SentinelEye state={s.eye} className="mt-1 w-[4.25rem] shrink-0 sm:mt-0 sm:w-28" />
         <div className="min-w-0 flex-1">
           <h3 id="shelf-title" className="text-[11px] font-bold tracking-[0.18em] text-primary uppercase">
             Your shelf, watched
           </h3>
-          <p className={cn('mt-1 text-[15px] leading-snug font-semibold text-pretty sm:text-lg', s.tone === 'no_alert' ? 'text-quiet' : 'text-foreground')} data-shelf-summary={s.tone}>
-            {s.title}
-          </p>
-          {s.parts.length > 0 && (
-            <p className="mt-0.5 flex flex-wrap gap-x-1.5 text-[13px] leading-5 text-muted-foreground" data-shelf-counts>
-              {s.parts.map((p, i) => (
-                <span key={p.text} className="whitespace-nowrap">
-                  <span className={p.tone ? PART_TONE[p.tone] : undefined}>{p.text}</span>
-                  {i < s.parts.length - 1 && <span aria-hidden="true"> ·</span>}
-                </span>
-              ))}
-            </p>
+          {s.flagged > 0 ? (
+            // The flagged alert sits inside the shelf's frame, so the page does not grow a separate
+            // banner (and shift) when the stored answers are read.
+            <div role="alert" data-cabinet-banner className="mt-1 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] leading-snug font-semibold text-pretty text-flagged sm:text-lg" data-shelf-summary="flagged">
+                  <TriangleAlert className="mr-1.5 mb-0.5 inline size-4 align-middle" aria-hidden="true" />
+                  {s.title}
+                </p>
+                <p className="mt-0.5 text-[13px] leading-5 text-pretty text-foreground/80">
+                  Stop using {s.flagged === 1 ? 'it' : 'them'} and keep the pack. Open it for what to do and the proof.
+                </p>
+                {counts}
+              </div>
+              <Button className="h-11 shrink-0 self-start bg-flagged px-4 font-semibold text-white hover:bg-flagged/90 sm:self-center dark:text-background" onClick={onReview}>
+                {s.flagged === 1 ? 'Review alert' : 'Review alerts'}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className={cn('mt-1 text-[15px] leading-snug font-semibold text-pretty sm:text-lg', s.tone === 'no_alert' ? 'text-quiet' : 'text-foreground')} data-shelf-summary={s.tone}>
+                {s.title}
+              </p>
+              {counts}
+              {s.note && <p className="mt-0.5 max-w-xl text-[13px] leading-5 text-pretty text-muted-foreground">{s.note}</p>}
+            </>
           )}
-          {s.note && <p className="mt-0.5 max-w-xl text-[13px] leading-5 text-pretty text-muted-foreground">{s.note}</p>}
         </div>
       </div>
 
@@ -234,10 +266,46 @@ export function CabinetShelf({
   )
 }
 
+/**
+ * Drawn before the saved cabinet is read (server render and hydration). It stands in for the
+ * shelf and the list together, tall enough that nothing under it is on screen, so the real
+ * content replaces it without pushing anything that was already painted.
+ */
+export function ShelfPlaceholder() {
+  return (
+    <div aria-busy="true" aria-label="Loading your cabinet" data-shelf-placeholder className="min-h-[38rem] sm:min-h-[40rem]">
+      <div className="cab-frame">
+        <div className="flex items-center gap-3 px-4 pt-4 sm:gap-5 sm:px-6 sm:pt-5">
+          <span className="block h-[41px] w-[4.25rem] shrink-0 animate-pulse rounded-full bg-muted motion-reduce:animate-none sm:h-[67px] sm:w-28" aria-hidden="true" />
+          <span className="grid flex-1 gap-2" aria-hidden="true">
+            <span className="block h-3 w-32 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+            <span className="block h-4 w-3/5 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+            <span className="block h-3 w-2/5 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+          </span>
+        </div>
+        <div className="cab-wall mx-2.5 mt-4 sm:mx-5">
+          <ul className="cab-rows cab-rows-empty" aria-hidden="true">
+            {Array.from({ length: 4 }, (_, i) => (
+              <li key={i} className="cab-cell">
+                <span className="cab-slot">
+                  <span className="cab-pill-wrap">
+                    <Capsule tone="pending" ghost />
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="h-12" />
+      </div>
+    </div>
+  )
+}
+
 /** The empty cabinet: bare shelves, the eye waiting, and one clear way to start. */
 export function EmptyShelf({ onAdd, onTry }: { onAdd: () => void; onTry: () => void }) {
   return (
-    <section className="cab-frame mt-5" data-cabinet-empty data-shelf-empty aria-labelledby="shelf-empty-title">
+    <section className="cab-frame" data-cabinet-empty data-shelf-empty aria-labelledby="shelf-empty-title">
       <div className="cab-wall mx-2.5 mt-2.5 sm:mx-5 sm:mt-5">
         <div className="flex justify-center pt-4 pb-1 sm:pt-6">
           <SentinelEye state="idle" className="w-24 sm:w-32" />

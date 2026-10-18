@@ -46,8 +46,8 @@ const rowTexts = () => js(`[...document.querySelectorAll('[data-alert-row]')].ma
 const pick = async (id, v) => { await js(`(() => { const s = document.getElementById(${JSON.stringify(id)}); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new Event('change', { bubbles: true })) })()`); await feedIdle() }
 const press = async label => { await js(`[...document.querySelectorAll('[data-feed], section[aria-label="Filter alerts"] button, button')].find(b => b.textContent.trim() === ${JSON.stringify(label)} && b.offsetParent)?.click()`); await feedIdle() }
 /** Follows a visible nav link and reports whether the page stayed alive (client-side routing, no reload). */
-const navTo = async label => { await js(`window.__spa = 1; [...document.querySelectorAll('nav a')].find(a => a.textContent.trim() === ${JSON.stringify(label)} && a.offsetParent)?.click()`); await wait(900); return js(`window.__spa === 1`) }
-const openFeed = async () => { const spa = await navTo('Feed'); await feedIdle(); return spa }
+const navTo = async label => { await js(`window.__spa = 1; [...document.querySelectorAll('nav a')].find(a => (a.dataset.label ?? a.textContent.trim()) === ${JSON.stringify(label)} && a.offsetParent)?.click()`); await wait(900); return js(`window.__spa === 1`) }
+const openFeed = async () => { const spa = await navTo('Alerts'); await feedIdle(); return spa }
 const ARKIV_RPC = 'https://rpc.tiramisu.db-chain.testnet.arkiv.network'
 const proofText = () => js(`document.querySelector('[role="dialog"]')?.innerText || ''`)
 const escape = async () => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(700) }
@@ -190,6 +190,11 @@ if (MODE === 'fallback') {
   await shot('mobile-proof')
   await escape()
   ok('proof drawer closes on Escape', !(await body()).includes('Source SHA-256'))
+  // Phones show the on-chain proof as one line that opens the proof sheet, not the full chain again.
+  ok('mobile: on-chain proof is one line ("Not yet on Arkiv · View proof"), not the full chain', (await js(`document.querySelector('section[data-state="flagged"] [data-proof-line]')?.dataset.proofLine`)) === 'unpublished' && !(await js(`!!document.querySelector('section[data-state="flagged"] [data-onchain-proof]')`)) && /Not yet on Arkiv\s*View proof/.test(await js(`document.querySelector('[data-proof-line]').innerText`)))
+  await js(`document.querySelector('[data-proof-line] button').click()`); await wait(900)
+  ok('mobile: the proof line opens the proof sheet', (await proofText()).includes('Source SHA-256'))
+  await escape()
 
   // Loading state: slow the network so the in-flight card is visible.
   await send('Network.emulateNetworkConditions', { offline: false, latency: 1500, downloadThroughput: -1, uploadThroughput: -1 })
@@ -218,6 +223,8 @@ if (MODE === 'fallback') {
   }
   ok('look-alike: Check SR-13 button is a 44px target', (await js(`(() => { const b = document.querySelector('[data-lookalike-check]'); return !!b && b.textContent.trim() === 'Check SR-13' && b.getBoundingClientRect().height >= 44 })()`)))
   await click('Check SR-13'); await waitIdle(); ok('suggestion click checks SR-13', (await body()).includes('This batch failed a government quality test'))
+  await typeBatch('B.No. SR-13'); ok('the pack label typed with the batch ("B.No. SR-13") still flags SR-13', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged')
+  await typeBatch('Batch No: SR-13'); ok('"Batch No: SR-13" also flags SR-13', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged')
   await typeBatch('AB1234'); const b = await body()
   ok('no alert state + not a safety certificate', b.includes('No official alert for this batch as of') && b.includes('This is not a safety certificate'))
   const green = await js(`(() => { const el = document.querySelector('[aria-live="polite"]'); const all = [el, ...el.querySelectorAll('*')]; return all.some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderColor].some(v => { const m = v.match(/\\d+(\\.\\d+)?/g); if (!m) return false; const [r,g,bl] = m.map(Number); return g > r + 40 && g > bl + 40 }) }) })()`)
@@ -230,6 +237,16 @@ if (MODE === 'fallback') {
 
   ok('no horizontal overflow at 390', (await js(`document.documentElement.scrollWidth`)) <= 390)
   ok('Try chips are 44px tap targets', (await js(`(() => { const c = [...document.querySelectorAll('[data-try-chip]')]; return c.length === 4 && c.every(b => b.getBoundingClientRect().height >= 44) })()`)), String(await js(`[...document.querySelectorAll('[data-try-chip]')].map(b => Math.round(b.getBoundingClientRect().height)).join()`)))
+  ok('check: the hero headline is the page h1, visible at 390', await js(`(() => { const h = document.querySelector('h1[data-check-hero]'); return !!h && !!h.offsetParent && h.innerText.replace(/\\s+/g, ' ').trim() === 'Check the batch, not just the brand.' })()`))
+  {
+    const ratio = await js(`(() => { const lum = c => { const [r, g, b] = c.match(/[\\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }; const i = document.getElementById('batch'); const fg = getComputedStyle(i, '::placeholder').color; const bg = getComputedStyle(i.parentElement).backgroundColor; if (!/^rgb\\(/.test(fg) || !/^rgb\\(/.test(bg)) return 0; const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x); return Math.round((a + 0.05) / (b + 0.05) * 100) / 100 })()`)
+    ok('check: batch placeholder contrast is at least 4.5:1', ratio >= 4.5, String(ratio))
+  }
+  await js(`(() => { const i = document.getElementById('batch'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ''); i.dispatchEvent(new Event('input', { bubbles: true })); i.blur() })()`); await wait(150)
+  await js(`[...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('Check batch'))?.click()`); await wait(300)
+  ok('check: empty submit says what to enter (polite status) and focuses the box', (await js(`document.querySelector('[data-empty-hint]')?.innerText || ''`)) === 'Enter the batch number from the pack (B.No.)' && (await js(`document.activeElement?.id`)) === 'batch' && (await js(`document.querySelector('[data-empty-hint]').getAttribute('role')`)) === 'status')
+  await typeBatch('AB1234')
+  ok('check: the empty-box message clears once a batch is entered', !(await js(`document.querySelector('[data-empty-hint]')?.innerText`)))
 
   // ---- Live wiring on the home page (fallback)
   ok('status pill: offline · demo data (compact on mobile)', (await js(`document.querySelector('[data-status]')?.dataset.status`)) === 'offline' && (await js(`document.querySelector('[data-status]').getAttribute('aria-label')`)) === 'Status: Offline · demo data')
@@ -259,7 +276,10 @@ if (MODE === 'fallback') {
   ok('dark theme applied', await js(`document.documentElement.classList.contains('dark')`))
   await vp(360, 800, false); await send('Page.reload'); await wait(1500); await settle()
   ok('no horizontal overflow at 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
-  await typeBatch('SR-13'); await clickHas('How do we know'); await wait(900)
+  await typeBatch('SR-13')
+  ok('share row fits on one line at 360 (Share and WhatsApp as named icon buttons)', await js(`(() => { const r = document.querySelector('section[data-state] [data-share-actions]'); if (!r) return false; const kids = [...r.children].filter(c => c.offsetParent); const tops = new Set(kids.map(c => Math.round(c.getBoundingClientRect().top))); return tops.size === 1 && kids.length >= 3 && !!r.querySelector('[data-whatsapp][aria-label="Share on WhatsApp"]') && kids.every(k => k.getBoundingClientRect().height >= 44) && r.getBoundingClientRect().right <= innerWidth })()`))
+  await js(`document.querySelector('[data-share-actions]').scrollIntoView({ block: 'center' })`); await shot('mobile-360-share-row')
+  await clickHas('How do we know'); await wait(900)
   ok('proof drawer fits 360 without horizontal scroll', (await js(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.scrollWidth <= d.clientWidth + 1 })()`)))
   await shot('mobile-360-proof'); await escape()
   await vp(430, 932, false); await send('Page.reload'); await wait(1500); await settle()
@@ -291,7 +311,7 @@ if (MODE === 'fallback') {
   // ---- Feed (fallback: demo data)
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
   ok('feed: nav link routes client-side (no reload)', await openFeed())
-  ok('feed: URL is /feed and nav marks Feed current', (await js(`location.pathname`)) === '/feed' && (await js(`[...document.querySelectorAll('nav a[aria-current="page"]')].some(a => a.textContent.trim() === 'Feed')`)))
+  ok('feed: URL is /feed and nav marks Alerts current', (await js(`location.pathname`)) === '/feed' && (await js(`[...document.querySelectorAll('nav a[aria-current="page"]')].some(a => a.dataset.label === 'Alerts')`)))
   ok('feed: loads demo alerts, labelled Demo data', (await feedRows()) === 3 && (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && (await feedCount()).startsWith('3 alerts') && (await body()).includes('Demo data: the Nazar API and Arkiv could not answer'))
   ok('feed: retracted demo alert is not in the feed', !(await rowTexts()).some(t => t.includes('DEMO-RT1')))
   ok('feed: no Load more at the end of demo data', (await body()).includes('End of the feed') && !(await body()).includes('Load more alerts'))
@@ -347,8 +367,8 @@ if (MODE === 'fallback') {
 
   // ---- Navigation: Cabinet and More are real routes (desktop)
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
-  ok('nav: Cabinet link routes client-side', await navTo('Cabinet'))
-  ok('nav: /cabinet with Cabinet marked current', (await js(`location.pathname`)) === '/cabinet' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'Cabinet')
+  ok('nav: My cabinet link routes client-side', await navTo('My cabinet'))
+  ok('nav: /cabinet with My cabinet marked current', (await js(`location.pathname`)) === '/cabinet' && (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.dataset.label).join()`)) === 'My cabinet')
   ok('nav: no "coming soon" toast any more', !(await body()).includes('coming in the next build'))
 
   // ---- Cabinet: empty state, validation, add
@@ -401,6 +421,10 @@ if (MODE === 'fallback') {
   // Persist across reload, then export.
   await send('Page.reload'); await wait(1500); await cabinetIdle(); await wait(400)
   ok('cabinet: persists across reload', (await items()).join() === 'SR-13,XY-9,AB1234' && (await itemState('SR-13')) === 'flagged')
+  { // fcfix: the shelf, the flagged alert and the list replace one fixed placeholder, so reading localStorage moves nothing already painted.
+    const cabCls = await js(`new Promise(r => { let v = 0; new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) v += e.value }).observe({ type: 'layout-shift', buffered: true }); setTimeout(() => r(v), 400) })`)
+    ok('cabinet: hard reload with saved medicines has CLS < 0.05 at 1440', cabCls < 0.05, cabCls.toFixed(4))
+  }
   await js(`window.__blobs = []; const o = URL.createObjectURL.bind(URL); URL.createObjectURL = b => { window.__blobs.push(b); return o(b) }`)
   await click('Export'); await wait(400)
   const exported = await js(`window.__blobs[0]?.text()`)
@@ -451,8 +475,8 @@ if (MODE === 'fallback') {
   ok('feed: demo rows carry no Live on Arkiv badge', (await js(`document.querySelectorAll('[data-live-arkiv]').length`)) === 0)
 
   // ---- More
-  ok('nav: More link routes client-side', await navTo('More'))
-  ok('more: /more with More marked current', (await js(`location.pathname`)) === '/more' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'More')
+  ok('nav: How it works link routes client-side', await navTo('How it works'))
+  ok('more: /more with How it works marked current', (await js(`location.pathname`)) === '/more' && (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.dataset.label).join()`)) === 'How it works')
   ok('more: renders every section', (await js(`[...document.querySelectorAll('[data-more-section]')].map(s => s.id).join()`)) === 'how,sources,proof,mcp,privacy,settings,about')
   const mb = await body()
   ok('more: How it works tells one alert in six chapters, in order', (await js(`[...document.querySelectorAll('#how [data-chapter-title]')].map(h => h.textContent.trim()).join('|')`)) === 'A regulator publishes a notice|Nazar reads it|It becomes a case|It is written to Arkiv|You check your batch|Anyone can verify')
@@ -464,6 +488,7 @@ if (MODE === 'fallback') {
   ok('more: TOC marks the section being read', (await js(`document.querySelector('nav[data-toc="rail"] a[aria-current]')?.getAttribute('href')`)) === '#sources')
   await waitFor(`document.querySelector('[data-sources-from]')?.dataset.sourcesFrom !== 'loading'`)
   ok('more: sources fall back to the built-in list', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'static' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 9)
+  ok("more: About links to Pranshu's X (@pranshurastogii), GitHub, LinkedIn, YouTube, Medium and site, each opening in a new tab", await js(`(() => { const a = [...document.querySelectorAll('[data-about-author] a[data-social]')]; const x = a.find((e) => e.dataset.social === 'X'); return a.length === 6 && !!x && x.href === 'https://x.com/pranshurastogii' && x.innerText.includes('@pranshurastogii') && a.every((e) => e.target === '_blank' && e.rel.includes('noopener')) })()`))
   ok('more: hero counts sources it can read and invents no alert count offline', (await js(`document.querySelector('[data-stat="sources"] [data-stat-value]').innerText`)) === String(await js(`document.querySelectorAll('[data-source-row][data-enabled="true"]:not([data-source-row="curated"])').length`)) && !/\d/.test(await js(`document.querySelector('[data-stat="alerts"] [data-stat-value]').innerText`)))
   ok('more: disabled sources say why (Telangana, Karnataka, Kerala)', (await js(`['tg-dca','ka-dc','kl-dc'].every(id => { const r = document.querySelector('[data-source-row="' + id + '"]'); return r && r.dataset.enabled === 'false' && r.innerText.includes('Off') })`)) && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('outside India'))
   ok('more: each source links to its regulator', (await js(`document.querySelector('[data-source-row="tn-dc"] a').href`)) === 'https://drugscontrol.tn.gov.in/list_nsq_drugs.html')
@@ -500,24 +525,74 @@ if (MODE === 'fallback') {
   await noToasts(); await js(`window.scrollTo(0, 0)`); await shot('more-desktop')
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-desktop-proof')
 
-  // ---- More › Use Nazar in your AI assistant (/more#mcp)
+  // ---- AI assistant: /more#mcp is a short teaser now, the full guide lives at /ai
   const MCP = 'https://nazar-api-production.up.railway.app/mcp'
-  ok('more: footer links to /more#mcp', (await js(`document.querySelector('footer a[data-mcp-link]')?.getAttribute('href')`)) === '/more#mcp')
+  const AI_FX = Object.fromEntries(['sr-13', '5r-13', 'ab1234'].map(k => [k, JSON.parse(fs.readFileSync(new globalThis.URL(`../components/nazar/ai/fixtures/check-${k}.json`, import.meta.url), 'utf8'))]))
+  ok('shell: "Skip to content" is the first focusable element and targets main#content', (await js(`(() => { const a = document.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'); return a?.textContent.trim() + '|' + a?.getAttribute('href') + '|' + document.getElementById('content')?.tagName })()`)) === 'Skip to content|#content|MAIN')
+  ok('more: the hero headline is the only h1 (the shell title is not a heading)', (await js(`[...document.querySelectorAll('h1')].map(h => h.id).join()`)) === 'more-hero-title')
+  ok('ai nav: footer links to /ai', (await js(`document.querySelector('footer a[data-mcp-link]')?.getAttribute('href')`)) === '/ai')
+  ok('ai nav: the desktop rail has AI assistant right after On-chain', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a')].map(a => a.dataset.label).join()`)) === 'Check,Alerts,My cabinet,On-chain,AI assistant,How it works')
+  ok('ai nav: no link still points at /more#mcp', !(await js(`[...document.querySelectorAll('a')].some(a => a.getAttribute('href') === '/more#mcp')`)))
   await send('Page.navigate', { url: new globalThis.URL('/more#mcp', URL).href }); await wait(1500)
   await waitFor(`!!document.getElementById('mcp-title')`)
-  ok('more: /more#mcp renders the AI assistant section', (await js(`document.getElementById('mcp-title')?.innerText`)) === 'Use Nazar in your AI assistant' && (await js(`document.querySelector('[data-mcp-endpoint]')?.innerText`)) === MCP && (await js(`[...document.querySelectorAll('nav[aria-label="On this page"] a')].some(a => a.getAttribute('href') === '#mcp')`)))
-  ok('more: #mcp scrolls the section into view', await js(`(() => { const r = document.getElementById('mcp').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0 })()`))
-  const mcpCopies = await js(`document.querySelectorAll('#mcp button[aria-label^="Copy"]').length`)
-  ok('more: MCP section has labelled copy buttons', mcpCopies >= 3, String(mcpCopies))
-  const mt = await js(`document.getElementById('mcp').innerText`)
-  ok('more: MCP section lists the six tools, example and honesty note', ['check_batch', 'search_alerts', 'recent_alerts', 'get_case', 'list_sources', 'arkiv_proof', 'Is batch SR-13 of Coldrif flagged?', 'not a safety certificate'].every(t => mt.includes(t)) && !/\bsafe\b/i.test(mt.replace(/not a safety certificate/gi, '')))
+  ok('more: an old /more#mcp link lands on the teaser, which points to /ai', (await js(`document.getElementById('mcp-title')?.innerText`)) === 'Use Nazar in your AI assistant' && (await js(`(() => { const r = document.getElementById('mcp').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0 })()`)) && (await js(`document.querySelector('#mcp [data-mcp-endpoint]')?.innerText`)) === MCP && (await js(`document.querySelector('#mcp a[data-mcp-teaser-link]')?.getAttribute('href')`)) === '/ai')
+  ok('more: the teaser is short (no setup tabs, code or tool list)', !(await js(`!!document.querySelector('#mcp [data-mcp-tab], #mcp pre, #mcp [data-mcp-tool]')`)))
+  await js(`window.__spa = 1; document.querySelector('#mcp a[data-mcp-teaser-link]').click()`); await waitFor(`location.pathname === '/ai' && !!document.querySelector('[data-chat-demo]')`)
+  ok('ai: the teaser opens /ai client-side, with AI assistant marked current', (await js(`location.pathname`)) === '/ai' && (await js(`window.__spa`)) === 1 && (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.dataset.label).join()`)) === 'AI assistant')
+  await send('Page.navigate', { url: new globalThis.URL('/ai', URL).href }); await wait(1500)
+  ok('ai: titled "Nazar for AI assistants", one h1 with the serif accent', (await js(`document.title`)) === 'Nazar for AI assistants' && (await js(`[...document.querySelectorAll('h1')].map(h => h.textContent).join('|')`)) === 'Ask your AI about a batch, and get the regulator’s answer.')
+  ok('ai: hero shows the endpoint and a Set it up link', (await js(`document.querySelector('[data-ai-hero] [data-mcp-endpoint]')?.innerText`)) === MCP && (await js(`document.querySelector('[data-ai-setup-cta]')?.getAttribute('href')`)) === '#setup' && (await js(`document.querySelector('[data-ai-lede]').innerText`)).includes('Claude, ChatGPT, Cursor, VS Code and other MCP clients'))
+  ok('ai: sections in story order', (await js(`[...document.querySelectorAll('[data-ai-section]')].map(s => s.id).join()`)) === 'connect,setup,tools,rules,limits')
+  // The chat demo: plays once it is on screen, from an empty chat to the answer, built from the real fixtures.
+  const demo = sel => `document.querySelector('[data-chat-demo] ${sel}')`
+  const demoDone = () => waitFor(`document.querySelector('[data-chat-demo]')?.dataset.phase === 'done'`, 20000)
+  const reply = () => js(`${demo('[data-chat-reply]')}.innerText.trim()`)
+  await js(`document.querySelector('[data-chat-demo]').scrollIntoView({ block: 'center' })`)
+  const phases = new Set(); { const t = Date.now(); while (Date.now() - t < 20000) { const p = await js(`document.querySelector('[data-chat-demo]').dataset.phase`); phases.add(p); if (p === 'done') break; if (p === 'calling') phases.add('eye:' + await js(`${demo('[data-sentinel]')}.dataset.state`)); await wait(60) } }
+  ok('ai demo: plays question → tool call (eye scanning) → reply', ['typing', 'calling', 'reply', 'done'].every(p => phases.has(p)) && phases.has('eye:scanning'), [...phases].join())
+  const sr = AI_FX['sr-13'].structuredContent
+  ok('ai demo: the person asks about SR-13 of Coldrif for their child', (await js(`${demo('[data-chat-question]')}.innerText`)) === 'Is batch SR-13 of Coldrif safe for my child?')
+  ok('ai demo: tool-call chip shows check_batch with its arguments and the state', (await js(`${demo('[data-tool-call]')}.dataset.tool`)) === 'check_batch' && (await js(`${demo('[data-tool-args]')}.innerText`)) === '{ "batch": "SR-13" }' && (await js(`${demo('[data-tool-state]')}.innerText`)) === 'flagged')
+  ok('ai demo: the tool result is the real server text', (await js(`${demo('[data-tool-result]')}.textContent`)) === AI_FX['sr-13'].content[0].text)
+  const r1 = await reply(); const l1 = await js(`[...document.querySelectorAll('[data-chat-demo] [data-reply-link]')].map(a => a.href)`)
+  ok('ai demo: reply opens "Flagged.", cites the regulator words, says not medical advice, never "safe"', r1.startsWith('Flagged. Batch SR-13 of COLDRIF is named in 2 official regulator alerts.') && r1.includes('Contaminated with diethylene glycol (DEG): 48.6% w/v') && r1.includes('Sresan Pharmaceutical') && r1.includes('not medical advice') && !/\bsafe\b/i.test(r1), r1.slice(0, 120))
+  ok('ai demo: reply links the WHO notice and the Arkiv entity from the fixture', l1.length === 2 && sr.alerts.some(a => a.notice.url === l1[0] && /who\.int/.test(l1[0]) && a.arkiv.explorer === l1[1]) && (await js(`[...document.querySelectorAll('[data-chat-demo] [data-reply-link]')].every(a => a.target === '_blank' && a.rel.includes('noopener') && a.tabIndex === 0)`)))
+  ok('ai demo: the sentinel eye turns red', (await js(`${demo('[data-sentinel]')}.dataset.state`)) === 'flagged')
+  await js(`document.querySelector('[data-chat-tab="unreadable"]').click()`); await wait(150); await demoDone()
+  const r2 = await reply()
+  ok("ai demo: the look-alike 5R-13 is Can't tell, never a flag (amber eye, real text)", (await js(`document.querySelector('[data-chat-tab="unreadable"]').getAttribute('aria-selected')`)) === 'true' && (await js(`${demo('[data-tool-state]')}.innerText`)) === 'unreadable' && (await js(`${demo('[data-tool-result]')}.textContent`)) === AI_FX['5r-13'].content[0].text && r2.startsWith('Can’t tell.') && r2.includes('SR-13') && r2.includes('never a flag') && !/\bflagged\b/i.test(r2) && (await js(`${demo('[data-sentinel]')}.dataset.state`)) === 'unreadable' && !/\bsafe\b/i.test(r2), r2.slice(0, 100))
+  await js(`document.querySelector('[data-chat-tab="unreadable"]').focus()`); await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 }); await wait(150)
+  ok('ai demo: arrow keys move between the example tabs', (await js(`document.activeElement?.dataset.chatTab`)) === 'no_alert' && (await js(`document.querySelector('[data-chat-demo]').dataset.scenario`)) === 'no_alert')
+  await demoDone()
+  const r3 = await reply()
+  const demoGreen = await js(`(() => { const x = document.createElement('canvas').getContext('2d'); const rgb = v => { x.clearRect(0, 0, 1, 1); x.fillStyle = '#000'; x.fillStyle = v; x.fillRect(0, 0, 1, 1); return x.getImageData(0, 0, 1, 1).data }; const el = document.querySelector('[data-chat-demo]'); return [el, ...el.querySelectorAll('*')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor, c.borderTopColor].some(v => { const [r, g, b, a] = rgb(v); return a > 0 && g > r + 40 && g > b + 40 }) }) })()`)
+  ok('ai demo: AB1234 is No alert found in slate, "not a safety certificate", nothing green', (await js(`${demo('[data-tool-state]')}.innerText`)) === 'no_alert' && (await js(`${demo('[data-tool-result]')}.textContent`)) === AI_FX['ab1234'].content[0].text && r3.startsWith('No alert found.') && r3.includes('not a safety certificate') && r3.includes('IST') && (await js(`${demo('[data-sentinel]')}.dataset.state`)) === 'no_alert' && demoGreen === false && !/\bsafe\b/i.test(r3.replace(/not a safety certificate/gi, '')), r3.slice(0, 100))
+  await js(`document.querySelector('[data-demo-replay]').click()`); await wait(250)
+  ok('ai demo: Replay starts the conversation again', (await js(`document.querySelector('[data-chat-demo]').dataset.phase`)) !== 'done' && (await demoDone()))
+  // Setup: tabs copy the right strings.
   await js(`window.__copied = []; navigator.clipboard.writeText = async t => { window.__copied.push(t) }`)
-  await js(`document.querySelector('[aria-label="Copy Claude Code command"]').click()`); await wait(200)
-  ok('more: Claude Code command copies', (await js(`window.__copied[0]`)) === `claude mcp add --transport http nazar ${MCP}`)
-  await js(`document.querySelector('[data-mcp-tab="cursor"]').click()`); await wait(200)
-  await js(`document.querySelector('[aria-label="Copy Cursor config"]').click()`); await wait(200)
-  ok('more: Cursor tab shows and copies its config', (await js(`!document.getElementById('mcp-panel-cursor').hidden && document.getElementById('mcp-panel-claude-code').hidden`)) && JSON.parse((await js(`window.__copied[1] || '{}'`))).mcpServers?.nazar?.url === MCP)
-  await js(`document.querySelector('[data-mcp-tab="claude-code"]').click()`); await noToasts(); await js(`document.getElementById('mcp').scrollIntoView({ block: 'start' })`); await shot('more-desktop-mcp')
+  const copyBtn = async label => { await js(`document.querySelector('[aria-label="Copy ${label}"]').click()`); await wait(150); return js(`window.__copied.at(-1) || ''`) }
+  ok('ai setup: the hero copies the endpoint', (await copyBtn('MCP endpoint')) === MCP)
+  ok('ai setup: Claude Code tab copies the command', (await copyBtn('Claude Code command')) === `claude mcp add --transport http nazar ${MCP}`)
+  const tabTo = async id => { await js(`document.querySelector('[data-mcp-tab="${id}"]').click()`); await wait(150); return js(`[...document.querySelectorAll('[data-mcp-panel]')].filter(p => !p.hidden).map(p => p.dataset.mcpPanel).join()`) }
+  ok('ai setup: .mcp.json tab copies a project file with an http server', (await tabTo('mcp-json')) === 'mcp-json' && (j => j.mcpServers?.nazar?.type === 'http' && j.mcpServers.nazar.url === MCP)(JSON.parse(await copyBtn('.mcp.json config'))))
+  ok('ai setup: Cursor tab copies its config', (await tabTo('cursor')) === 'cursor' && JSON.parse(await copyBtn('Cursor config')).mcpServers?.nazar?.url === MCP)
+  ok('ai setup: VS Code tab copies its config', (await tabTo('vscode')) === 'vscode' && (j => j.servers?.nazar?.type === 'http' && j.servers.nazar.url === MCP)(JSON.parse(await copyBtn('VS Code config'))))
+  ok('ai setup: Claude & ChatGPT tab gives connector steps with no auth', (await tabTo('apps')) === 'apps' && (await js(`document.getElementById('mcp-panel-apps').innerText`)).includes('Add custom connector') && (await js(`document.getElementById('mcp-panel-apps').innerText`)).includes('no authentication'))
+  ok('ai setup: the curl test is copyable and asks check_batch for SR-13', (c => c.startsWith(`curl -s ${MCP}`) && c.includes('"name":"check_batch"') && c.includes('"batch":"SR-13"'))(await copyBtn('curl test command')))
+  const ts = await js(`document.querySelector('[data-mcp-troubleshooting]').innerText`)
+  ok('ai setup: troubleshooting explains the 405 on GET and the rate limit', ts.includes('405') && ts.includes('60 tool calls a minute'))
+  await tabTo('claude-code')
+  // Tools, rules and limits.
+  const toolCards = await js(`[...document.querySelectorAll('[data-mcp-tool]')].map(c => ({ name: c.dataset.mcpTool, q: c.querySelector('[data-tool-answers]')?.innerText || '', sample: c.querySelector('[data-tool-sample]')?.textContent || '' }))`)
+  ok('ai tools: six cards in order, each with its question and a real example', toolCards.map(c => c.name).join() === 'check_batch,search_alerts,recent_alerts,get_case,list_sources,arkiv_proof' && toolCards.every(c => c.q.length > 10 && c.sample.length > 20) && toolCards[0].sample.startsWith('FLAGGED: batch SR-13') && toolCards[5].sample.startsWith('OFFICIAL:'))
+  ok('ai tools: resources and the prompt', (await js(`[...document.querySelectorAll('[data-mcp-resource]')].map(r => r.dataset.mcpResource).join()`)) === 'nazar://about,nazar://schema' && (await js(`document.querySelector('[data-mcp-prompt]').innerText`)).includes('check_my_medicine'))
+  const tp = await js(`document.querySelector('[data-trust-panel]').innerText`)
+  ok('ai rules: trust panel with the four rules and the exact instructions', (await js(`document.querySelectorAll('[data-trust-rule]').length`)) === 4 && ['Four answers, reported as given', 'Never “safe”', 'A look-alike is never a flag', 'Cite the notice'].every(t => tp.includes(t)) && (await js(`document.querySelector('[data-instructions]').textContent`)).includes('never upgrade or soften it'))
+  const lim = await js(`document.querySelector('[data-ai-limits]').innerText`)
+  ok('ai limits: read-only, no personal data, salted IP hash, 60 a minute, no explainer', ['Read-only', 'No personal data', 'Batch numbers only', 'salted hash', '60 tool calls a minute', 'medicine explainer'].every(t => lim.includes(t)))
+  await noToasts(); await js(`window.scrollTo(0, 0)`); await shot('ai-desktop')
+  await js(`document.querySelector('[data-chat-demo]').scrollIntoView({ block: 'start' })`); await shot('ai-desktop-demo')
 
   // ---- 360px dark: nav reaches each route, no overflow; screenshots with flagged + expired + no-alert items
   await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark'); localStorage.setItem('nazar:cabinet', JSON.stringify(${JSON.stringify(parsed?.items ?? [])}))`)
@@ -527,6 +602,17 @@ if (MODE === 'fallback') {
   ok('360: cabinet fits without horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360)
   const minCab = await js(`Math.min(...[...document.querySelectorAll('[data-cabinet-item] button[aria-expanded], main > div button')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().height)))`)
   ok('360: cabinet buttons are at least 44px tall', minCab >= 44, String(minCab))
+  { // fcfix: on a phone the shelf is the index; the list keeps only what needs a look, plus "Show all".
+    const shownCards = () => js(`[...document.querySelectorAll('[data-cabinet-item]')].filter(li => li.offsetParent).map(li => li.dataset.batch).join()`)
+    const showAll = () => js(`[...document.querySelectorAll('[data-cabinet-showall] button')].find(b => b.offsetParent)?.textContent.trim() || ''`)
+    ok('360: cabinet list collapses to the flagged card with "Show all 3 medicines"', (await js(`document.querySelector('[data-cabinet-list]')?.dataset.cabinetList`)) === 'short' && (await shownCards()) === 'SR-13' && (await showAll()) === 'Show all 3 medicines', `${await shownCards()} · ${await showAll()}`)
+    await js(`[...document.querySelectorAll('[data-cabinet-showall] button')].find(b => b.offsetParent).click()`); await wait(400)
+    ok('360: "Show all" lists every medicine', (await shownCards()) === 'SR-13,XY-9,AB1234' && (await js(`document.querySelector('[data-cabinet-showall] button').getAttribute('aria-expanded')`)) === 'true')
+    await js(`document.querySelector('[data-cabinet-showall] button').click()`); await wait(300)
+    await js(`document.querySelector('[data-shelf-batch="AB1234"] button').click()`); await wait(700)
+    ok('360: tapping a hidden capsule opens its card in the short list', (await shownCards()) === 'SR-13,AB1234' && (await js(`document.querySelector('[data-batch="AB1234"] button[aria-expanded]')?.getAttribute('aria-expanded')`)) === 'true')
+    await js(`document.querySelector('[data-batch="AB1234"] button[aria-expanded]').click()`); await wait(300)
+  }
   await js(`window.scrollTo(0, 0)`); await shot('cabinet-360-dark')
   await js(`document.querySelector('[data-cabinet-banner]')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -12)`); await shot('cabinet-360-dark-list')
   await click('Review alert'); await wait(900)
@@ -539,7 +625,26 @@ if (MODE === 'fallback') {
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-proof')
   await js(`document.getElementById('settings').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-settings')
   await js(`document.getElementById('mcp').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-mcp')
-  ok('360: MCP section fits; code blocks scroll inside their box', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`[...document.querySelectorAll('#mcp pre')].filter(p => p.offsetParent).every(p => p.getBoundingClientRect().right <= 360)`)))
+  ok('360: the AI assistant teaser fits', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`document.querySelector('[data-mcp-teaser]').getBoundingClientRect().right`)) <= 360)
+  // /ai on a phone: AI is the fourth of five bottom-nav items; the page fits 360 and the demo still plays.
+  const mobileNav = await js(`[...document.querySelectorAll('nav[aria-label="Mobile navigation"] a')].filter(a => a.offsetParent).map(a => { const r = a.getBoundingClientRect(); return a.textContent.trim() + ':' + Math.round(r.width) + 'x' + Math.round(r.height) })`)
+  ok('360: bottom nav has five items, AI fourth, each at least 44px with a visible label', mobileNav.map(s => s.split(':')[0]).join() === 'Check,Alerts,Cabinet,AI,More' && mobileNav.every(s => s.split(':')[1].split('x').every(n => Number(n) >= 44)), mobileNav.join(' '))
+  ok('360: AI tab in the bottom nav opens /ai', await navTo('AI') && (await js(`location.pathname`)) === '/ai' && (await js(`[...document.querySelectorAll('nav[aria-label="Mobile navigation"] a[aria-current="page"]')].map(a => a.textContent.trim()).join()`)) === 'AI')
+  await wait(600)
+  ok('360: /ai fits without horizontal scroll, code scrolls inside its box', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`[...document.querySelectorAll('[data-ai-page] pre')].filter(p => p.offsetParent).every(p => p.getBoundingClientRect().right <= 360)`)))
+  await js(`window.scrollTo(0, 0)`); await shot('ai-360-dark')
+  await js(`document.querySelector('[data-chat-demo]').scrollIntoView({ block: 'start' })`)
+  ok('360: the chat demo plays to the answer and fits', (await waitFor(`document.querySelector('[data-chat-demo]')?.dataset.phase === 'done'`, 20000)) && (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const d = document.querySelector('[data-chat-demo]'); return d.scrollWidth <= d.clientWidth + 1 })()`)))
+  await shot('ai-360-dark-demo')
+  const aiTargets = await js(`Math.min(...[...document.querySelectorAll('[data-chat-tab], [data-demo-replay], [data-mcp-tab], [data-mcp-copy], [data-reply-link]')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().height)))`)
+  ok('360: /ai tabs, copy buttons and links are at least 44px tall', aiTargets >= 44, String(aiTargets))
+  await js(`document.getElementById('setup').scrollIntoView({ block: 'start' })`); await shot('ai-360-dark-setup')
+  ok('360: More tab returns to More, whose teaser still fits', await navTo('More') && (await js(`location.pathname`)) === '/more' && (await js(`document.documentElement.scrollWidth`)) <= 360)
+  // Reduced motion: the finished conversation, still, with nothing left to reveal.
+  await vp(360, 800, false, true); await send('Page.navigate', { url: new globalThis.URL('/ai', URL).href }); await wait(1500)
+  ok('reduced motion: /ai shows the finished chat at once, every word visible, no moving parts', (await js(`document.querySelector('[data-chat-demo]')?.dataset.phase`)) === 'done' && (await js(`[...document.querySelectorAll('[data-chat-demo] .ai-word')].every(w => getComputedStyle(w).opacity === '1')`)) && !(await js(`!!document.querySelector('[data-chat-demo] .ai-caret, [data-chat-demo] .ai-dots')`)) && (await js(`[...document.querySelectorAll('.ai-link-dot')].every(d => getComputedStyle(d).display === 'none')`)) && (await js(`document.querySelector('[data-chat-demo] [data-sentinel]').dataset.state`)) === 'flagged')
+  ok('reduced motion: /ai fits 360', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await vp(360, 800, true)
   ok('360: Check tab returns home', await navTo('Check') && (await js(`location.pathname`)) === '/')
   await vp(360, 800, false, true); await js(`localStorage.setItem('theme', 'light')`); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1500); await cabinetIdle()
   ok('reduced motion: cabinet renders and settles', (await items()).length === 3)
@@ -561,6 +666,14 @@ if (MODE === 'fallback') {
   ok('shelf: 13 medicines sit as 13 capsules on rows of shelves', (await js(`document.querySelectorAll('[data-shelf-item]').length`)) === 13 && shelfRows >= 4, String(shelfRows))
   ok('shelf: flagged batches show the flagged state, first on the shelf', (await shelf()).startsWith('SR-13:flagged,R01GL2523:flagged,DEMO-RT1:retracted') && (await js(`document.querySelector('[data-shelf-summary]')?.dataset.shelfSummary`)) === 'flagged' && (await js(`document.querySelector('[data-shelf-counts]')?.innerText || ''`)).includes('2 flagged') && (await js(`document.querySelector('[data-shelf] [data-sentinel]')?.dataset.state`)) === 'flagged', await shelf())
   ok('shelf: no green anywhere on the shelf', (await shelfGreen()) === false)
+  { // fcfix: idle cost. The eye pauses off-screen; flagged capsules glow three times, then rest.
+    await js(`window.scrollTo(0, document.documentElement.scrollHeight)`); await wait(600)
+    const off = await js(`(() => { const e = document.querySelector('[data-shelf] [data-sentinel]'); return e.hasAttribute('data-paused') + ':' + getComputedStyle(e.querySelector('.s-ring')).animationPlayState + ':' + getComputedStyle(e, '::before').animationPlayState })()`)
+    await js(`window.scrollTo(0, 0)`); await wait(600)
+    const on = await js(`document.querySelector('[data-shelf] [data-sentinel]').hasAttribute('data-paused')`)
+    ok('sentinel: paused (data-paused, animations held) while off-screen, running again on screen', off === 'true:paused:paused' && on === false, `${off} → ${on}`)
+    ok('shelf: the flagged glow runs 3 cycles, not forever', (await js(`getComputedStyle(document.querySelector('[data-shelf-state="flagged"] .cab-pill')).animationIterationCount`)) === '3')
+  }
   ok('shelf: fits 360 with no horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const u = document.querySelector('[data-shelf] ul'); return u.scrollWidth <= u.clientWidth + 1 })()`)))
   await js(`document.querySelector('[data-shelf]').scrollIntoView({ block: 'start' }); window.scrollBy(0, -12)`); await shot('cabinet-360-dark-shelf')
   await js(`document.querySelector('[data-shelf-batch="R01GL2523"] button').click()`); await wait(900)
@@ -593,6 +706,7 @@ if (MODE === 'mock' || MODE === 'live') {
   if (MODE === 'mock') {
     ok('high-severity list shows API items, severity 4+ only', (await body()).includes('2 active') && (await body()).includes('Example Tabs') && !(await body()).includes('Low Severity Tabs'))
     ok('Child Shield uses peds filter', /1 active right now\./.test(await body()))
+    globalThis.__noticesFrom = requests.length
   }
   await shot(`${MODE}-desktop-home`)
   await typeBatch('SR-13')
@@ -649,8 +763,10 @@ if (MODE === 'mock' || MODE === 'live') {
     await typeBatch('5R-13'); ok('API look-alike → Did you mean, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
     await typeBatch('(N)25567'); ok('API: (N)25567 is sent to the API, not rejected as unreadable', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && requests.some(u => u.includes('/v1/check?batch=(N)25567') || u.includes('/v1/check?batch=%28N%2925567')))
     await typeBatch('ZZ-404'); ok('API no-alert labelled + not a safety certificate', (await body()).includes('This is not a safety certificate') && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'api')
+    { const n = requests.slice(globalThis.__noticesFrom).filter(u => u.includes('/v1/notices')).length; ok('network: GET /v1/notices is read once for a run of checks (session cache)', n === 1, String(n)) }
     await vp(360, 800, true); await fresh(true); await click('Skip'); await wait(600); await typeBatch('SR-13'); await js(`document.querySelector('section[data-state]').scrollIntoView({block:'start'})`)
     ok('mock: no horizontal overflow at 360 with timeline', (await js(`document.documentElement.scrollWidth`)) <= 360)
+    ok('mock 360: on-chain proof is one line, "Live on Arkiv · View proof"', (await js(`document.querySelector('section[data-state] [data-proof-line]')?.dataset.proofLine`)) === 'published' && /Live on Arkiv\s*View proof/.test(await js(`document.querySelector('[data-proof-line]')?.innerText || ''`)))
     await shot('mock-mobile-dark-timeline')
     await clickHas('How do we know'); await wait(900)
     ok('mock: proof drawer fits 360', (await js(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.scrollWidth <= d.clientWidth + 1 })()`)))
@@ -719,7 +835,13 @@ if (MODE === 'mock' || MODE === 'live') {
   } else ok('feed pulse: drawn from the site snapshot next to the API list', false)
   const allCount = await feedCount(); const firstRows = await feedRows()
   ok('feed: first page has rows and a count', firstRows > 0 && /^[\d,]+ alerts?/.test(allCount), `${firstRows} rows · ${allCount}`)
-  ok('feed: rows with an entity key carry a Live on Arkiv badge', (await js(`document.querySelectorAll('[data-live-arkiv]').length`)) === firstRows)
+  ok('feed: rows with an entity key carry a labelled Live on Arkiv dot', (await js(`document.querySelectorAll('[data-live-arkiv][aria-label="Live on Arkiv"]').length`)) === firstRows && (await js(`!!document.querySelector('[data-feed-onchain-key]')`)))
+  { // fcfix: at 390 the name gets the row's width (two lines allowed); the on-chain status is a small dot.
+    await vp(390, 844, false); await wait(400)
+    const rowCheck = await js(`(() => { const rows = [...document.querySelectorAll('[data-alert-row]')]; const bad = rows.filter(r => { const n = r.querySelector('[data-row-name]'); const d = r.querySelector('[data-live-arkiv]'); return !n || n.scrollHeight > n.clientHeight + 1 || n.scrollWidth > n.clientWidth + 1 || (d && d.getBoundingClientRect().width > 12) || /live on arkiv/i.test(r.innerText) }); return rows.length + ':' + bad.length })()`)
+    ok('feed: at 390 row names are not truncated by a badge', rowCheck.endsWith(':0') && !rowCheck.startsWith('0:'), rowCheck)
+    await vp(1440, 1000, false); await wait(300)
+  }
   if (MODE === 'mock') ok('feed: first page is 20 of 43', firstRows === 20 && allCount.startsWith('43 alerts') && (await body()).includes('Showing 20 of 43'))
   if (await js(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Load more alerts')`)) {
     await click('Load more alerts'); await waitFor(`![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true')`); await wait(300)
@@ -765,7 +887,7 @@ if (MODE === 'mock' || MODE === 'live') {
 // ---- More › Sources from the API (mock)
 if (MODE === 'mock') {
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
-  await navTo('More'); await waitFor(`['api','static'].includes(document.querySelector('[data-sources-from]')?.dataset.sourcesFrom)`)
+  await navTo('How it works'); await waitFor(`['api','static'].includes(document.querySelector('[data-sources-from]')?.dataset.sourcesFrom)`)
   ok('more: sources come live from GET /v1/sources', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'api' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 2)
   ok('more: API source shows its last run; disabled one its reason', (await js(`document.querySelector('[data-source-row="cdsco-online"]').innerText`)).includes('Last run 5 min ago') && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('refuses connections from outside India'))
   await waitFor(`document.querySelector('[data-stat="alerts"]')?.getAttribute('aria-busy') !== 'true'`, 8000)
@@ -815,6 +937,27 @@ if (MODE === 'mock') {
   await wait(300)
   ok('offline: indicator clears when back online', !(await js(`!!document.querySelector('[data-offline-indicator]')`)))
 
+  // Every page load reads the snapshot once: the idle load, the Home lists and checks share one request.
+  for (const path of ['', 'cabinet', 'arkiv']) {
+    const from = requests.length
+    await send('Page.navigate', { url: URL + path }); await wait(5000)
+    const n = requests.slice(from).filter(u => u.includes('/v1/snapshot')).length
+    ok(`network: /v1/snapshot is fetched once on the ${path || 'home'} page load`, n === 1, String(n))
+  }
+  // Home lists medicines only, even when the server ignores ?productClass (as this mock does).
+  {
+    const plain = mockResponse
+    const extra = [{ ...MOCK_ALERTS[0], rid: 'r-kt', batch: 'KT-1', batchKey: 'kt1', brand: 'KT Kids Cleansing Shampoo', product: 'KT Kids Cleansing Shampoo', form: 'other', productClass: 'cosmetic', alertYm: 202511 }, { ...MOCK_ALERTS[0], rid: 'r-hr', batch: 'HR-9', batchKey: 'hr9', brand: 'Kids Hand Rub', product: 'Kids Hand Rub', generic: null, form: 'solution', alertYm: 202511 }]
+    mockResponse = url => { const r = plain(url); return new globalThis.URL(url).pathname === '/v1/alerts' && r ? { items: [...extra, ...r.items], total: r.total + extra.length } : r }
+    await js(`sessionStorage.clear()`); await send('Page.navigate', { url: URL }); await wait(1500); await settle(); await wait(500)
+    const kids = await js(`[...document.querySelectorAll('[data-child-list] li')].map(l => l.innerText).join(' | ')`)
+    const severe = await js(`[...document.querySelectorAll('[aria-label="High-severity alerts"] li')].map(l => l.innerText).join(' | ')`)
+    ok('Child Shield: the list holds medicines only (no kids shampoo or hand rub)', kids.includes('COLDRIF') && !/shampoo|hand rub/i.test(kids), kids)
+    ok('High-severity alerts: no cosmetics or hygiene products', severe.includes('COLDRIF') && !/shampoo|hand rub/i.test(severe), severe)
+    ok('Home asks the API for medicines only', requests.some(u => u.includes('/v1/alerts') && u.includes('productClass=medicine')))
+    await shot('mock-home-medicines-only')
+    mockResponse = plain
+  }
   // Leave no snapshot or cached lists behind for the blocks that follow.
   mock.snapshot = false
   await js(`new Promise(r => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
@@ -1018,6 +1161,26 @@ const arkivRows = () => js(`document.querySelectorAll('[data-entity-row]').lengt
 const arkivQuery = () => js(`document.querySelector('[data-query-panel]')?.dataset.query || ''`)
 const setField = async (id, v, proto = 'HTMLSelectElement', ev = 'change') => { await js(`(() => { const s = document.getElementById(${JSON.stringify(id)}); const set = Object.getOwnPropertyDescriptor(${proto}.prototype, 'value').set; set.call(s, ${JSON.stringify(v)}); s.dispatchEvent(new Event(${JSON.stringify(ev)}, { bubbles: true })) })()`); await arkivIdle() }
 const noHScroll = () => js(`document.documentElement.scrollWidth <= window.innerWidth + 1`)
+const HERO = `document.querySelector('[data-arkiv-hero] .sh-root')`
+/** The particle hero renders only while on screen: scrolled away it is paused and draws no frames. */
+const heroPauseCheck = async (label) => {
+  await waitFor(`['on', 'off'].includes(${HERO}?.dataset.gl) || ${HERO}?.dataset.loop === 'paused'`, 10000)
+  const gl = await js(`${HERO}?.dataset.gl || 'pending'`)
+  if (gl === 'off') { ok(`${label}: no fast WebGL here, so the still mark shows and no loop runs`, (await js(`${HERO}.dataset.loop`)) === 'off' && !!(await js(`${HERO}.dataset.glReason`)), await js(`${HERO}.dataset.glReason`)); return }
+  await js(`document.getElementById('arkiv-results').scrollIntoView()`); await wait(700)
+  const f0 = await js(`${HERO}.sculptureFrames`)
+  await js(`window.__rafN = 0; window.__rafOrig ||= window.requestAnimationFrame; window.requestAnimationFrame = (cb) => { window.__rafN++; return window.__rafOrig.call(window, cb) }`)
+  await wait(1500)
+  const f1 = await js(`${HERO}.sculptureFrames`); const rafN = await js(`window.__rafN`)
+  ok(`${label}: hero loop pauses off screen (no frames, no rAF)`, (await js(`${HERO}.dataset.loop`)) === 'paused' && f0 === f1 && rafN === 0, `loop=${await js(`${HERO}.dataset.loop`)} frames ${f0}→${f1} rAF ${rafN}`)
+  await js(`window.scrollTo(0, 0)`); await wait(400)
+  const box = await js(`(() => { const r = ${HERO}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height * 0.3 } })()`)
+  for (let i = 0; i < 6; i++) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x - 60 + i * 20, y: box.y + i * 4 })
+  await wait(300)
+  const f2 = await js(`${HERO}.sculptureFrames`)
+  ok(`${label}: back on screen, the hero renders again on pointer movement`, f2 > f1, `frames ${f1}→${f2}`)
+  await js(`window.requestAnimationFrame = window.__rafOrig`)
+}
 
 if (MODE === 'mock') {
   const base = mockResponse
@@ -1028,8 +1191,22 @@ if (MODE === 'mock') {
   await waitFor(`document.querySelector('[data-overview]')?.dataset.overview === 'ready'`, 20000); await arkivIdle()
   ok('arkiv: overview renders live counts from GET /v1/arkiv/summary', (await js(`document.querySelector('[data-count="alert"]')?.innerText`)) === '1,404' && (await js(`document.querySelector('[data-count="notice"]')?.innerText`)) === '21' && (await js(`document.querySelector('[data-count="peds"]')?.innerText`)) === '19')
   ok('arkiv: header shows publisher, project tag, latest block and Live', (await js(`document.querySelector('[data-arkiv-header] [data-publisher]')?.innerText`)) === BUILD_PUBLISHER && (await js(`document.querySelector('[data-latest-block]')?.innerText`)) === '#727733' && (await js(`document.querySelector('[data-live]')?.dataset.live`)) === 'live')
-  ok('arkiv: nav rail has Arkiv marked current', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.textContent.trim()).join()`)) === 'Arkiv')
+  ok('arkiv: nav rail has On-chain marked current', (await js(`[...document.querySelectorAll('nav[aria-label="Main navigation"] a[aria-current="page"]')].map(a => a.dataset.label).join()`)) === 'On-chain')
   ok('arkiv: first page of alerts via the API (25 rows)', (await arkivRows()) === 25 && (await resultsKind()) === 'ok')
+  ok('arkiv: overview says what it counts (entities at a block) and why it can exceed the alert count', (await js(`document.querySelector('[data-entities-caption]')?.innerText.replace(/\\s+/g, ' ').trim()`)) === 'Entities on Arkiv · at block #727733' && /merges a duplicate.*read-only/.test(await js(`document.querySelector('[data-count-note]')?.innerText || ''`)))
+  {
+    const row = await js(`document.querySelector('[data-entity-row]')?.innerText || ''`)
+    ok('arkiv: rows label the two expiries apart (batch expiry vs life on Arkiv)', row.includes('Batch expiry Dec 2027') && row.includes('On Arkiv until ~Jan 2027') && !/\bexp Dec|expires ~/.test(row), row.replace(/\n/g, ' | '))
+    ok('arkiv: category chips are plain words, not raw tags', row.includes('Not of standard quality') && !/\bnsq\b/.test(row))
+  }
+  ok('arkiv: type-tab counts and filter key hints use muted text, no opacity', (await js(`[...document.querySelectorAll('[data-type-tab] span.font-mono, [data-filter-panel] label code, [data-filter-panel] legend code')].every(e => !/opacity-/.test(e.className))`)))
+  {
+    const small = await js(`[...document.querySelectorAll('[aria-label="Refresh counts"], [data-arkiv-directory] button[aria-label^="Copy"], [data-arkiv-directory] a[aria-label^="Open"], [data-arkiv-hero] .sh-credit, [data-arkiv-hero] .sh-txt')].filter(e => e.offsetParent).map(e => { const r = e.getBoundingClientRect(); return [e.getAttribute('aria-label') || e.textContent.trim(), Math.round(r.width), Math.round(r.height)] }).filter(([, w, h]) => w < 44 || h < 44)`)
+    ok('arkiv: refresh, copy, explorer, "See the query" and the credit are 44px targets', small.length === 0, JSON.stringify(small))
+  }
+  ok('arkiv: hero credit stays visible and links to its author', await js(`(() => { const a = document.querySelector('[data-arkiv-hero] .sh-credit'); return !!a && a.href.startsWith('https://guglielmogiannattasio.it') && a.offsetParent !== null && getComputedStyle(a).opacity > 0.5 })()`))
+  ok('arkiv: desktop hint reads "Move across the mark"', (await js(`(() => { const m = document.querySelector('[data-sh-hint] .sh-hint-mouse'); return m && getComputedStyle(m).display !== 'none' ? m.textContent : '' })()`)) === 'Move across the mark')
+  await heroPauseCheck('arkiv')
   const q0 = await arkivQuery()
   ok('arkiv: query string pins project, type and publisher', q0 === `project = str('nazar-in-batch-alerts') AND t = str('alert') AND $creator = addr(${BUILD_PUBLISHER})`, q0)
   await arkivShot('desktop-overview')
@@ -1059,8 +1236,10 @@ if (MODE === 'mock') {
   ok('arkiv: drawer shows flags and the creator check', (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Official Nazar publisher') && (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Read-only') && (await js(`document.querySelector('[data-entity-flags]').innerText`)).includes('Anyone can keep alive'))
   ok('arkiv: drawer links the entity to the explorer', (await js(`document.querySelector('[data-entity-drawer] a[href*="/entity/"]')?.href || ''`)) === `https://tiramisu.explorer.arkiv.network/entity/${ARKIV_ALERTS[0].key}`)
   await arkivShot('desktop-drawer')
+  ok('arkiv: drawer title is product and batch, the entity hash below it', (await js(`document.querySelector('[data-entity-title]')?.innerText`)) === 'Paracip 0 Tablets IP 500 mg · Batch AK1000' && /^0x616c65…[0-9a-f]{6}$/.test(await js(`document.querySelector('[data-entity-hash]')?.innerText || ''`)), await js(`document.querySelector('[data-entity-hash]')?.innerText`))
   await escape()
   ok('arkiv: Escape closes the drawer', !(await js(`!!document.querySelector('[data-entity-drawer]')`)))
+  ok('arkiv: closing the drawer puts focus back on the row that opened it', (await js(`document.activeElement?.closest('[data-entity-row]')?.dataset.entityRow || document.activeElement?.tagName`)) === ARKIV_ALERTS[0].key, await js(`document.activeElement?.tagName`))
 
   await js(`document.querySelector('[data-type-tab="notice"]').click()`); await arkivIdle()
   ok('arkiv: Notices tab lists notices with t = notice', (await arkivRows()) === 3 && (await arkivQuery()).includes("t = str('notice')") && (await js('location.search')) === '?type=notice')
@@ -1083,16 +1262,23 @@ if (MODE === 'mock') {
   await js(`document.querySelector('[data-mode="api"]').click()`); await arkivIdle()
   ok('arkiv: back to the API mode', (await arkivRows()) === 25 && !(await js('location.search')).includes('via='))
 
-  // Phone, dark: four-item bottom nav, Arkiv reachable from More, no sideways scroll.
+  // Phone, dark: five-item bottom nav, Arkiv reachable from More, no sideways scroll.
   await vp(360, 780, true); await openArkiv(true, '?sevMin=5&sevMax=5')
   await waitFor(`document.querySelector('[data-overview]')?.dataset.overview === 'ready'`, 20000); await arkivIdle()
   ok('arkiv 360: filters restored from the URL', (await arkivQuery()).includes('sev = i32(5)') && (await js(`document.getElementById('f-sev-min').value`)) === '5')
   ok('arkiv 360: no horizontal scroll', await noHScroll(), String(await js('document.documentElement.scrollWidth')))
-  ok('arkiv 360: bottom nav keeps four items', (await js(`document.querySelectorAll('nav[aria-label="Mobile navigation"] a').length`)) === 4)
+  ok('arkiv 360: bottom nav has five items (Arkiv stays in More)', (await js(`[...document.querySelectorAll('nav[aria-label="Mobile navigation"] a')].map(a => a.textContent.trim()).join()`)) === 'Check,Alerts,Cabinet,AI,More')
   const firstRowY = await js(`Math.round(document.querySelector('[data-entity-row]').getBoundingClientRect().top + scrollY)`)
   ok('arkiv 360: filters and the query fold away on phones, with a jump link to the entities', (await js(`document.querySelector('[data-filter-toggle]')?.getAttribute('aria-expanded')`)) === 'false' && (await js(`document.getElementById('f-sev-min').offsetParent === null && document.querySelector('[data-query-toggle]')?.getAttribute('aria-expanded') === 'false' && !!document.querySelector('[data-jump-entities]')?.offsetParent`)), 'first entity at ' + firstRowY + 'px')
   ok('arkiv 360: the first screen has a one-tap way to the entities (hero "Browse entities")', await js(`(() => { const a = [...document.querySelectorAll('[data-arkiv-hero] a')].find(x => x.textContent.includes('Browse entities')); if (!a) return false; const r = a.getBoundingClientRect(); return a.getAttribute('href') === '#arkiv-results' && r.top + scrollY < 780 && r.height >= 44 })()`))
   ok('arkiv 360: hero headline and the three-step explainer render', await js(`(() => { const h = document.querySelector('[data-arkiv-hero]'); return !!h && /Every alert/.test(h.innerText) && h.querySelectorAll('ol li').length === 3 })()`))
+  ok('arkiv 360: the four breakdowns fold behind "See breakdowns"; tiles and severity stay', (await js(`document.querySelector('[data-breakdowns]').offsetParent === null && document.querySelector('[data-breakdown-toggle]')?.getAttribute('aria-expanded') === 'false' && /See breakdowns/.test(document.querySelector('[data-breakdown-toggle]').innerText)`)) && (await js(`!!document.querySelector('[data-count="alert"]').offsetParent && !!document.getElementById('ov-sev').offsetParent`)))
+  await js(`document.querySelector('[data-breakdown-toggle]').click()`); await wait(300)
+  ok('arkiv 360: "See breakdowns" opens them', (await js(`document.querySelector('[data-breakdowns]').offsetParent !== null && document.querySelectorAll('[data-breakdown]').length === 4 && document.querySelector('[data-breakdown-toggle]').getAttribute('aria-expanded') === 'true'`)))
+  await js(`document.querySelector('[data-breakdown-toggle]').click()`); await wait(200)
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await wait(200)
+  ok('arkiv 360: on a touch screen the hint says "Drag across the mark", never "Move across"', (await js(`(() => { const t = document.querySelector('[data-sh-hint] .sh-hint-touch'), m = document.querySelector('[data-sh-hint] .sh-hint-mouse'); return t && getComputedStyle(t).display !== 'none' && getComputedStyle(m).display === 'none' ? t.textContent : '' })()`)) === 'Drag across the mark')
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
   await js(`document.querySelector('[data-filter-toggle]').click()`); await wait(200)
   ok('arkiv 360: Show opens the filters', (await js(`document.getElementById('f-sev-min').offsetParent !== null && document.querySelector('[data-filter-toggle]').getAttribute('aria-expanded') === 'true'`)))
   await arkivShot('360-dark-overview')
@@ -1100,6 +1286,7 @@ if (MODE === 'mock') {
   await arkivShot('360-dark-results')
   await js(`window.scrollTo(0, document.querySelector('[data-results]').getBoundingClientRect().top + scrollY - 80)`); await wait(300)
   await arkivShot('360-dark-rows')
+  ok('arkiv 360: an alert row stays compact (chips use the full width)', await js(`(() => { const r = document.querySelector('[data-entity-row]').getBoundingClientRect(); return r.height <= 210 })()`), String(await js(`Math.round(document.querySelector('[data-entity-row]').getBoundingClientRect().height)`)))
   await js(`document.querySelector('[data-entity-row] button').click()`); await waitFor(`!!document.querySelector('[data-entity-drawer]')`); await wait(700)
   ok('arkiv 360: drawer fits the screen', await js(`(() => { const r = document.querySelector('[data-entity-drawer]').getBoundingClientRect(); return r.width <= 361 && r.left >= -1 })()`))
   await arkivShot('360-dark-drawer')
@@ -1118,6 +1305,15 @@ if (MODE === 'fallback') {
   const kind = await resultsKind()
   ok('arkiv fallback: results settle into an empty or rate-limit state, never a spinner', kind === 'error' || (kind === 'ok' && (await js(`!!document.querySelector('[data-results-empty]')`))), String(kind))
   ok('arkiv fallback: query panel still shows the query', (await arkivQuery()).startsWith("project = str('nazar-in-batch-alerts') AND t = str('alert')"))
+  await heroPauseCheck('arkiv fallback')
+  {
+    // A software renderer (SwiftShader, llvmpipe) gets the still mark, not a 1 fps particle field.
+    const fake = (await send('Page.addScriptToEvaluateOnNewDocument', { source: `{ const g = WebGL2RenderingContext.prototype.getParameter; WebGL2RenderingContext.prototype.getParameter = function (p) { return p === 0x9246 || p === 0x1F01 ? 'Google SwiftShader' : g.call(this, p) } }` })).result?.identifier
+    await send('Page.reload'); await wait(1500)
+    await waitFor(`${HERO}?.dataset.gl === 'off'`, 8000)
+    ok('arkiv fallback: a software WebGL renderer falls back to the still mark', (await js(`${HERO}?.dataset.gl`)) === 'off' && (await js(`${HERO}.dataset.glReason`)) === 'software' && (await js(`(() => { const i = document.querySelector('[data-arkiv-hero] .sh-fallback'); const c = getComputedStyle(i); return c.visibility === 'visible' && c.opacity === '1' && i.getBoundingClientRect().width > 100 && !document.querySelector('[data-arkiv-hero] canvas') })()`)), await js(`${HERO}?.dataset.glReason`))
+    await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: fake })
+  }
   await arkivShot('fallback-desktop')
 }
 // ======== end Arkiv directory ========
@@ -1200,7 +1396,8 @@ if (MODE === 'fallback') {
   ok('saved copy: home lists come from the saved copy, not demo data', lists.includes('snapshot') && !lists.includes('demo') && !(await body()).includes('3 active'), lists)
   await typeBatch('SR-13')
   ok('saved copy: SR-13 is flagged from the saved copy (Sresan)', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged' && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'snapshot' && (await body()).includes('Sresan Pharmaceutical'))
-  ok("saved copy: the proof says it came from the saved copy, not that it is confirming forever", (await js(`!!document.querySelector('[data-proof-saved]') && !document.querySelector('[data-proof-pending]')`)))
+  // At 390 the proof is one line (data-proof-line); from md up it is the full block (data-proof-saved).
+  ok("saved copy: the proof says it came from the saved copy, not that it is confirming forever", (await js(`(!!document.querySelector('[data-proof-saved]') || document.querySelector('[data-proof-line]')?.dataset.proofLine === 'saved') && !document.querySelector('[data-proof-pending], [data-proof-line="pending"]') && /saved copy/.test(document.querySelector('[data-proof-line], [data-proof-saved]')?.innerText || '')`)))
   await typeBatch('TG25-2281A')
   ok('saved copy: a real CDSCO batch (TG25-2281A, Levcon-M) is flagged without any live source', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged' && (await body()).includes('Levcon-M'))
   await typeBatch('DEMO-RT1')
@@ -1215,6 +1412,11 @@ if (MODE === 'fallback') {
     ok('feed pulse: renders from the snapshot with its date', (await waitFor(`!!${P}`, 8000)) && Number(await js(`${P}.dataset.pulseTotal`)) === facts.total && /as of \d{1,2} \w{3} \d{4}/.test(await js(`${P}.innerText`)), `${await js(`${P}?.dataset.pulseTotal`)} vs ${facts.total}`)
     ok('feed pulse: compact on a phone, map behind "Show the map"', (await js(`getComputedStyle(document.getElementById('pulse-body')).display`)) === 'none' && (await js(`document.querySelector('[data-pulse-toggle]').getAttribute('aria-expanded')`)) === 'false')
     await js(`document.querySelector('[data-pulse-toggle]').click()`); await wait(400)
+    { // fcfix: WCAG 2.5.8 targets. Tiles are 44px or more on a phone, and the page does not scroll sideways.
+      const t = await js(`(() => { const r = [...document.querySelectorAll('[data-pulse-tile]')].map(b => b.getBoundingClientRect()); return Math.floor(Math.min(...r.map(x => Math.min(x.width, x.height)))) })()`)
+      ok('feed pulse: map tiles are at least 44px at 390, with no page overflow', (await js(`innerWidth`)) === 390 && t >= 44 && (await js(`document.documentElement.scrollWidth`)) <= 390, String(t))
+      ok("feed pulse: the count says it is Nazar's ledger, as of a time in IST", /^[\d,]+ alerts? in Nazar's ledger · as of \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}\s?[ap]m IST$/i.test((await js(`document.querySelector('[data-pulse-source]')?.innerText || ''`)).trim()), await js(`document.querySelector('[data-pulse-source]')?.innerText`))
+    }
     ok('feed pulse: "Show the map" opens it', (await js(`getComputedStyle(document.getElementById('pulse-body')).display`)) !== 'none' && (await js(`document.querySelector('[data-pulse-toggle]').getAttribute('aria-expanded')`)) === 'true')
     ok('feed pulse: every state tile is a labelled button; the map group and a text summary are labelled', (await js(`(() => { const t = [...document.querySelectorAll('[data-pulse-tile]')]; return t.length === 36 && t.every(b => b.tagName === 'BUTTON' && /^.+: [\\d,]+ alerts?/.test(b.getAttribute('aria-label'))) })()`)) && (await js(`!!document.querySelector('[data-feed-pulse] [role="group"][aria-label]')`)) && (await js(`[...document.querySelectorAll('[data-feed-pulse] .sr-only')].some(e => e.textContent.includes("From Nazar's snapshot"))`)))
     const tnLabel = await js(`document.querySelector('[data-pulse-tile="IN-TN"]').getAttribute('aria-label')`)

@@ -8,12 +8,11 @@ import { copy } from '@/components/nazar/result-card'
 import { explorerAddress } from '@/lib/source'
 import { attr, isOfficial, type DirectoryEntity } from '@/lib/source/directory'
 import { cn } from '@/lib/utils'
-import { blk, Chip, CopyButton, ExplorerLink, explorerEntity, shortDate, shortKey } from './shared'
+import { blk, Chip, CopyButton, ExplorerLink, entityTitle, explorerEntity, shortDate, shortKey } from './shared'
 
 // One entity, laid out the way Arkiv stores it: typed attributes (what a query can filter on)
 // beside the JSON payload (display-only detail), with its flags, lifetime and creator check.
-
-const TYPE_TITLE: Record<string, string> = { alert: 'Alert', notice: 'Notice', heartbeat: 'Heartbeat', retraction: 'Retraction' }
+// The title is what a person recognises (product and batch); the entity key sits below it.
 
 function valueText(a: { type: string; value: string | number }) {
   return a.type === 'key' || a.type === 'addr' ? String(a.value) : String(a.value)
@@ -24,11 +23,14 @@ export function EntityDrawer({
   open,
   onOpenChange,
   onNoticeAlerts,
+  returnFocus,
 }: {
   entity: DirectoryEntity | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onNoticeAlerts: (key: string) => void
+  /** Where focus goes when the drawer closes (the row that opened it); Base UI's default otherwise. */
+  returnFocus?: () => HTMLElement | null
 }) {
   if (!entity) return null
   const e = entity
@@ -36,16 +38,24 @@ export function EntityDrawer({
   const json = JSON.stringify(e.payload, null, 2) ?? 'null'
   const noticeKey = e.type === 'alert' ? attr(e, 'notice') : null
   const exp = shortDate(e.expiresAtEstimate)
+  const payload = e.payload && typeof e.payload === 'object' ? (e.payload as Record<string, unknown>) : {}
+  const title = entityTitle(e.type, payload, (n) => attr(e, n))
   return (
     <Drawer open={open} onOpenChange={onOpenChange} swipeDirection="right">
-      <DrawerContent className="h-dvh" style={{ ['--drawer-content-width' as string]: 'min(100vw, 48rem)' }} data-entity-drawer={e.key}>
+      <DrawerContent
+        className="h-dvh"
+        style={{ ['--drawer-content-width' as string]: 'min(100vw, 48rem)' }}
+        data-entity-drawer={e.key}
+        finalFocus={() => returnFocus?.() ?? true}
+      >
         <DrawerHeader className="border-b px-4 pt-4 pb-3 text-left sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] font-bold tracking-[0.16em] text-primary uppercase">Arkiv entity · {e.type}</p>
-              <DrawerTitle className="mt-0.5 text-lg font-semibold tracking-tight">{TYPE_TITLE[e.type] ?? 'Entity'} {shortKey(e.key)}</DrawerTitle>
+              <DrawerTitle className="mt-0.5 text-lg leading-snug font-semibold tracking-tight break-words" data-entity-title>{title}</DrawerTitle>
+              <p className="mt-0.5 font-mono text-xs text-muted-foreground" data-entity-hash>{shortKey(e.key)}</p>
             </div>
-            <Button variant="ghost" size="icon" className="size-10 shrink-0 rounded-full" onClick={() => onOpenChange(false)} aria-label="Close">
+            <Button variant="ghost" size="icon" className="size-11 shrink-0 rounded-full" onClick={() => onOpenChange(false)} aria-label="Close">
               <X className="size-5" />
             </Button>
           </div>
@@ -164,7 +174,7 @@ export function EntityDrawer({
                   <h3 id="payload-title" className="text-sm font-semibold">Payload <span className="font-normal text-muted-foreground">· display only</span></h3>
                   <p className="mt-0.5 text-xs text-muted-foreground">JSON stored with the entity. Not queryable.</p>
                 </div>
-                <Button variant="ghost" className="h-9 px-2.5 text-xs" onClick={() => copy(json, 'Payload')} aria-label="Copy payload JSON">
+                <Button variant="ghost" className="h-11 px-3 text-xs" onClick={() => copy(json, 'Payload')} aria-label="Copy payload JSON">
                   <Copy /> Copy
                 </Button>
               </div>

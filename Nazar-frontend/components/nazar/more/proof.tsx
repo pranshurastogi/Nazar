@@ -78,7 +78,7 @@ export function Proof() {
         </div>
       </dl>
 
-      <h4 className="mt-10 text-base font-semibold tracking-tight">What Nazar writes, and how long it lives</h4>
+      <h3 className="mt-10 text-base font-semibold tracking-tight">What Nazar writes, and how long it lives</h3>
       <div className={cn(panel, 'mt-3 overflow-hidden')}>
         <table className="w-full text-left text-[13px]">
           <caption className="sr-only">Arkiv entity types and lifetimes</caption>
@@ -108,7 +108,7 @@ export function Proof() {
         <span>Alerts and notices are read-only, so nobody can edit them. Alerts can be kept alive by anyone while the batch may still be on shelves.</span>
       </p>
 
-      <h4 className="mt-10 text-base font-semibold tracking-tight">Or read Arkiv from your own code</h4>
+      <h3 className="mt-10 text-base font-semibold tracking-tight">Or read Arkiv from your own code</h3>
       <div className={cn(panel, 'mt-3 overflow-hidden bg-muted/40')}>
         <div className="flex items-center justify-between gap-3 border-b px-4 py-1.5">
           <p className="text-xs font-semibold text-muted-foreground">Look up a batch with the Arkiv SDK</p>

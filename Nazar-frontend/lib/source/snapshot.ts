@@ -1,6 +1,6 @@
 import { apiLikelyDown } from './api'
 import { API_URL } from './config'
-import { fromDto, type AlertDTO } from './map'
+import { fromDto, newestFirst, type AlertDTO } from './map'
 import { confusionKey, matchKey, resolveResult } from './match'
 import { idbGet, idbSet } from './store'
 import type { Alert, CheckResult } from './types'
@@ -107,11 +107,12 @@ function toDto(key: string, r: Row, i: number, notices: SnapshotFile['notices'])
 }
 
 /** Filters for lists read from the snapshot (Home, Feed) when no live source answers. */
-export type SnapshotListFilter = { minSeverity?: number; peds?: boolean; state?: string; source?: string }
+export type SnapshotListFilter = { minSeverity?: number; peds?: boolean; state?: string; source?: string; productClass?: 'medicine' | 'cosmetic' | 'hygiene' }
 
 /**
- * Every alert in the snapshot as app alerts, newest first: dated before undated, then by month,
- * then by severity. Retractions are left out, as in the live feed.
+ * Every alert in the snapshot as app alerts, newest first in the API's order (see newestFirst):
+ * dated before undated, then by month, medicines first, then by severity. Retractions are left
+ * out, as in the live feed.
  */
 export function snapshotAlerts(f: SnapshotListFilter = {}, s = index): Alert[] {
   if (!s) return []
@@ -123,10 +124,11 @@ export function snapshotAlerts(f: SnapshotListFilter = {}, s = index): Alert[] {
       if (f.peds && r[10] !== 1) return
       if (f.state && r[13] !== f.state) return
       if (f.source && (s.file.notices[r[1]]?.[4] ?? '') !== f.source) return
+      if (f.productClass && (r[21] ?? 'medicine') !== f.productClass) return
       out.push({ ...fromDto(toDto(key, r, i, s.file.notices)), fromSnapshot: true })
     })
   }
-  return out.sort((a, b) => b.noticeOrder - a.noticeOrder || b.severity - a.severity)
+  return out.sort(newestFirst)
 }
 
 /** The loaded snapshot, if any (synchronous, so a check can answer before any await). */
@@ -192,12 +194,16 @@ export function loadSnapshot(): Promise<SnapshotIndex | null> {
     }
     return index
   })().finally(() => {
-    // Allow a later refresh (e.g. when the tab regains focus) to fetch again; straight away if
-    // nothing loaded, so the next check can try again.
-    setTimeout(() => (loading = null), index ? 60_000 : 0)
+    // Every caller in the next few minutes (Home lists, a check, the idle load, a tab coming back
+    // into view) shares this answer instead of fetching again; the file changes once a day. When
+    // nothing loaded, the next caller may try again straight away.
+    setTimeout(() => (loading = null), index ? SNAPSHOT_REFRESH_MS : 0)
   })
   return loading
 }
+
+/** How long a loaded snapshot is reused before a refresh may fetch it again. */
+const SNAPSHOT_REFRESH_MS = 10 * 60 * 1000
 
 /** Starts loading once the page is idle, so the first paint never waits for it. */
 export function scheduleSnapshot() {

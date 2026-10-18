@@ -4,14 +4,17 @@ import { prefetch } from './swr'
 // Cache keys and loaders shared by the tabs and the nav prefetch, so hovering "Feed" warms
 // exactly the entry the Feed tab reads first. Demo answers are never cached.
 
+// Versioned so a list cached before the medicines-only filter is not painted first.
 export const HOME_KEYS = {
-  severe: 'alerts:sev4',
-  child: 'alerts:peds',
+  severe: 'alerts:sev4:med',
+  child: 'alerts:peds:med',
 } as const
 
-export const loadSevere = () => loadAlerts({ minSeverity: 4, limit: 20 })
-// Every Child Shield alert, the same set the Feed filter and the Arkiv overview count.
-export const loadChild = () => loadAlerts({ peds: true, limit: 20 })
+// Home lists medicines only: regulators list cosmetics and hand rubs in the same tables, and a
+// shampoo has no place under "High-severity alerts" or Child Shield. Every source answers newest first.
+export const loadSevere = () => loadAlerts({ minSeverity: 4, limit: 20, productClass: 'medicine' })
+/** Children's medicines with an official alert (the Feed's Child Shield filter also lists cosmetics). */
+export const loadChild = () => loadAlerts({ peds: true, limit: 20, productClass: 'medicine' })
 
 export const feedKey = (q: FeedFilters) =>
   `feed:${JSON.stringify([q.minSeverity ?? 0, !!q.peds, q.state ?? '', q.source ?? ''])}`

@@ -4,7 +4,8 @@
    never green. */
 
 .cab-frame {
-  --row: 112px;
+  /* Tall enough for a two-line name and the batch under the plank. */
+  --row: 126px;
   --plank-y: 58px;
   --plank-top: color-mix(in oklab, var(--muted-foreground) 14%, var(--card));
   --plank-face: color-mix(in oklab, var(--muted-foreground) 34%, var(--card));
@@ -27,7 +28,7 @@
 }
 @media (min-width: 640px) {
   .cab-frame {
-    --row: 124px;
+    --row: 138px;
     --plank-y: 64px;
   }
 }
@@ -144,7 +145,8 @@ button.cab-slot:focus-visible .cab-pill {
     0 0 0 1.5px color-mix(in oklab, var(--flagged) 80%, transparent),
     0 0 20px 1px color-mix(in oklab, var(--flagged) 50%, transparent),
     0 6px 10px -6px color-mix(in oklab, var(--foreground) 45%, transparent);
-  animation: cab-glow 2.4s ease-in-out infinite;
+  /* Three breaths when the shelf draws, then it rests: the colour and icon keep saying it. */
+  animation: cab-glow 2.4s ease-in-out 3 both;
 }
 .cab-pill[data-tone='retracted'],
 .cab-pill[data-tone='unreadable'] {
@@ -323,10 +325,13 @@ button.cab-slot:hover .cab-contact {
   text-align: center;
 }
 .cab-tag-name {
+  display: -webkit-box;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;

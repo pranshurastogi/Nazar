@@ -106,7 +106,7 @@ export function QueryPanel({
             </button>
           ))}
         </div>
-        <Button variant="ghost" className="h-9 px-2.5 text-xs" onClick={() => copy(text, tab === 'query' ? 'Query' : 'SDK snippet')} aria-label={tab === 'query' ? 'Copy query string' : 'Copy SDK snippet'}>
+        <Button variant="ghost" className="h-11 px-3 text-xs" onClick={() => copy(text, tab === 'query' ? 'Query' : 'SDK snippet')} aria-label={tab === 'query' ? 'Copy query string' : 'Copy SDK snippet'}>
           <Copy /> Copy
         </Button>
       </div>

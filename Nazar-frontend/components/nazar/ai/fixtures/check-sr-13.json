@@ -1,0 +1,122 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "FLAGGED: batch SR-13 is named in 2 official regulator alert(s) (as of 2026-10-18 11:52 UTC).\n- COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate) (batch SR-13) | Sresan Pharmaceutical | Adulterated: Contaminated: 48.6% w/v DEG | severity 5/5, Child Shield | WHO, \"WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines\" (2025-10-13) https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7 | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54\n- Paracetamol, Chlorpheniramine Maleate, Phenylephrine and Sodium Citrate Syrup (COLDRIF) (batch SR-13) | Sresan Pharmaceutical | Adulterated: Contaminated with diethylene glycol (DEG): 48.6% w/v, as reported by CDSCO | severity 5/5, Child Shield | WHO / CDSCO, \"WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines identified in India (diethylene glycol)\" (2025-10-13) https://www.who.int/news/item/13-10-2025-medical-product-alert-n5-2025 | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x13684cf7294dd7cf127818271db94fd570d932c61c5c74314b1217ffdadf8d3f\nConfirm the brand and manufacturer on the pack match. If they do: stop using it, keep the pack, return it to the chemist, and see a doctor if it was taken."
+    }
+  ],
+  "structuredContent": {
+    "state": "flagged",
+    "batch": "SR-13",
+    "asOf": "2026-10-18T11:52:36.341Z",
+    "answeredFrom": "ledger",
+    "alerts": [
+      {
+        "batch": "SR-13",
+        "brand": "COLDRIF",
+        "product": "COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate)",
+        "generic": "paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate",
+        "form": "other",
+        "manufacturer": "Sresan Pharmaceutical",
+        "manufacturerNote": null,
+        "category": "adulterated",
+        "categoryLabel": "Adulterated",
+        "failures": [
+          "Contaminated with a toxic glycol (DEG/EG)"
+        ],
+        "reason": "Contaminated: 48.6% w/v DEG",
+        "severity": 5,
+        "severityRules": [
+          "Adulterated with a toxic glycol: base 5",
+          "Paediatric formulation: +1 (capped at 5)"
+        ],
+        "paediatric": true,
+        "childShield": true,
+        "madeIn": "IN-TN",
+        "mfg": "2025-05",
+        "expiry": "2027-04",
+        "alertMonth": "2025-10",
+        "retracted": false,
+        "regulator": {
+          "authority": "WHO",
+          "sourceId": "who-mpa",
+          "jurisdiction": "IN"
+        },
+        "notice": {
+          "title": "WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines",
+          "date": "2025-10-13",
+          "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7",
+          "sha256": "353dbcd674192bfee9f3621b073d5116cdb89cc78204aa23d6c6f9fb9d1e7a96"
+        },
+        "arkiv": {
+          "entityKey": "0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54",
+          "explorer": "https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54",
+          "tx": null,
+          "creator": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2"
+        },
+        "caseId": "c423b4c5912fb05b9bcc5196",
+        "rid": "e82eac9b0bb3b68ea4bcab07",
+        "extraction": {
+          "method": "text",
+          "confidence": 1,
+          "tier": "auto"
+        }
+      },
+      {
+        "batch": "SR-13",
+        "brand": "COLDRIF",
+        "product": "Paracetamol, Chlorpheniramine Maleate, Phenylephrine and Sodium Citrate Syrup (COLDRIF)",
+        "generic": "Paracetamol, Chlorpheniramine Maleate, Phenylephrine and Sodium Citrate Syrup",
+        "form": "syrup",
+        "manufacturer": "Sresan Pharmaceutical",
+        "manufacturerNote": null,
+        "category": "adulterated",
+        "categoryLabel": "Adulterated",
+        "failures": [
+          "Contaminated with a toxic glycol (DEG/EG)"
+        ],
+        "reason": "Contaminated with diethylene glycol (DEG): 48.6% w/v, as reported by CDSCO",
+        "severity": 5,
+        "severityRules": [
+          "Adulterated with a toxic glycol: base 5",
+          "Paediatric formulation: +1 (capped at 5)"
+        ],
+        "paediatric": true,
+        "childShield": true,
+        "madeIn": "IN-TN",
+        "mfg": "2025-05",
+        "expiry": "2027-04",
+        "alertMonth": "2025-10",
+        "retracted": false,
+        "regulator": {
+          "authority": "WHO / CDSCO",
+          "sourceId": "curated",
+          "jurisdiction": "IN"
+        },
+        "notice": {
+          "title": "WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines identified in India (diethylene glycol)",
+          "date": "2025-10-13",
+          "url": "https://www.who.int/news/item/13-10-2025-medical-product-alert-n5-2025",
+          "sha256": "f405bfe4a6e55f4cd0b0960e230d9f676530c12c0a8eb3cd16afb5256c5bb512"
+        },
+        "arkiv": {
+          "entityKey": "0x13684cf7294dd7cf127818271db94fd570d932c61c5c74314b1217ffdadf8d3f",
+          "explorer": "https://tiramisu.explorer.arkiv.network/entity/0x13684cf7294dd7cf127818271db94fd570d932c61c5c74314b1217ffdadf8d3f",
+          "tx": null,
+          "creator": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2"
+        },
+        "caseId": "c423b4c5912fb05b9bcc5196",
+        "rid": "f394724f37813d6b6f67334a",
+        "extraction": {
+          "method": "curated",
+          "confidence": 1,
+          "tier": "auto"
+        }
+      }
+    ],
+    "links": {
+      "app": "https://nazar-nu.vercel.app",
+      "arkivDirectory": "https://nazar-nu.vercel.app/arkiv?type=alert&batch=SR-13"
+    }
+  }
+}

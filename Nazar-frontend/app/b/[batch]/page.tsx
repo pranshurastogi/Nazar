@@ -174,7 +174,7 @@ export default async function SharePage({ params }: Props) {
                 {alert && <p className="mt-1 text-sm text-muted-foreground">{alert.brand} · {alert.manufacturer}</p>}
               </div>
             </div>
-            {alert?.peds && r.state === 'flagged' && <ChildShield />}
+            {alert && r.state === 'flagged' && <ChildShield alert={alert} />}
 
             <div className="grid gap-5 bg-card/70 px-5 py-5 sm:px-6">
               {r.state === 'flagged' && alert && (

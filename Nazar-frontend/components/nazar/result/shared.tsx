@@ -25,8 +25,9 @@ export const METHOD_LABEL: Record<string, string> = {
   curated: 'Entered by a curator',
 }
 
+/** "18 Oct, 4:29 pm IST": always Indian time, as on the share page, whatever the device's zone. */
 export const formatAsOf = (d: Date) =>
-  d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+  `${d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST`
 
 export const shorten = (v: string) => (v.length > 16 ? `${v.slice(0, 6)}…${v.slice(-4)}` : v)
 

@@ -52,6 +52,29 @@ export const ym = (v: unknown) => {
   return m >= 1 && m <= 12 ? `${MONTHS[m - 1]} ${Math.floor(n / 100)}` : null
 }
 
+/** "Feb 2027": entity lifetimes are estimates from block times, so a day would be false precision. */
+export const monthYear = (iso: string | null) => {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
+/** The category attribute in plain words ("nsq" → "Not of standard quality"). */
+export const categoryLabel = (cat: string) => CATEGORY_LABEL[cat] ?? cat
+
+/** A readable title for an entity: product and batch for an alert, the title for a notice. */
+export function entityTitle(type: string, payload: Record<string, unknown>, attr: (name: string) => string | number | null) {
+  if (type === 'alert') {
+    const product = String(payload.product ?? attr('brand') ?? 'Alert')
+    const batch = attr('batch_raw') ?? attr('batch')
+    return batch ? `${product} · Batch ${String(batch)}` : product
+  }
+  if (type === 'notice') return String(payload.title ?? 'Regulator notice')
+  if (type === 'heartbeat') return `Pipeline heartbeat · ${String(attr('worker') ?? 'worker')}`
+  if (type === 'retraction') return 'Retraction'
+  return 'Arkiv entity'
+}
+
 export const shortDate = (iso: string | null) => {
   if (!iso) return null
   const d = new Date(iso)
@@ -80,7 +103,8 @@ export function Chip({ children, tone = 'muted', title, className }: { children:
   )
 }
 
-const iconBtn = cn(buttonVariants({ variant: 'outline', size: 'icon' }), 'size-10 shrink-0 rounded-xl text-muted-foreground')
+// 44px: the minimum comfortable touch target
+const iconBtn = cn(buttonVariants({ variant: 'outline', size: 'icon' }), 'size-11 shrink-0 rounded-xl text-muted-foreground')
 
 export function CopyButton({ value, what, className }: { value: string; what: string; className?: string }) {
   return (

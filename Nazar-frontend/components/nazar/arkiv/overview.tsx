@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Activity, Baby, Building2, CalendarCheck, Database, FileText, Fingerprint, Layers, MapPin, MousePointerClick, Pill, RotateCcw, ShieldAlert, Tag, Undo2 } from 'lucide-react'
+import { Activity, Baby, Building2, CalendarCheck, ChevronDown, Database, FileText, Fingerprint, Info, Layers, MapPin, MousePointerClick, Pill, RotateCcw, ShieldAlert, Tag, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { timeAgo } from '@/components/nazar/status-pill'
@@ -13,6 +13,9 @@ import { blk, CATEGORY_LABEL, CopyButton, ExplorerLink, nf, Panel, placeName, Sk
 // Header (what Arkiv is, who publishes, which block) and the live overview: counts by entity
 // type and small breakdowns of the alerts. Every breakdown is a button that applies itself as
 // a filter, so the overview doubles as the quickest way into the results.
+//
+// Loading placeholders use the final markup and sizes, so nothing moves when the counts land.
+// The counts are on-chain totals and can exceed the app's alert count (see COUNT_NOTE).
 
 export type SummaryState =
   | { kind: 'loading' }
@@ -64,7 +67,7 @@ export function DirectoryHeader({ summary, block, onRefresh }: { summary: Summar
             <span className={cn('size-2 rounded-full', live ? 'bg-primary motion-safe:animate-pulse' : recounting && !stale ? 'bg-primary' : stale ? 'bg-caution' : 'bg-muted-foreground/50')} aria-hidden="true" />
             {label}
           </span>
-          <Button variant="outline" size="icon" className="size-9 rounded-full" onClick={onRefresh} aria-label="Refresh counts">
+          <Button variant="outline" size="icon" className="size-11 rounded-full" onClick={onRefresh} aria-label="Refresh counts">
             <RotateCcw className="size-4" />
           </Button>
         </div>
@@ -163,8 +166,16 @@ function StatTile({ s, lead }: { s: Stat; lead?: boolean }) {
         </span>
         <span className="text-xs font-semibold whitespace-nowrap text-muted-foreground">{s.label}</span>
       </span>
-      <span className={cn('mt-2 flex items-baseline gap-2 font-mono font-semibold tabular-nums', lead ? 'text-3xl' : 'text-2xl')} data-count={s.key}>
-        {s.count === null ? <Skeleton className="h-7 w-16" /> : nf(s.count)}
+      <span className={cn('relative mt-2 flex items-baseline gap-2 font-mono font-semibold tabular-nums', lead ? 'text-3xl' : 'text-2xl')} data-count={s.key}>
+        {s.count === null ? (
+          // same text metrics as a real count, so the tile keeps its height when it lands
+          <>
+            <span className="invisible">0,000</span>
+            <Skeleton className="absolute inset-y-1 left-0 w-16" />
+          </>
+        ) : (
+          nf(s.count)
+        )}
         {s.live && s.count ? <span className="size-2 rounded-full bg-primary motion-safe:animate-pulse" aria-label="renewing" /> : null}
       </span>
       <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{s.hint}</span>
@@ -195,38 +206,46 @@ const SEV_TONE: Record<number, { bar: string; chip: string }> = {
   5: { bar: 'bg-flagged', chip: 'border-flagged-border bg-flagged-soft text-flagged' },
 }
 
-function SeverityStrip({ bySev, total, filters, onApply }: { bySev: Counts; total: number; filters: DirectoryFilters; onApply: Apply }) {
+/** bySev is null while loading: same layout, placeholders for the numbers. */
+function SeverityStrip({ bySev, total, filters, onApply }: { bySev: Counts | null; total: number; filters: DirectoryFilters; onApply: Apply }) {
   const sevs = [5, 4, 3, 2, 1]
-  const serious = (bySev['4'] ?? 0) + (bySev['5'] ?? 0)
+  const serious = bySev ? (bySev['4'] ?? 0) + (bySev['5'] ?? 0) : 0
   return (
     <section className="rounded-xl border bg-background/60 p-3.5 sm:p-4" aria-labelledby="ov-sev">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 id="ov-sev" className="text-sm font-semibold">Severity</h3>
         <p className="text-xs text-muted-foreground">
-          <span className="font-semibold text-flagged">{nf(serious)}</span> serious (4–5) · {pct(serious, total)} of alerts
+          {bySev ? (
+            <>
+              <span className="font-semibold text-flagged">{nf(serious)}</span> serious (4–5) · {pct(serious, total)} of alerts
+            </>
+          ) : (
+            <Skeleton className="inline-block h-3 w-36 align-middle" />
+          )}
         </p>
       </div>
       <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        {[1, 2, 3, 4, 5].map((s) => {
+        {bySev && [1, 2, 3, 4, 5].map((s) => {
           const n = bySev[String(s)] ?? 0
           return n ? <span key={s} className={cn('h-full first:rounded-l-full last:rounded-r-full', SEV_TONE[s]!.bar)} style={{ width: `${(n / Math.max(1, total)) * 100}%` }} /> : null
         })}
       </div>
       <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Filter by severity">
         {sevs.map((s) => {
-          const n = bySev[String(s)] ?? 0
+          const n = bySev?.[String(s)] ?? 0
           const on = filters.sevMin === s && filters.sevMax === s
           return (
             <button
               key={s}
               type="button"
+              disabled={!bySev}
               aria-pressed={on}
-              aria-label={`Severity ${s}: ${nf(n)} alerts`}
+              aria-label={bySev ? `Severity ${s}: ${nf(n)} alerts` : `Severity ${s}: loading`}
               onClick={() => onApply(on ? { type: 'alert', sevMin: 0, sevMax: 0 } : { type: 'alert', sevMin: s, sevMax: s })}
               className={cn('flex min-h-12 flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-colors', SEV_TONE[s]!.chip, on ? 'ring-2 ring-primary' : 'hover:brightness-95', ring)}
             >
               <span className="text-[10px] font-bold tracking-wider uppercase">Sev {s}</span>
-              <span className="font-mono text-sm font-semibold tabular-nums">{nf(n)}</span>
+              <span className="font-mono text-sm font-semibold tabular-nums">{bySev ? nf(n) : '–'}</span>
             </button>
           )
         })}
@@ -301,14 +320,47 @@ function Breakdown({ title, icon: Icon, counts, label, active, onPick, total }: 
   )
 }
 
+/** A breakdown card's loading state: the same header, five rows of the same height, the same footer. */
+function BreakdownSkeleton() {
+  return (
+    <section className="flex min-w-0 flex-col rounded-xl border bg-background/60 p-3.5 sm:p-4" aria-hidden="true">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex h-5 items-center"><Skeleton className="h-4 w-24" /></span>
+        <Skeleton className="h-3 w-12" />
+      </div>
+      <ul className="mt-2.5 space-y-0.5">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <li key={i} className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-3 px-2 py-1.5 text-[13px]">
+            <span className="flex h-5 items-center"><Skeleton className="h-3.5 w-full max-w-36" /></span>
+            <Skeleton className="h-3 w-8" />
+            <Skeleton className="ml-auto h-3 w-7" />
+            <span className="col-span-3 mt-1 h-1 rounded-full bg-muted" />
+          </li>
+        ))}
+      </ul>
+      <span className="mt-auto px-2 pt-2 text-xs invisible">Show all</span>
+    </section>
+  )
+}
+
+/**
+ * Why Arkiv's totals can be higher than the alert count on the Feed, the API or the More page:
+ * a merged duplicate's first copy stays on chain (alerts are written read-only), and corrected
+ * alerts are superseded, not deleted. The numbers themselves are left exactly as counted.
+ */
+const COUNT_NOTE =
+  "On-chain totals can be higher than Nazar's alert count elsewhere in the app: when Nazar merges a duplicate alert, the earlier copy stays on Arkiv, because entities are read-only."
+
 export function Overview({ summary, filters, onApply }: { summary: SummaryState; filters: DirectoryFilters; onApply: Apply }) {
+  // Phones get the tiles and the severity bar; the four breakdowns sit behind one disclosure.
+  const [breakdownsOpen, setBreakdownsOpen] = useState(false)
   if (summary.kind === 'error') return null
   const d = summary.kind === 'ok' ? summary.data : null
   const alertPatch = (p: Partial<DirectoryFilters>) => onApply({ type: 'alert', ...p })
   const total = d?.entities.alert ?? 0
 
   const stats: Stat[] = [
-    { key: 'alert', count: d?.entities.alert ?? null, label: 'Alerts', hint: 'One flagged batch each', icon: ShieldAlert, tone: 'flagged', pressed: filters.type === 'alert' && !filters.peds && !filters.inDate, onClick: () => onApply({ type: 'alert' }) },
+    { key: 'alert', count: d?.entities.alert ?? null, label: 'Alerts', hint: 'Incl. merged duplicates', icon: ShieldAlert, tone: 'flagged', pressed: filters.type === 'alert' && !filters.peds && !filters.inDate, onClick: () => onApply({ type: 'alert' }) },
     { key: 'notice', count: d?.entities.notice ?? null, label: 'Notices', hint: 'Regulator documents', icon: FileText, pressed: filters.type === 'notice', onClick: () => onApply({ type: 'notice' }) },
     { key: 'peds', count: d?.alerts.peds ?? null, label: 'Child Shield', hint: 'Paediatric formulations', icon: Baby, tone: 'flagged', pressed: filters.type === 'alert' && filters.peds === '1', onClick: () => alertPatch({ peds: filters.peds === '1' ? '' : '1' }) },
     { key: 'inDate', count: d?.alerts.inDate ?? null, label: 'Still in date', hint: 'Could still be on shelves', icon: CalendarCheck, pressed: filters.type === 'alert' && filters.inDate, onClick: () => alertPatch({ inDate: !filters.inDate }) },
@@ -319,45 +371,58 @@ export function Overview({ summary, filters, onApply }: { summary: SummaryState;
   return (
     <Panel id="overview" kicker="Overview" title="What is on Arkiv right now" className="min-w-0">
       <div aria-busy={!d} data-overview={d ? 'ready' : 'loading'} className="grid gap-3">
-        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+        {/* What the tiles count: entities on chain at one block, not the app's deduplicated alerts. */}
+        <h3 className="flex flex-wrap items-center gap-x-1.5 text-sm font-semibold" id="ov-entities" data-entities-caption>
+          <Database className="size-4 text-muted-foreground" aria-hidden="true" />
+          Entities on Arkiv · at block <span className="font-mono" data-entities-block>{blk(d?.generatedAtBlock)}</span>
+        </h3>
+        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6" aria-labelledby="ov-entities">
           {stats.map((s, i) => (
             <li key={s.key} className="min-w-0">
               <StatTile s={s} lead={i === 0} />
             </li>
           ))}
         </ul>
+        <p className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground" data-count-note>
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{COUNT_NOTE}</span>
+        </p>
 
-        {d ? (
-          <>
-            <SeverityStrip bySev={d.alerts.bySev} total={total} filters={filters} onApply={onApply} />
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+        <SeverityStrip bySev={d ? d.alerts.bySev : null} total={total} filters={filters} onApply={onApply} />
+
+        <Button
+          variant="outline"
+          className="h-11 w-full justify-between rounded-xl px-3.5 text-sm lg:hidden"
+          aria-expanded={breakdownsOpen}
+          aria-controls="ov-breakdowns"
+          onClick={() => setBreakdownsOpen((o) => !o)}
+          data-breakdown-toggle
+        >
+          <span className="flex min-w-0 items-baseline gap-2">
+            {breakdownsOpen ? 'Hide breakdowns' : 'See breakdowns'}
+            <span className="truncate text-xs font-normal text-muted-foreground">Source, category, state, form</span>
+          </span>
+          <ChevronDown className={cn('transition-transform', breakdownsOpen && 'rotate-180')} data-icon="inline-end" />
+        </Button>
+        <div id="ov-breakdowns" className={cn('grid gap-3 md:grid-cols-2 2xl:grid-cols-4', !breakdownsOpen && 'max-lg:hidden')} data-breakdowns>
+          {d ? (
+            <>
               <Breakdown title="Source" icon={Building2} counts={d.alerts.bySrc} label={sourceLabel} total={total} active={filters.src} onPick={(k) => alertPatch({ src: k })} />
               <Breakdown title="Category" icon={Layers} counts={d.alerts.byCat} label={(k) => CATEGORY_LABEL[k] ?? k} total={total} active={filters.cat} onPick={(k) => alertPatch({ cat: k })} />
               <Breakdown title="Made in" icon={MapPin} counts={d.alerts.byState} label={placeName} total={total} active={filters.state} onPick={(k) => alertPatch({ state: k })} />
               <Breakdown title="Dosage form" icon={Pill} counts={d.alerts.byForm} label={(k) => k[0]!.toUpperCase() + k.slice(1)} total={total} active={filters.form} onPick={(k) => alertPatch({ form: k })} />
-            </div>
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-              <Database className="size-3.5" aria-hidden="true" />
-              Counted from Arkiv at block <span className="font-mono">{blk(d.generatedAtBlock)}</span> · {timeAgo(Date.parse(d.generatedAt))}
-              <span aria-hidden="true">·</span>
-              <MousePointerClick className="size-3.5" aria-hidden="true" /> Tap any tile or row to filter the results below
-            </p>
-          </>
-        ) : (
-          <>
-            <Skeleton className="h-28 w-full rounded-xl" />
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="space-y-2 rounded-xl border p-4">
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-8 w-full" />
-                  <Skeleton className="h-8 w-5/6" />
-                  <Skeleton className="h-8 w-2/3" />
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+            </>
+          ) : (
+            [0, 1, 2, 3].map((i) => <BreakdownSkeleton key={i} />)
+          )}
+        </div>
+        <p className="flex min-h-4 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+          <Database className="size-3.5" aria-hidden="true" />
+          Counted from Arkiv at block <span className="font-mono">{blk(d?.generatedAtBlock)}</span>
+          {d ? ` · ${timeAgo(Date.parse(d.generatedAt))}` : ''}
+          <span aria-hidden="true">·</span>
+          <MousePointerClick className="size-3.5" aria-hidden="true" /> Tap any tile or row to filter the results below
+        </p>
       </div>
     </Panel>
   )

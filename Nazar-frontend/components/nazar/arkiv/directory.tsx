@@ -60,6 +60,8 @@ export function ArkivDirectory() {
   const [autoSwitched, setAutoSwitched] = useState(false)
   const [reload, setReload] = useState(0)
   const req = useRef(0)
+  /** The row whose drawer is open, so closing it (Esc, Close, backdrop) puts focus back there. */
+  const opener = useRef<string | null>(null)
   const recount = useRef(false)
 
   // Filters and mode come from the URL once, on the client.
@@ -235,7 +237,7 @@ export function ArkivDirectory() {
               )}
             >
               <Icon className="size-4" aria-hidden="true" /> {label}
-              {n !== undefined && <span className="font-mono text-xs font-medium opacity-75">{nf(n)}</span>}
+              {n !== undefined && <span className={cn('font-mono text-xs font-medium', on ? 'text-primary' : 'text-muted-foreground')}>{nf(n)}</span>}
             </button>
           )
         })}
@@ -250,6 +252,7 @@ export function ArkivDirectory() {
           type={active.type}
           filtered={filterCount(filters) > 0}
           onOpen={(e) => {
+            opener.current = e.key
             setSelected(e)
             setDrawerOpen(true)
           }}
@@ -261,7 +264,13 @@ export function ArkivDirectory() {
         />
       </div>
 
-      <EntityDrawer entity={selected} open={drawerOpen} onOpenChange={setDrawerOpen} onNoticeAlerts={showNoticeAlerts} />
+      <EntityDrawer
+        entity={selected}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onNoticeAlerts={showNoticeAlerts}
+        returnFocus={() => (opener.current ? document.querySelector<HTMLElement>(`[data-entity-row="${CSS.escape(opener.current)}"] button`) : null)}
+      />
     </div>
   )
 }

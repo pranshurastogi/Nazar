@@ -57,7 +57,7 @@ export function TocRail({ active }: { active: SectionId }) {
                   on && 'border-primary font-semibold text-foreground',
                 )}
               >
-                <span className={cn('font-mono text-[11px]', on ? 'text-primary' : 'text-muted-foreground/70')}>{sectionNumber(s.id)}</span>
+                <span className={cn('font-mono text-[11px]', on ? 'text-primary' : 'text-muted-foreground')}>{sectionNumber(s.id)}</span>
                 {s.label}
               </a>
             </li>
@@ -79,8 +79,40 @@ export function TocChips({ active }: { active: SectionId }) {
     row.scrollTo({ left: Math.max(0, left), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }, [active])
 
+  // Give the screen back while reading: the bar slides away as you scroll down and returns as
+  // soon as you scroll up (or when a chip has keyboard focus).
+  const [tucked, setTucked] = useState(false)
+  useEffect(() => {
+    let last = window.scrollY
+    let raf = 0
+    const update = () => {
+      raf = 0
+      const y = window.scrollY
+      const dy = y - last
+      if (Math.abs(dy) < 6) return
+      setTucked(dy > 0 && y > 240)
+      last = y
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onScroll)
+    }
+  }, [])
+
   return (
-    <nav aria-label="On this page" className="sticky top-0 z-20 -mx-4 mt-4 border-b bg-background/90 backdrop-blur-lg sm:-mx-6 lg:hidden" data-toc="chips">
+    <nav
+      aria-label="On this page"
+      className={cn(
+        'sticky top-0 z-20 -mx-4 mt-4 border-b bg-background/90 backdrop-blur-lg transition-transform duration-300 focus-within:translate-y-0 sm:-mx-6 lg:hidden motion-reduce:transition-none',
+        tucked && '-translate-y-full',
+      )}
+      data-toc="chips"
+      data-tucked={tucked || undefined}
+    >
       <ol ref={rowRef} className="flex gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] sm:px-6 [&::-webkit-scrollbar]:hidden">
         {SECTIONS.map((s) => {
           const on = s.id === active

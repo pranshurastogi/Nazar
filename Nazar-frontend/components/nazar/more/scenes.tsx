@@ -15,6 +15,7 @@ import {
   Landmark,
   Link2,
   Lock,
+  ScanEye,
   X,
 } from 'lucide-react'
 
@@ -157,7 +158,9 @@ export function ReadScene({ live }: { live: boolean }) {
             <p className="text-[12px] font-semibold">{STORY.noticeNo}</p>
             <div className="mt-2 w-40">{bars(['100%', '80%', '90%'])}</div>
           </div>
-          <SentinelEye state="scanning" follow={false} className="-my-1 w-20 shrink-0" />
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary" aria-hidden="true">
+            <ScanEye className="size-6" />
+          </span>
         </div>
         <span className="hw-scanwrap pointer-events-none absolute inset-0" aria-hidden="true">
           <span className="block h-px w-full bg-primary shadow-[0_0_14px_3px_color-mix(in_srgb,var(--primary)_45%,transparent)]" />

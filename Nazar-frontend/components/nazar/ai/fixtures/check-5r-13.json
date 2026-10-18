@@ -1,0 +1,21 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "CAN'T TELL: no exact match for \"5R-13\", but an alerted batch looks similar: \"SR-13\" (0/O, 1/I/L, 5/S and 8/B are easy to misread). This is NOT a flag. Re-read the pack and check again with the exact characters."
+    }
+  ],
+  "structuredContent": {
+    "state": "unreadable",
+    "batch": "5R-13",
+    "asOf": "2026-10-18T11:52:39.217Z",
+    "answeredFrom": "ledger",
+    "alerts": [],
+    "suggestion": "SR-13",
+    "suggestionNote": "A look-alike is never a flag: re-read the pack and check again.",
+    "links": {
+      "app": "https://nazar-nu.vercel.app",
+      "arkivDirectory": "https://nazar-nu.vercel.app/arkiv?type=alert&batch=5R-13"
+    }
+  }
+}

@@ -1,14 +1,12 @@
 'use client'
 
 import { useEffect, useId, useState } from 'react'
-import Link from 'next/link'
-import { BookmarkCheck, BookmarkPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { addItem, findByBatch, NAME_MAX, NOTE_MAX, updateItem, useCabinet, type CabinetDraft, type CabinetItem } from '@/lib/cabinet'
-import { validateBatch, type CheckResult } from '@/lib/source'
+import { validateBatch } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
 // Add / edit form for the cabinet, shared by the Cabinet tab and the "Save to cabinet"
@@ -181,29 +179,5 @@ export function CabinetFormDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** "Save to cabinet" on a result card: pre-fills the batch and product name. */
-export function SaveToCabinet({ result }: { result: CheckResult }) {
-  const items = useCabinet()
-  const [open, setOpen] = useState(false)
-  if (result.state === 'unreadable' || !validateBatch(result.batch).ok) return null
-  const saved = findByBatch(items, result.batch)
-  if (saved) {
-    return (
-      <Link href="/cabinet" className={cn(buttonVariants({ variant: 'ghost' }), 'h-11 px-3')} aria-label={`In your cabinet as ${saved.name}. Open cabinet`}>
-        <BookmarkCheck className="text-primary" /> <span className="hidden sm:inline">In cabinet</span><span className="sm:hidden">Saved</span>
-      </Link>
-    )
-  }
-  const alert = 'alert' in result ? result.alert : undefined
-  return (
-    <>
-      <Button variant="ghost" className="h-11 px-3" onClick={() => setOpen(true)} aria-label="Save to cabinet" data-save-cabinet>
-        <BookmarkPlus /> <span className="hidden sm:inline">Save to cabinet</span><span className="sm:hidden">Save</span>
-      </Button>
-      <CabinetFormDialog open={open} onOpenChange={setOpen} initial={{ batch: result.batch, name: alert?.brand ?? '' }} />
-    </>
   )
 }

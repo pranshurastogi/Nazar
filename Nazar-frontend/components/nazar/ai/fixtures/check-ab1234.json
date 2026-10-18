@@ -1,0 +1,20 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "NO ALERT FOUND: no official alert for batch AB1234 in Nazar's records as of 2026-10-18 11:52 UTC. This is not a safety certificate: it only means no regulator alert that Nazar reads names this batch yet. Alerts can lag, and a fake pack can carry a clean batch number. Check the batch number again on the pack, and ask a pharmacist if in doubt."
+    }
+  ],
+  "structuredContent": {
+    "state": "no_alert",
+    "batch": "AB1234",
+    "asOf": "2026-10-18T11:52:41.583Z",
+    "answeredFrom": "ledger",
+    "alerts": [],
+    "notice": "This is not a safety certificate: it only means no regulator alert that Nazar reads names this batch yet. Alerts can lag, and a fake pack can carry a clean batch number.",
+    "links": {
+      "app": "https://nazar-nu.vercel.app",
+      "arkivDirectory": "https://nazar-nu.vercel.app/arkiv?type=alert&batch=AB1234"
+    }
+  }
+}

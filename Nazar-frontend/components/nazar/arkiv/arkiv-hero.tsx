@@ -8,7 +8,11 @@ import { explorerAddress, PUBLISHER } from '@/lib/source/config'
 
 // The top of /arkiv: what this page is, in one picture. Nazar's own mark is rebuilt from GPU
 // particles that scatter under the cursor and settle back, the way scattered regulator notices
-// settle into one public record. Without WebGL2 (or with reduced motion) it is the still mark.
+// settle into one public record. Without WebGL2, on a software renderer, or with reduced motion
+// it is the still mark; the particles only animate while the hero is on screen.
+//
+// The hero's height is fixed in CSS (taller on phones so the mark has room above the copy), so
+// nothing below it moves when the canvas, the image or the fonts arrive.
 
 const MARK = '/brand/nazar-mark.png'
 
@@ -22,7 +26,11 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
 export function ArkivHero() {
   return (
-    <section className="overflow-hidden rounded-3xl border bg-card" aria-labelledby="arkiv-hero-title" data-arkiv-hero>
+    <section
+      className="overflow-hidden rounded-3xl border bg-card [--arkiv-hero-h:620px] sm:[--arkiv-hero-h:clamp(520px,70svh,720px)] max-sm:[&_.sh-h1]:text-[clamp(34px,10vw,40px)]!"
+      aria-labelledby="arkiv-hero-title"
+      data-arkiv-hero
+    >
       <SculptureHero
         src={MARK}
         darkSrc={MARK}
@@ -40,7 +48,7 @@ export function ArkivHero() {
         primaryCta={{ label: 'Browse entities', href: '#arkiv-results' }}
         secondaryCta={{ label: 'See the query', href: '#arkiv-query' }}
         hint="Move across the mark"
-        hintTouch="Touch the mark"
+        hintTouch="Drag across the mark"
         backdropText="arkiv"
         background="var(--card)"
         darkBackground="var(--card)"
@@ -49,9 +57,9 @@ export function ArkivHero() {
         headingFont="var(--font-noto-sans), system-ui, sans-serif"
         bodyFont="var(--font-noto-sans), system-ui, sans-serif"
         accentFont={serif.style.fontFamily}
-        height="clamp(460px, 64svh, 680px)"
-        sculptureScale={0.92}
-        mobileSculptureScale={0.68}
+        height="var(--arkiv-hero-h)"
+        sculptureScale={0.95}
+        mobileSculptureScale={0.95}
         particleDensity={0.4}
         radius={190}
         intro
@@ -76,7 +84,7 @@ export function ArkivHero() {
                   href={explorerAddress(PUBLISHER)}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-1.5 inline-flex min-h-8 items-center gap-1 font-mono text-xs font-medium text-primary hover:underline"
+                  className="-mx-1 mt-0.5 inline-flex min-h-11 items-center gap-1 rounded-md px-1 font-mono text-xs font-medium text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
                   Publisher {short(PUBLISHER)} <ArrowUpRight className="size-3" aria-hidden="true" />
                 </a>

@@ -11,6 +11,7 @@ import { explorerAddress, PUBLISHER, type SourceList } from '@/lib/source'
 import type { ArkivSummary } from '@/lib/source/directory'
 import { cn } from '@/lib/utils'
 import { STORY } from './scenes'
+import { istClock } from './shared'
 
 // The top of /more: one headline, one plain promise, the sentinel eye, and three live facts.
 // The numbers are read the way the rest of the app reads them (sources from the API or the
@@ -62,9 +63,9 @@ export function Hero({ sources, summary, now }: { sources: SourceList | null; su
               <SentinelEye state="idle" className="w-full" />
             </span>
           </div>
-          <h2 id="more-hero-title" className="mt-4 text-[clamp(2.25rem,7vw,3.6rem)] leading-[0.98] font-medium tracking-[-0.045em] text-balance">
+          <h1 id="more-hero-title" className="mt-4 text-[clamp(2.25rem,7vw,3.6rem)] leading-[0.98] font-medium tracking-[-0.045em] text-balance">
             How Nazar works, <span className={cn(serif.className, 'font-normal tracking-[-0.02em] text-primary')}>and how to check it.</span>
-          </h2>
+          </h1>
           <p className="mt-5 max-w-[52ch] text-base leading-7 text-pretty text-muted-foreground">
             Nazar only repeats what regulators publish. Follow one real alert from a WHO notice to your phone, then verify every step without trusting us.
           </p>
@@ -112,7 +113,7 @@ export function Hero({ sources, summary, now }: { sources: SourceList | null; su
             busy={summary.kind === 'loading'}
             value={summary.kind === 'ok' ? nf.format(summary.data.alerts.total) : null}
             label="alerts on Arkiv"
-            sub={summary.kind === 'ok' && Number.isFinite(counted) ? `Counted ${timeAgo(counted, now || Date.now())}` : 'Reading Arkiv…'}
+            sub={summary.kind === 'ok' && Number.isFinite(counted) ? <span title={istClock(counted)}>Counted {timeAgo(counted, now || Date.now())}</span> : 'Reading Arkiv…'}
           />
         )}
         <Stat
@@ -121,7 +122,7 @@ export function Hero({ sources, summary, now }: { sources: SourceList | null; su
           value={<span className="font-mono text-[15px]">{short(PUBLISHER)}</span>}
           label=""
           sub={
-            <a href={explorerAddress(PUBLISHER)} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 font-medium text-primary underline-offset-2 hover:underline">
+            <a href={explorerAddress(PUBLISHER)} target="_blank" rel="noreferrer noopener" className="-my-3 inline-flex min-h-11 items-center gap-1 font-medium text-primary underline-offset-2 hover:underline">
               One wallet signs every alert <ArrowUpRight className="size-3" aria-hidden="true" />
             </a>
           }

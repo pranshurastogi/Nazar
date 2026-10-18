@@ -27,7 +27,7 @@ function Field({ id, label, attr, children }: { id: string; label: string; attr:
     <div className="min-w-0">
       <label htmlFor={id} className="mb-1 flex items-baseline justify-between gap-2 text-xs font-semibold text-muted-foreground">
         <span>{label}</span>
-        <code className="font-mono text-[10px] font-normal opacity-70">{attr}</code>
+        <code className="font-mono text-[11px] font-normal text-muted-foreground">{attr}</code>
       </label>
       {children}
     </div>
@@ -164,7 +164,7 @@ export function FilterPanel({ filters, onApply, onReset, sources }: { filters: D
           <fieldset className="min-w-0">
             <legend className="mb-1 flex w-full items-baseline justify-between text-xs font-semibold text-muted-foreground">
               <span>Severity</span>
-              <code className="font-mono text-[10px] font-normal opacity-70">sev</code>
+              <code className="font-mono text-[11px] font-normal text-muted-foreground">sev</code>
             </legend>
             <div className="grid grid-cols-2 gap-2">
               <label className="sr-only" htmlFor="f-sev-min">Minimum severity</label>
@@ -197,12 +197,12 @@ export function FilterPanel({ filters, onApply, onReset, sources }: { filters: D
           <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border bg-background px-3 text-sm font-medium has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/30 sm:col-span-2 xl:col-span-1">
             <input id="f-in-date" type="checkbox" checked={filters.inDate} onChange={(e) => onApply({ inDate: e.target.checked })} className="size-4 accent-[var(--primary)]" />
             <span className="flex-1">Still in date</span>
-            <code className="font-mono text-[10px] font-normal text-muted-foreground">exp_ym ≥ this month</code>
+            <code className="font-mono text-[11px] font-normal text-muted-foreground">exp_ym ≥ this month</code>
           </label>
           <fieldset className="min-w-0 sm:col-span-2 xl:col-span-1">
             <legend className="mb-1 flex w-full items-baseline justify-between text-xs font-semibold text-muted-foreground">
               <span>Alert month</span>
-              <code className="font-mono text-[10px] font-normal opacity-70">alert_ym</code>
+              <code className="font-mono text-[11px] font-normal text-muted-foreground">alert_ym</code>
             </legend>
             <div className="grid grid-cols-2 gap-2">
               <div>

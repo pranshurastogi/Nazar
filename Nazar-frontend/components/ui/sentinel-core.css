@@ -1,5 +1,9 @@
 /* Sentinel eye (components/ui/sentinel-core.tsx). Keyframes are prefixed so they never replace
-   Tailwind's own `pulse` / `spin` keyframes. Colours come from data-state. */
+   Tailwind's own `pulse` / `spin` keyframes. Colours come from data-state.
+   Idle cost: SVG transform animations run on the main thread every frame, so nothing loops at
+   rest. The glow breathes a few times and settles; the ring, flow and scan move only while
+   checking; a blink is a one-off the script starts now and then. Off-screen or in a hidden tab
+   the script sets data-paused and every animation holds still. */
 
 .sentinel {
   --iris-1: #6ea8ff;
@@ -48,15 +52,17 @@
   border-radius: 50%;
   background: radial-gradient(closest-side, var(--glow), transparent);
   filter: blur(6px);
+  opacity: 0.65;
+  transform: scale(0.96);
   transition: background 0.6s ease;
-  animation: sentinel-pulse 4.5s ease-in-out infinite;
+  animation: sentinel-pulse 4.5s ease-in-out 3 both;
 }
 .sentinel[data-state='checking']::before,
 .sentinel[data-state='scanning']::before {
-  animation-duration: 1.6s;
+  animation: sentinel-pulse-busy 1.6s ease-in-out infinite;
 }
 .sentinel[data-state='flagged']::before {
-  animation-duration: 2.2s;
+  animation: sentinel-pulse-flagged 2.2s ease-in-out 3 both;
 }
 .sentinel[data-state='no_alert']::before {
   animation: none;
@@ -105,7 +111,9 @@
 .sentinel .s-blink {
   transform-box: view-box;
   transform-origin: 100px 60px;
-  animation: sentinel-blink 7s ease-in-out infinite;
+}
+.sentinel[data-blink] .s-blink {
+  animation: sentinel-blink 0.42s ease-in-out 1;
 }
 
 .sentinel .s-iris {
@@ -128,11 +136,10 @@
 .sentinel .s-ring {
   transform-box: fill-box;
   transform-origin: center;
-  animation: sentinel-spin 14s linear infinite;
 }
 .sentinel[data-state='checking'] .s-ring,
 .sentinel[data-state='scanning'] .s-ring {
-  animation-duration: 3s;
+  animation: sentinel-spin 3s linear infinite;
 }
 
 .sentinel .s-scan {
@@ -145,13 +152,19 @@
 
 .sentinel .s-flow {
   stroke-dasharray: 4 6;
-  animation: sentinel-flow 1.2s linear infinite;
   opacity: 0;
   transition: opacity 0.4s ease;
 }
 .sentinel[data-state='checking'] .s-flow,
 .sentinel[data-state='scanning'] .s-flow {
   opacity: 1;
+  animation: sentinel-flow 1.2s linear infinite;
+}
+
+/* Off-screen or in a hidden tab: hold every animation where it is. */
+.sentinel[data-paused]::before,
+.sentinel[data-paused] * {
+  animation-play-state: paused !important;
 }
 
 @keyframes sentinel-scan {
@@ -171,15 +184,37 @@
 }
 @keyframes sentinel-blink {
   0%,
-  93%,
   100% {
     transform: scaleY(1);
   }
-  96% {
+  45% {
     transform: scaleY(0.06);
   }
 }
 @keyframes sentinel-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+/* Same breath, on separate names so a state change restarts the count of cycles. */
+@keyframes sentinel-pulse-busy {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+@keyframes sentinel-pulse-flagged {
   0%,
   100% {
     opacity: 0.65;

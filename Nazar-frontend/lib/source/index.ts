@@ -5,11 +5,12 @@ import { checkDemo, demoActiveAlerts } from './demo'
 import { STATIC_SOURCES } from './sources'
 import { validateBatch } from './match'
 import { currentSnapshot, loadSnapshot, snapshotAlerts, snapshotCheck, SNAPSHOT_MAX_AGE_MS, type SnapshotIndex } from './snapshot'
-import type { Alert, CheckResult, PipelineStatus, SourceKind } from './types'
+import { newestFirst, productClassOf } from './map'
+import type { Alert, CheckResult, PipelineStatus, ProductClass, SourceKind } from './types'
 
 export * from './types'
 export { matchKey, confusionKey, BATCH_SHAPE, validateBatch } from './match'
-export { formatYm } from './map'
+export { formatYm, isMedicine, newestFirst, productClassOf } from './map'
 export { API_URL } from './config'
 export { STATE_NAME, SOURCE_NAME, stateName } from './labels'
 export { PROJECT, PUBLISHER, EXPLORER_URL, explorerAddress } from './config'
@@ -111,31 +112,42 @@ async function snapshotSoon(signal?: AbortSignal, ms = 6000): Promise<SnapshotIn
 
 export type AlertFeed = { items: Alert[]; total: number; source: SourceKind }
 
-/** Active alerts for the home page. */
-export async function loadAlerts(q: { minSeverity?: number; peds?: boolean; limit?: number } = {}, signal?: AbortSignal): Promise<AlertFeed> {
+/** Home-page list filters. `productClass: 'medicine'` leaves out cosmetics and hygiene products. */
+export type AlertListQuery = { minSeverity?: number; peds?: boolean; limit?: number; productClass?: ProductClass }
+
+/**
+ * Active alerts for the home page, newest first in the API's order (newestFirst) whichever source
+ * answered: the Nazar API, else Arkiv, else Nazar's saved copy, else demo data.
+ */
+export async function loadAlerts(q: AlertListQuery = {}, signal?: AbortSignal): Promise<AlertFeed> {
   const limit = q.limit ?? 20
+  const keep = (a: Alert) =>
+    !a.retraction && (!q.peds || a.peds) && (!q.minSeverity || a.severity >= q.minSeverity) && (!q.productClass || productClassOf(a) === q.productClass)
   try {
     if (!(await probeApi())) throw new Error('API unreachable')
     const r = await apiAlerts({ ...q, limit }, { signal })
-    // Filter again on our side in case the server ignores a parameter.
-    const items = r.items.filter((a) => !a.retraction && (!q.peds || a.peds) && (!q.minSeverity || a.severity >= q.minSeverity))
+    // Filter again on our side in case the server ignores a parameter (older servers have no productClass).
+    const items = r.items.filter(keep)
     const total = r.total !== null && items.length === r.items.length ? r.total : items.length
-    return { items, total, source: 'api' }
+    return { items: items.sort(newestFirst), total, source: 'api' }
   } catch (err) {
     if (isAbort(err, signal)) throw err
   }
   try {
-    const items = await (await loadArkiv()).arkivAlerts({ ...q, limit }, signal)
-    if (items) return { items, total: items.length, source: 'arkiv' }
+    const items = await (await loadArkiv()).arkivAlerts({ minSeverity: q.minSeverity, peds: q.peds, limit }, signal)
+    if (items) {
+      const kept = items.filter(keep).sort(newestFirst)
+      return { items: kept, total: kept.length, source: 'arkiv' }
+    }
   } catch (err) {
     if (isAbort(err, signal)) throw err
   }
   const snap = await snapshotSoon(signal)
   if (snap) {
-    const all = snapshotAlerts({ minSeverity: q.minSeverity, peds: q.peds }, snap)
+    const all = snapshotAlerts({ minSeverity: q.minSeverity, peds: q.peds }, snap).filter(keep)
     return { items: all.slice(0, limit), total: all.length, source: 'snapshot' }
   }
-  const items = demoActiveAlerts().filter((a) => (!q.peds || a.peds) && (!q.minSeverity || a.severity >= q.minSeverity))
+  const items = demoActiveAlerts().filter(keep).sort(newestFirst)
   return { items, total: items.length, source: 'demo' }
 }
 
@@ -278,9 +290,27 @@ export async function estimateExpiry(expiresAtBlock: string, signal?: AbortSigna
   }
 }
 
-/** Notice keys from the API, fetched once and shared; refreshed when a SHA is missing and the copy is old. */
+/**
+ * Notice keys from the API, fetched once per session and shared by every check. The list is
+ * re-read only when a SHA is missing and the copy is older than NOTICE_KEYS_TTL_MS; a failed read
+ * is remembered for NOTICE_KEYS_RETRY_MS, so a run of checks never repeats GET /v1/notices.
+ */
 let noticeKeys: { at: number; p: Promise<Map<string, string>> } | null = null
 const NOTICE_KEYS_TTL_MS = 10 * 60 * 1000
+const NOTICE_KEYS_RETRY_MS = 60 * 1000
+
+function loadNoticeKeys() {
+  const entry = {
+    at: Date.now(),
+    p: apiNoticeKeys().catch(() => {
+      // Try again a minute from now, not on the very next check.
+      entry.at = Date.now() - NOTICE_KEYS_TTL_MS + NOTICE_KEYS_RETRY_MS
+      return new Map<string, string>()
+    }),
+  }
+  noticeKeys = entry
+  return entry
+}
 
 /**
  * The Arkiv entity key of the notice with this SHA-256, when the Nazar API knows it. Used by
@@ -288,10 +318,13 @@ const NOTICE_KEYS_TTL_MS = 10 * 60 * 1000
  */
 export async function noticeKeyFor(sha: string): Promise<string | null> {
   if (!API_URL || apiLikelyDown() || !sha) return null
-  const load = () => (noticeKeys = { at: Date.now(), p: apiNoticeKeys().catch(() => ((noticeKeys = null), new Map<string, string>())) })
-  if (!noticeKeys) load()
   const key = sha.toLowerCase()
-  let map = await noticeKeys!.p
-  if (!map.has(key) && noticeKeys && Date.now() - noticeKeys.at > NOTICE_KEYS_TTL_MS) map = await load().p
+  const entry = noticeKeys ?? loadNoticeKeys()
+  let map = await entry.p
+  if (!map.has(key)) {
+    // Another check may have started a newer read meanwhile; share it rather than start a third.
+    if (noticeKeys && noticeKeys !== entry) map = await noticeKeys.p
+    else if (Date.now() - entry.at > NOTICE_KEYS_TTL_MS) map = await loadNoticeKeys().p
+  }
   return map.get(key) ?? null
 }

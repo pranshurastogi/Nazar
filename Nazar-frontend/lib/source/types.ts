@@ -11,6 +11,8 @@ export type SourceKind = 'api' | 'arkiv' | 'snapshot' | 'demo'
  * 'snapshot' that the on-device copy of the alert set answered (instantly, or while offline).
  */
 export type Answerer = SourceKind | 'local' | 'snapshot'
+/** What an alert is about: regulators list cosmetics and hygiene products in the same tables as medicines. */
+export type ProductClass = 'medicine' | 'cosmetic' | 'hygiene'
 
 export type Alert = {
   /** Stable id: row id when known, else entity key, else batch. */
@@ -38,6 +40,10 @@ export type Alert = {
   noticeDate: string
   /** Epoch ms used to order the notice timeline; larger is newer. */
   noticeOrder: number
+  /** False when the regulator gave no date for this row (its month is only when Nazar first saw it). */
+  dateKnown?: boolean
+  /** From the API and snapshot; Arkiv entities and older servers leave it out (see productClassOf). */
+  productClass?: ProductClass
   noticeUrl: string | null
   mfg: string | null
   expiry: string

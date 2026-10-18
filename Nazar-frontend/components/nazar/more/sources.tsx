@@ -6,7 +6,7 @@ import { buttonVariants } from '@/components/ui/button'
 import { timeAgo } from '@/components/nazar/status-pill'
 import { stateName, type SourceList } from '@/lib/source'
 import { cn } from '@/lib/utils'
-import { panel, Section } from './shared'
+import { istClock, panel, Section } from './shared'
 
 /** The regulators Nazar reads: live from the API with each one's last run, else the built-in list. */
 export function Sources({ list, now }: { list: SourceList | null; now: number }) {
@@ -61,7 +61,7 @@ export function Sources({ list, now }: { list: SourceList | null; now: number })
                     <span className="rounded-full bg-caution-soft px-2 py-0.5 font-semibold text-caution">Off</span>
                   )}
                   {s.enabled && s.lastRun && (
-                    <span className="text-muted-foreground">
+                    <span className="text-muted-foreground" title={istClock(s.lastRun.lastCheckedMs)}>
                       Last run {timeAgo(s.lastRun.lastCheckedMs, now)}
                       {s.lastRun.ok ? '' : ' · failed, will retry'}
                     </span>

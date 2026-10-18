@@ -1,5 +1,5 @@
 import { explorerAddress, explorerEntity, explorerTx } from './config'
-import type { Alert, Category, Tier } from './types'
+import type { Alert, Category, ProductClass, Tier } from './types'
 
 // Maps API DTOs and Arkiv entities onto the app's Alert shape.
 
@@ -147,6 +147,8 @@ export function fromDto(d: AlertDTO): Alert {
     noticeDate: noticeDateText(d.noticeDate, d.alertYm, d.sourceId, d.dateKnown),
     // Undated rows sort last in the timeline: their month is only when Nazar first saw them.
     noticeOrder: d.dateKnown === false ? 0 : noticeOrder(d.noticeDate, d.alertYm),
+    dateKnown: d.dateKnown ?? (!!d.noticeDate || !UNDATED_SOURCES.has(d.sourceId ?? '')),
+    ...(d.productClass ? { productClass: d.productClass } : {}),
     noticeUrl: d.noticeUrl || null,
     mfg: formatYm(d.mfgYm),
     expiry: formatYm(d.expYm) ?? 'Not listed',
@@ -238,6 +240,7 @@ export function fromArkiv(a: ArkivAlert): Alert {
     notice: p.noticeTitle || 'Regulator notice',
     noticeDate: noticeDateText(p.noticeDate, a.alertYm, a.sourceId),
     noticeOrder: noticeOrder(p.noticeDate, a.alertYm),
+    dateKnown: !!p.noticeDate || !UNDATED_SOURCES.has(a.sourceId),
     noticeUrl: p.noticeUrl || null,
     mfg: formatYm(a.mfgYm),
     expiry: formatYm(a.expYm) ?? 'Not listed',
@@ -261,4 +264,43 @@ export function fromArkiv(a: ArkivAlert): Alert {
       ? { retraction: { date: '', reason: RETRACTION_REASON[a.retraction.reason] ?? 'Withdrawn by the regulator', authority } }
       : {}),
   }
+}
+
+// ---- Product class and list order, the same rules as the API (Nazar-backend/src/domain/vocab.ts
+// classifyProduct, and FEED_ORDER in src/storage/ledger.ts), for answers that do not carry them.
+
+const HYGIENE_PRODUCT =
+  /\bsanit[iy][sz]er|\bhand\s*(?:wash|rub|cleanser|cleaner)|\bcleaning\s+(?:solution|liquid|agent)|\b(?:floor|surface|toilet|glass)\s+cleaner|\bdetergent|\bdish\s*wash|\bphenyle\b|\bdisinfectant\s+(?:liquid|spray)\b/i
+const COSMETIC_PRODUCT =
+  /\b(?:beauty|fairness|whitening|brightening|lightening|bleach|complexion)\b|\bface\s*(?:wash|cream|pack|mask|serum|scrub)|\bfacewash\b|\bserum\b|\bsoap\b|\bshampoo|\bhair\s*(?:oil|dye|colou?r|cream|gel|serum)|\bhenna\b|\bmehndi\b|\bkajal\b|\bkohl\b|\blipstick|\blip\s*(?:balm|gloss)|\bnail\s*(?:polish|paint|lacquer)|\btalc(?:um)?\b|\bdeodorant|\bperfume|\bsun\s*(?:screen|block)|\bspf\s*\d|\bmoisturi[sz]|\bbody\s*(?:lotion|wash|butter)|\bday\s*(?:&|and)\s*night\b|\banti[-\s]?(?:marks|ageing|aging|wrinkle|tan)\b|\bde-?tan\b|\bunder\s*arm\b|\bmake-?up\b|\bcosmetics?\b/i
+const COSMETIC_MAKER = /\bcosmetics?\b/i
+/** A medicated soap or shampoo is a medicine: it says so, carries a pharmacopoeia mark, or names a drug. */
+const MEDICINE_MARK =
+  /\bmedicated\b|\b(?:I\.?P|B\.?P|U\.?S\.?P)\b\.?|\d\s*%\s*w\s*\/\s*[wv]\b|ketoconazole|permethrin|clotrimazole|miconazole|luliconazole|terbinafine|ciclopirox|chlor\w*xidine|cetrimide|povidone|selenium\s+sulph|coal\s+tar|lindane|clobetasol|betamethasone|mometasone|hydroquinone|tretinoin|minoxidil/i
+
+/** The alert's product class: as the source gave it, else decided from the product line and maker. */
+export function productClassOf(a: Pick<Alert, 'productClass' | 'brand' | 'drug' | 'manufacturer'>): ProductClass {
+  if (a.productClass) return a.productClass
+  const product = `${a.brand} ${a.drug}`
+  if (MEDICINE_MARK.test(product)) return 'medicine'
+  if (HYGIENE_PRODUCT.test(product)) return 'hygiene'
+  if (COSMETIC_PRODUCT.test(product) || COSMETIC_MAKER.test(a.manufacturer)) return 'cosmetic'
+  return 'medicine'
+}
+
+export const isMedicine = (a: Alert) => productClassOf(a) === 'medicine'
+
+/**
+ * Newest first, as the API lists alerts: dated rows before undated ones, then by alert month,
+ * medicines before cosmetics and hygiene products, then by severity. Every list source (API,
+ * Arkiv, Nazar's saved copy, demo data) is put in this order so Home reads the same whichever answered.
+ */
+export function newestFirst(a: Alert, b: Alert): number {
+  return (
+    Number(b.dateKnown !== false) - Number(a.dateKnown !== false) ||
+    (b.alertYm ?? 0) - (a.alertYm ?? 0) ||
+    Number(isMedicine(b)) - Number(isMedicine(a)) ||
+    b.severity - a.severity ||
+    b.noticeOrder - a.noticeOrder
+  )
 }

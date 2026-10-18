@@ -26,6 +26,13 @@ export type SectionId = (typeof SECTIONS)[number]['id']
 /** "02": the section's place on the page, shared by the kicker and the table of contents. */
 export const sectionNumber = (id: SectionId) => String(SECTIONS.findIndex((s) => s.id === id) + 1).padStart(2, '0')
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** "18 Oct 2026, 17:22 IST": a moment as a clock time in India, for tooltips beside "4 min ago". */
+export function istClock(ms: number) {
+  const d = new Date(ms + 330 * 60_000).toISOString()
+  return `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}, ${d.slice(11, 16)} IST`
+}
+
 /** Prose width: about 65 characters a line at the body size. */
 export const PROSE = 'max-w-[65ch]'
 
@@ -48,13 +55,13 @@ export function Section({
     <section id={id} aria-labelledby={`${id}-title`} className={cn('scroll-mt-24 py-12 sm:py-16 lg:scroll-mt-8', className)} data-more-section={id}>
       <header className={PROSE}>
         <p className="flex items-center gap-2.5 text-[11px] font-bold tracking-[0.16em] text-primary uppercase">
-          <span className="font-mono tracking-normal text-primary/70" aria-hidden="true">{sectionNumber(id)}</span>
+          <span className="font-mono tracking-normal text-primary" aria-hidden="true">{sectionNumber(id)}</span>
           <span className="h-px w-6 bg-primary/40" aria-hidden="true" />
           {kicker}
         </p>
-        <h3 id={`${id}-title`} className="mt-3 text-[1.625rem] leading-tight font-semibold tracking-[-0.03em] text-balance sm:text-3xl">
+        <h2 id={`${id}-title`} className="mt-3 text-[1.625rem] leading-tight font-semibold tracking-[-0.03em] text-balance sm:text-3xl">
           {title}
-        </h3>
+        </h2>
         {intro && <p className="mt-3 text-[15px] leading-7 text-pretty text-muted-foreground">{intro}</p>}
       </header>
       <div className="mt-7 sm:mt-8">{children}</div>

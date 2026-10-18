@@ -12,6 +12,7 @@ import { ChildShield } from './result/child-shield'
 import { NoticeTimeline } from './result/notice-timeline'
 import { OnchainProof } from './result/onchain-proof'
 import { ProofDrawer } from './result/proof-drawer'
+import { ProofLine, useWide } from './result/proof-line'
 import { TONE } from './result/shared'
 import { VerdictBody } from './result/verdict-body'
 import { VerdictHeader } from './result/verdict-header'
@@ -38,6 +39,7 @@ export function ResultCard({
 }) {
   const [proof, setProof] = useState<Alert | null>(null)
   const [proofOpen, setProofOpen] = useState(false)
+  const wide = useWide()
   const tone = TONE[result.state]
   const alert = 'alert' in result ? result.alert : undefined
   const alerts = 'alerts' in result ? result.alerts : []
@@ -62,11 +64,12 @@ export function ResultCard({
         </p>
       )}
       <VerdictHeader result={result} alert={alert} />
-      {alert?.peds && result.state === 'flagged' && <ChildShield />}
+      {alert && result.state === 'flagged' && <ChildShield alert={alert} />}
       <VerdictBody result={result} alert={alert} onCheck={onCheck} />
       <ShareSave result={result} saveable={saveable} />
       {alerts.length > 1 && <NoticeTimeline alerts={alerts} onOpen={openProof} />}
-      {alert && <OnchainProof alert={alert} />}
+      {/* Phones get one line that opens the proof sheet; the full chain would repeat that sheet and double the card's length. */}
+      {alert && (wide ? <OnchainProof alert={alert} /> : <ProofLine alert={alert} onOpen={() => openProof(alert)} />)}
       <Separator />
       <ResultActions result={result} alert={alert} onProof={openProof} />
       <ProofDrawer alert={proof} open={proofOpen} onOpenChange={setProofOpen} />

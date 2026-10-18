@@ -117,7 +117,7 @@ const CHAPTERS: Chapter[] = [
     body: 'Type or scan the batch printed on the pack. Nazar gives one of four honest answers, and colour, icon and words always agree. It never says a medicine is fine to use.',
     extra: (
       <div className="mt-5">
-        <h5 className="text-sm font-semibold">Four honest answers</h5>
+        <h4 className="text-sm font-semibold">Four honest answers</h4>
         <ul className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 lg:motion-reduce:grid-cols-2" data-answers>
           {ANSWERS.map((a) => (
             <li key={a.label} className="flex items-start gap-3 rounded-xl border bg-card p-3">
@@ -144,9 +144,9 @@ const CHAPTERS: Chapter[] = [
         <Link href={`/arkiv?batch=${encodeURIComponent(STORY.batch)}`} className="inline-flex min-h-11 items-center gap-2 rounded-full border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted">
           <Database className="size-4 text-primary" aria-hidden="true" /> {STORY.batch} on Arkiv
         </Link>
-        <a href="#mcp" className="inline-flex min-h-11 items-center gap-2 rounded-full border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted">
+        <Link href="/ai" className="inline-flex min-h-11 items-center gap-2 rounded-full border bg-card px-4 text-sm font-medium transition-colors hover:bg-muted">
           <Bot className="size-4 text-primary" aria-hidden="true" /> Ask your AI assistant
-        </a>
+        </Link>
         <Link href={checkPath(STORY.batch)} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
           Check {STORY.batch} now <ArrowRight className="size-4" aria-hidden="true" />
         </Link>
@@ -329,9 +329,9 @@ export function Journey() {
                     <c.Icon className="size-3.5 text-primary" aria-hidden="true" />
                     Chapter {i + 1} · {c.kicker}
                   </p>
-                  <h4 id={`how-ch-${i}`} className="mt-2 text-xl leading-snug font-semibold tracking-[-0.02em] sm:text-[1.375rem]" data-chapter-title>
+                  <h3 id={`how-ch-${i}`} className="mt-2 text-xl leading-snug font-semibold tracking-[-0.02em] sm:text-[1.375rem]" data-chapter-title>
                     {c.title}
-                  </h4>
+                  </h3>
                   <p className={cn(PROSE, 'mt-2.5 text-[15px] leading-7 text-pretty text-muted-foreground')}>{c.body}</p>
                   {c.specs && (
                     <ul className={cn(PROSE, 'mt-4 grid gap-1.5 text-[13px] leading-5 text-muted-foreground')}>

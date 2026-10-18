@@ -83,7 +83,7 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
             variant="outline"
             data-status={status.kind}
             aria-label={`Status: ${d.long}`}
-            className="h-8 gap-2 rounded-full px-3 text-xs font-semibold text-muted-foreground"
+            className="h-11 min-w-0 shrink gap-2 rounded-full border-0 bg-card px-3.5 text-xs font-semibold text-muted-foreground shadow-xs ring-1 ring-border ring-inset"
           />
         }
       >
@@ -91,8 +91,8 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
           {d.live && <span className="absolute size-2 animate-ping rounded-full bg-primary/40 [animation-duration:2.4s] motion-reduce:hidden" />}
           <span className={cn('size-2 rounded-full', d.live ? 'bg-primary' : status.kind === 'offline' ? 'bg-muted-foreground/50' : 'bg-caution')} />
         </span>
-        <span className="sm:hidden">{d.short}</span>
-        <span className="hidden sm:inline">{d.long}</span>
+        <span className="truncate sm:hidden">{d.short}</span>
+        <span className="hidden truncate sm:inline">{d.long}</span>
       </TooltipTrigger>
       <TooltipContent>{d.tip}</TooltipContent>
     </Tooltip>

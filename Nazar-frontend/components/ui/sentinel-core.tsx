@@ -30,6 +30,11 @@ const MAX_X = 22
 const MAX_Y = 11
 const IDLE_AFTER_MS = 2600
 const WANDER_EVERY_MS = 2300
+/** Idle glances before the eye settles; any pointer movement wakes it again. */
+const MAX_GLANCES = 4
+const BLINK_MS = 420
+const BLINK_MIN_MS = 5200
+const BLINK_SPREAD_MS = 4000
 
 export function SentinelEye({ state = 'idle', lookAt, follow = true, label, className }: SentinelEyeProps) {
   const id = useId().replace(/:/g, '')
@@ -46,9 +51,18 @@ export function SentinelEye({ state = 'idle', lookAt, follow = true, label, clas
     let raf = 0
     let lastPointer = 0
     let pending: { x: number; y: number } | null = null
+    // Off-screen or in a hidden tab the eye is paused: CSS animations stop (data-paused) and so
+    // does the pointer, wander and blink work, so a page at rest costs next to nothing.
+    let onScreen = true
+    let paused = false
+    let wander = 0
+    let blink = 0
+    let blinkEnd = 0
+    /** Glances since the pointer last moved; the eye settles after a few rather than looking around forever. */
+    let glances = 0
 
-    const set = (x: number, y: number, wander = false) => {
-      root.dataset.wander = wander ? '1' : '0'
+    const set = (x: number, y: number, wandering = false) => {
+      root.dataset.wander = wandering ? '1' : '0'
       iris.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)`
     }
     /** Aims at a point on the page (client coordinates). */
@@ -66,6 +80,7 @@ export function SentinelEye({ state = 'idle', lookAt, follow = true, label, clas
 
     const update = () => {
       raf = 0
+      if (paused) return
       if (reduce.matches) return set(0, 0)
       if (busy()) return set(0, 0)
       if (focused()) {
@@ -75,38 +90,86 @@ export function SentinelEye({ state = 'idle', lookAt, follow = true, label, clas
       if (pending) aim(pending.x, pending.y)
     }
     const schedule = () => {
-      if (!raf) raf = requestAnimationFrame(update)
+      if (!raf && !paused) raf = requestAnimationFrame(update)
     }
 
     const onPointer = (e: PointerEvent) => {
-      if (!follow) return
+      if (!follow || paused) return
       lastPointer = performance.now()
+      glances = 0
       pending = { x: e.clientX, y: e.clientY }
       schedule()
     }
     const onFocus = () => schedule()
 
     // Idle: glance around now and then, the way an eye does when nothing is happening.
-    const wander = window.setInterval(() => {
-      if (reduce.matches || busy() || focused() || document.hidden) return
-      if (performance.now() - lastPointer < IDLE_AFTER_MS) return
+    const glance = () => {
+      if (reduce.matches || busy() || focused()) return
+      if (performance.now() - lastPointer < IDLE_AFTER_MS || glances >= MAX_GLANCES) return
+      glances++
       const a = Math.random() * Math.PI * 2
       const m = 0.35 + Math.random() * 0.6
       set(Math.cos(a) * MAX_X * m, Math.sin(a) * MAX_Y * m, true)
-    }, WANDER_EVERY_MS)
+    }
+    // A blink is a one-off animation started now and then, rather than an endless keyframe loop.
+    const nextBlink = () => {
+      blink = window.setTimeout(() => {
+        if (!reduce.matches) {
+          root.dataset.blink = '1'
+          blinkEnd = window.setTimeout(() => delete root.dataset.blink, BLINK_MS)
+        }
+        nextBlink()
+      }, BLINK_MIN_MS + Math.random() * BLINK_SPREAD_MS)
+    }
+
+    const start = () => {
+      if (!wander) wander = window.setInterval(glance, WANDER_EVERY_MS)
+      if (!blink) nextBlink()
+      schedule()
+    }
+    const stop = () => {
+      window.clearInterval(wander)
+      window.clearTimeout(blink)
+      window.clearTimeout(blinkEnd)
+      cancelAnimationFrame(raf)
+      wander = blink = raf = 0
+      delete root.dataset.blink
+    }
+    const sync = () => {
+      const next = !onScreen || document.hidden
+      if (next === paused && (paused || wander)) return
+      paused = next
+      if (paused) {
+        root.dataset.paused = ''
+        stop()
+      } else {
+        delete root.dataset.paused
+        start()
+      }
+    }
+    const io =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver((entries) => {
+            onScreen = entries[entries.length - 1]?.isIntersecting ?? true
+            sync()
+          })
+    io?.observe(root)
 
     window.addEventListener('pointermove', onPointer, { passive: true })
     window.addEventListener('pointerdown', onPointer, { passive: true })
     document.addEventListener('focusin', onFocus)
     document.addEventListener('focusout', onFocus)
-    schedule()
+    document.addEventListener('visibilitychange', sync)
+    sync()
     return () => {
-      cancelAnimationFrame(raf)
-      window.clearInterval(wander)
+      stop()
+      io?.disconnect()
       window.removeEventListener('pointermove', onPointer)
       window.removeEventListener('pointerdown', onPointer)
       document.removeEventListener('focusin', onFocus)
       document.removeEventListener('focusout', onFocus)
+      document.removeEventListener('visibilitychange', sync)
     }
   }, [follow, lookAt])
 

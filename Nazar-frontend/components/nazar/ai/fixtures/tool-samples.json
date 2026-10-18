@@ -1,0 +1,62 @@
+{
+  "fetchedAt": "2026-10-18",
+  "server": "https://nazar-api-production.up.railway.app/mcp",
+  "tools": {
+    "check_batch": {
+      "args": {
+        "batch": "SR-13"
+      },
+      "text": [
+        "FLAGGED: batch SR-13 is named in 2 official regulator alert(s) (as of 2026-10-18 11:52 UTC).",
+        "- COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate) (batch SR-13) | Sresan Pharmaceutical | Adulterated: Contaminated: 48.6% w/v DEG | severity 5/5, Child Shield | WHO, \"WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines\" (2025-10-13) https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7 | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54"
+      ]
+    },
+    "search_alerts": {
+      "args": {
+        "query": "coldrif",
+        "limit": 2
+      },
+      "text": [
+        "2 alert(s) matching \"coldrif\":",
+        "- COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate) (batch SR-13) | Sresan Pharmaceutical | Adulterated: Contaminated: 48.6% w/v DEG | severity 5/5, Child Shield | WHO, \"WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines\" (2025-10-13) https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7 | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54"
+      ]
+    },
+    "recent_alerts": {
+      "args": {
+        "childShield": true,
+        "limit": 2
+      },
+      "text": [
+        "2 of 17 alert(s), newest first:",
+        "- Paracetamol Pediatric Oral Suspension IP (batch SOLOT-027) | Strausswell Organics, VPO Bhud | Not of Standard Quality: Assay and Related Substances | severity 4/5, Child Shield | CDSCO, \"CDSCO Not of Standard Quality drugs reported in Aug 2026\" https://cdscoonline.gov.in/CDSCO/filteredNsqDrugTable?month=Aug-2026&source=All&tab=nsq | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x490d1d046a166a24c8f1fa2838c52e0b92c9d398bf256d39ceccc4d0c99ea98f"
+      ]
+    },
+    "get_case": {
+      "args": {
+        "caseId": "c423b4c5912fb05b9bcc5196"
+      },
+      "text": [
+        "Batch Passport for SR-13: named in 2 notice(s).",
+        "- COLDRIF (paracetamol, chlorpheniramine maleate, phenylephrine, sodium citrate) (batch SR-13) | Sresan Pharmaceutical | Adulterated: Contaminated: 48.6% w/v DEG | severity 5/5, Child Shield | WHO, \"WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines\" (2025-10-13) https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7 | Arkiv https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54"
+      ]
+    },
+    "list_sources": {
+      "args": {},
+      "text": [
+        "9 sources:",
+        "- cdsco-online: CDSCO (IN), enabled, last checked 2026-10-18 09:44 UTC, https://cdscoonline.gov.in/CDSCO/viewPublicNSQDrug",
+        "- cdsco-pdf: CDSCO (IN), enabled, last checked 2026-10-18 09:45 UTC, https://cdsco.gov.in/opencms/opencms/en/Notifications/Alerts/",
+        "- tn-dc: Drugs Control Department, Tamil Nadu (IN-TN), enabled, last checked 2026-10-18 09:45 UTC, https://drugscontrol.tn.gov.in/list_nsq_drugs.html"
+      ]
+    },
+    "arkiv_proof": {
+      "args": {
+        "entityKey": "0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54"
+      },
+      "text": [
+        "OFFICIAL: a live Nazar alert created by the Nazar publisher wallet 0xd06d85Eb20f126f796E4a341b711B1a757c66bD2, read directly from Arkiv at block 737375.",
+        "Explorer: https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54 | expires about 2027-10-28"
+      ]
+    }
+  }
+}

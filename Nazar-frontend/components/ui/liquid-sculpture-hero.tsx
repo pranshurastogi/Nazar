@@ -6,7 +6,10 @@
  *
  * The sculpture is rebuilt from ~100k GPU-simulated particles sampled from
  * its own pixels. The cursor turns the material liquid; it settles back into
- * the crisp image. Without WebGL2 the static image is shown.
+ * the crisp image. Without WebGL2, on a software renderer (SwiftShader,
+ * llvmpipe) or when the browser reports a major performance caveat, the
+ * static image is shown instead. The render loop only runs while the hero is
+ * on screen and the tab is visible.
  */
 
 import * as React from "react"
@@ -223,6 +226,7 @@ out float vHalfLen;
 out float vR;
 out vec3 vCol;
 out float vA;
+out float vY;
 ${NOISE}
 ${ENERGY}
 void main(){
@@ -252,6 +256,7 @@ void main(){
 
   vec2 clip = world/uRes*2.0-1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  vY = world.y;
   vLocal = lc;
   vHalfLen = len*0.5;
   vR = r;
@@ -271,7 +276,9 @@ in float vHalfLen;
 in float vR;
 in vec3 vCol;
 in float vA;
+in float vY;
 uniform float uDpr;
+uniform float uClipY;
 out vec4 o;
 void main(){
   vec2 q = vec2(max(abs(vLocal.x)-vHalfLen, 0.0), vLocal.y);
@@ -281,6 +288,8 @@ void main(){
   float tail = vHalfLen > 0.0 ? clamp(0.5 - vLocal.x/(2.0*(vHalfLen+vR)), 0.0, 1.0) : 0.0;
   a *= 1.0 - tail*0.55;
   a *= vA;
+  // keep the band clear of the copy: material fades out before it reaches the text
+  a *= 1.0 - smoothstep(uClipY - 36.0, uClipY, vY);
   if(a < 0.004) discard;
   o = vec4(vCol*a, a);
 }
@@ -307,6 +316,7 @@ uniform float uAmbient;
 uniform float uIntroVis;
 uniform float uRest;
 uniform float uAlphaMode;
+uniform float uClipY;
 ${NOISE}
 ${ENERGY}
 void main(){
@@ -332,7 +342,7 @@ void main(){
   float show = (1.0 - max(E, uRest))*uIntroVis;
   vec3 mat = uAlphaMode > 0.5 ? col : col*(uBg/max(uImgBg, vec3(0.001)));
   // premultiplied: empty areas stay transparent so the page (and the backdrop word) shows through
-  float A = k*show;
+  float A = k*show*(1.0 - smoothstep(uClipY - 36.0, uClipY, px.y));
   o = vec4(mat*A, A);
 }
 `
@@ -374,6 +384,27 @@ function compile(gl: WebGL2RenderingContext, vs: string, fs: string): Prog {
 
 /* ── engine ──────────────────────────────────────────────────────────── */
 
+/** CPU rasterisers: the particle field would run at a frame or two per second and stall the page. */
+const SOFTWARE_GL = /swiftshader|llvmpipe|softpipe|software|basic render|mesa offscreen/i
+
+function rendererName(gl: WebGL2RenderingContext) {
+  try {
+    const ext = gl.getExtension("WEBGL_debug_renderer_info")
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || "")
+  } catch {
+    return ""
+  }
+}
+
+/** Why the engine could not start; shown as data-gl-reason on the hero. */
+class GLUnavailable extends Error {
+  reason: "unavailable" | "software" | "unsupported"
+  constructor(reason: "unavailable" | "software" | "unsupported") {
+    super("WebGL2 " + reason)
+    this.reason = reason
+  }
+}
+
 const TEX_W = 1024
 const SETTLE_FRAMES = 270
 
@@ -381,6 +412,11 @@ class LiquidEngine {
   lastImage: HTMLImageElement | null = null
   /** Called once, after the first frame has actually been drawn. */
   onFirstFrame: (() => void) | null = null
+  /** Called whenever the render loop starts or stops. */
+  onLoop: ((running: boolean) => void) | null = null
+  /** Frames rendered so far (the loop only; for diagnostics and tests). */
+  frames = 0
+  readonly renderer: string
 
   private canvas: HTMLCanvasElement
   private gl: WebGL2RenderingContext
@@ -439,7 +475,9 @@ class LiquidEngine {
   private running = false
   private last = 0
   private skip = 0
-  private visible = true
+  /** Off until the component reports the hero on screen and the page visible. */
+  private visible = false
+  private clipY = 1e6
   private ready = false
   private destroyed = false
   private lost = false
@@ -457,8 +495,15 @@ class LiquidEngine {
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
       powerPreference: "high-performance",
+      // a blocklisted GPU or software fallback refuses here instead of running at 1 fps
+      failIfMajorPerformanceCaveat: true,
     }) as WebGL2RenderingContext | null
-    if (!gl) throw new Error("WebGL2 unavailable")
+    if (!gl) throw new GLUnavailable("unavailable")
+    this.renderer = rendererName(gl)
+    if (SOFTWARE_GL.test(this.renderer)) {
+      gl.getExtension("WEBGL_lose_context")?.loseContext()
+      throw new GLUnavailable("software")
+    }
     this.gl = gl
     const nav = navigator as Navigator & { deviceMemory?: number }
     this.lowPower =
@@ -481,7 +526,7 @@ class LiquidEngine {
     // float render targets: RGBA16F is enough (offsets in px, sub-pixel precision)
     const full = gl.getExtension("EXT_color_buffer_float")
     const half = full ? null : gl.getExtension("EXT_color_buffer_half_float")
-    if (!full && !half) throw new Error("No float render targets")
+    if (!full && !half) throw new GLUnavailable("unsupported")
     this.stateFormat = { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
 
     this.pFlow = compile(gl, QUAD_VS, FLOW_FS)
@@ -708,10 +753,12 @@ class LiquidEngine {
     this.wake()
   }
 
-  resize(cssW: number, cssH: number, rect: Rect) {
+  /** clipY: the top of the copy, in hero CSS px; nothing is drawn below it. */
+  resize(cssW: number, cssH: number, rect: Rect, clipY = 1e6) {
     this.cssW = Math.max(1, cssW)
     this.cssH = Math.max(1, cssH)
     this.rect = rect
+    this.clipY = clipY
     let dpr = Math.min(window.devicePixelRatio || 1, this.lowPower ? 1.5 : 2)
     const px = this.cssW * this.cssH * dpr * dpr
     if (px > 4.5e6) dpr = Math.max(1, Math.sqrt(4.5e6 / (this.cssW * this.cssH)))
@@ -721,10 +768,12 @@ class LiquidEngine {
       this.canvas.width = w
       this.canvas.height = h
     }
-    this.draw()
+    // off screen nothing is presented: draw once it is back (wake), not now
+    if (this.visible && !this.running) this.draw()
   }
 
   setVisible(v: boolean) {
+    if (v === this.visible) return
     this.visible = v
     if (v) this.wake()
     else this.stop()
@@ -757,17 +806,20 @@ class LiquidEngine {
 
   private wake() {
     if (!this.ready || this.running || !this.visible || this.destroyed || this.lost) {
-      if (this.ready && !this.running) this.draw()
+      if (this.ready && !this.running && this.visible) this.draw()
       return
     }
     this.running = true
     this.last = performance.now()
     this.raf = requestAnimationFrame(this.frame)
+    this.onLoop?.(true)
   }
 
   private stop() {
-    this.running = false
     cancelAnimationFrame(this.raf)
+    if (!this.running) return
+    this.running = false
+    this.onLoop?.(false)
   }
 
   private radiusPx() {
@@ -779,7 +831,8 @@ class LiquidEngine {
   }
 
   private frame = (now: number) => {
-    if (!this.running) return
+    if (!this.running || !this.visible) return this.stop()
+    this.frames++
     const rawMs = now - this.last
     const dt = clamp(rawMs / 16.6667, 0.25, 3)
     this.last = now
@@ -954,6 +1007,7 @@ class LiquidEngine {
     gl.uniform1f(I.u.uIntroVis, introVis)
     gl.uniform1f(I.u.uRest, rest)
     gl.uniform1f(I.u.uAlphaMode, this.alphaMode ? 1 : 0)
+    gl.uniform1f(I.u.uClipY, this.clipY)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
     // particles are invisible at rest in "image" mode: skip them entirely
@@ -989,6 +1043,7 @@ class LiquidEngine {
     gl.uniform1f(P.u.uIntroVis, introVis)
     gl.uniform1f(P.u.uRest, rest)
     gl.uniform1f(P.u.uDpr, dpr)
+    gl.uniform1f(P.u.uClipY, this.clipY)
     if (this.alphaMode) gl.uniform3f(P.u.uTint, 1, 1, 1)
     else gl.uniform3f(P.u.uTint, br / Math.max(ir, 0.001), bg / Math.max(ig, 0.001), bb / Math.max(ib, 0.001))
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.n)
@@ -1153,17 +1208,20 @@ function computeRect(
   h: number,
   aspect: number,
   band: { top: number; bottom: number },
-  p: { scale: number; mobileScale: number; x: number; y: number }
+  p: { scale: number; mobileScale: number; x: number; y: number },
+  contained = false
 ): Rect {
   const bandH = Math.max(80, band.bottom - band.top)
+  // contained: the sculpture never spills out of its band (no nav above, copy right below)
+  const spill = contained ? 1 : 0
   let rw: number
   let maxH: number
   if (w >= 1024) {
     rw = w * 1.02 * p.scale
-    maxH = bandH * 1.1 * p.scale
+    maxH = bandH * (1.1 - 0.1 * spill) * p.scale
   } else if (w >= 640) {
     rw = w * 1.3 * p.scale
-    maxH = bandH * 1.15 * p.scale
+    maxH = bandH * (1.15 - 0.15 * spill) * p.scale
   } else if (aspect < 1.3) {
     // portrait image for phones: fills the width, may tuck under the headline
     rw = w * 1.0 * p.mobileScale
@@ -1190,12 +1248,15 @@ const CSS = `
 .sh-root *,.sh-root *::before,.sh-root *::after{box-sizing:border-box}
 .sh-stage{position:absolute;inset:0;z-index:0;pointer-events:none}
 .sh-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity .5s ease}
-.sh-fallback{position:absolute;display:block;max-width:none;user-select:none;-webkit-user-drag:none;transition:opacity .5s ease}
+.sh-fallback{position:absolute;left:0;top:0;display:block;max-width:none;user-select:none;-webkit-user-drag:none;transition:opacity .5s ease}
+/* JS places the image, backdrop word and hint with transforms (never layout offsets, so nothing
+   counts as a layout shift) and keeps them hidden until that first placement */
+.sh-root:not([data-laid]) .sh-fallback,.sh-root:not([data-laid]) .sh-backdrop,.sh-root:not([data-laid]) .sh-hint{visibility:hidden}
 .sh-root[data-gl="on"] .sh-canvas{opacity:1}
 .sh-root[data-gl="on"] .sh-fallback{opacity:0}
 .sh-root[data-swap="1"] .sh-canvas{opacity:0;transition-duration:.25s}
 .sh-root[data-swap="1"] .sh-fallback{opacity:0;transition-duration:.25s}
-.sh-backdrop{position:absolute;left:50%;z-index:0;transform:translate(-50%,-50%);white-space:nowrap;pointer-events:none;user-select:none;
+.sh-backdrop{position:absolute;left:50%;top:0;z-index:0;transform:translate(-50%,-50%);white-space:nowrap;pointer-events:none;user-select:none;
   font-family:var(--sh-head);font-weight:600;letter-spacing:-.06em;line-height:.8;color:color-mix(in srgb,var(--sh-fg) 5%,transparent)}
 .sh-nav{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:24px;
   padding:26px clamp(20px,3.2cqw,48px) 0}
@@ -1210,10 +1271,13 @@ const CSS = `
 .sh-navcta{color:inherit;text-decoration:none;font-size:13.5px;padding:8px 14px;border:1px solid color-mix(in srgb,var(--sh-fg) 22%,transparent);
   border-radius:999px;transition:background .25s,color .25s}
 .sh-navcta:hover{background:var(--sh-fg);color:var(--sh-bg)}
-.sh-hint{position:absolute;z-index:1;transform:translate(-50%,0);display:flex;align-items:center;gap:10px;white-space:nowrap;
+.sh-hint{position:absolute;left:0;top:0;z-index:1;display:flex;align-items:center;gap:10px;white-space:nowrap;
   font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.5;pointer-events:none;transition:opacity .8s ease}
 .sh-hint::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;animation:sh-pulse 2.4s ease-in-out infinite}
 .sh-root[data-touched="1"] .sh-hint{opacity:0}
+.sh-root[data-touched="1"] .sh-hint::before{animation:none}
+.sh-hint-touch{display:none}
+@media (hover:none),(pointer:coarse){.sh-hint-mouse{display:none}.sh-hint-touch{display:inline}}
 @keyframes sh-pulse{0%,100%{transform:scale(.6);opacity:.45}50%{transform:scale(1);opacity:1}}
 .sh-spacer{flex:1 1 auto;min-height:0}
 .sh-content{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);align-items:end;
@@ -1233,12 +1297,13 @@ const CSS = `
 .sh-btn:hover{transform:translateY(-1px)}
 .sh-btn svg,.sh-txt svg{transition:transform .3s cubic-bezier(.2,.7,.2,1)}
 .sh-btn:hover svg,.sh-txt:hover svg{transform:translateX(3px)}
-.sh-txt{display:inline-flex;align-items:center;gap:8px;color:inherit;text-decoration:none;font-size:14.5px;font-weight:500;
-  letter-spacing:-.01em;padding:4px 0;border-bottom:1px solid color-mix(in srgb,var(--sh-fg) 30%,transparent)}
+.sh-txt{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:inherit;text-decoration:none;font-size:14.5px;font-weight:500;
+  letter-spacing:-.01em;padding:0;
+  background:linear-gradient(color-mix(in srgb,var(--sh-fg) 30%,transparent),color-mix(in srgb,var(--sh-fg) 30%,transparent)) no-repeat 0 calc(50% + 13px)/100% 1px}
 .sh-root a:focus-visible{outline:2px solid var(--sh-fg);outline-offset:4px}
-.sh-credit{position:absolute;z-index:2;right:clamp(20px,3.2cqw,48px);bottom:10px;font-size:10px;letter-spacing:.06em;
-  color:inherit;opacity:.38;text-decoration:none}
-.sh-credit:hover{opacity:.8}
+.sh-credit{position:absolute;z-index:2;right:clamp(8px,2.4cqw,36px);bottom:0;display:inline-flex;align-items:center;min-height:44px;
+  padding:0 12px;font-size:11px;letter-spacing:.04em;color:inherit;opacity:.68;text-decoration:none}
+.sh-credit:hover{opacity:1;text-decoration:underline;text-underline-offset:3px}
 @container (max-width:1023px){
   .sh-content{grid-template-columns:1fr;gap:28px}
   .sh-aside{justify-self:start;max-width:520px;padding-bottom:0}
@@ -1254,8 +1319,8 @@ const CSS = `
   .sh-eyebrow{font-size:11px}
   .sh-ctas{gap:18px}
   .sh-btn{height:48px}
-  .sh-content{padding-bottom:40px}
-  .sh-credit{right:auto;left:50%;transform:translateX(-50%)}
+  .sh-content{padding-bottom:52px}
+  .sh-credit{right:auto;left:50%;transform:translateX(-50%);white-space:nowrap}
 }
 @media (prefers-reduced-motion:reduce){
   .sh-hint::before{animation:none}
@@ -1392,7 +1457,6 @@ export default function SculptureHero(props: SculptureHeroProps) {
   const backdropRef = React.useRef<HTMLDivElement>(null)
   const engineRef = React.useRef<LiquidEngine | null>(null)
   const aspectRef = React.useRef(1983 / 793)
-  const [isTouch, setIsTouch] = React.useState(false)
 
   const layout = React.useRef({ scale: sculptureScale, mobileScale: mobileSculptureScale, x: sculptureX, y: sculptureY })
   layout.current = {
@@ -1462,34 +1526,38 @@ export default function SculptureHero(props: SculptureHeroProps) {
     }
     const nav = navRef.current
     const content = contentRef.current
-    const band = {
-      top: nav ? nav.offsetTop + nav.offsetHeight + 8 : 16,
-      bottom: content ? content.offsetTop - 8 : h,
-    }
+    // Without a nav the sculpture gets a clear margin from the top edge and stays above the copy
+    // (its eyebrow included); with one it may tuck into the copy like the original design.
+    const band = nav
+      ? { top: nav.offsetTop + nav.offsetHeight + 8, bottom: content ? content.offsetTop - 8 : h }
+      : { top: Math.round(clamp(h * 0.065, 28, 48)), bottom: content ? content.offsetTop - 20 : h }
     // a portrait sculpture on phones dissolves into the top of the copy
-    if (mob && aspectRef.current < 1.3 && content) band.bottom += content.offsetHeight * 0.3
-    const rect = computeRect(w, h, aspectRef.current, band, layout.current)
+    if (nav && mob && aspectRef.current < 1.3 && content) band.bottom += content.offsetHeight * 0.3
+    const rect = computeRect(w, h, aspectRef.current, band, layout.current, !nav)
     const bd = backdropRef.current
     if (bd) {
       const chars = Math.max(1, (bd.textContent || "").length)
       bd.style.fontSize = Math.min((band.bottom - band.top) * 0.95, (w * 0.92) / (chars * 0.56)) + "px"
-      bd.style.top = (band.top + band.bottom) / 2 + "px"
+      bd.style.transform = `translate(-50%, calc(-50% + ${(band.top + band.bottom) / 2}px))`
     }
     const img = imgRef.current
     if (img) {
-      img.style.left = rect.x + "px"
-      img.style.top = rect.y + "px"
       img.style.width = rect.w + "px"
       img.style.height = rect.h + "px"
+      img.style.transform = `translate(${rect.x}px, ${rect.y}px)`
     }
     const hintEl = hintRef.current
     if (hintEl) {
       // the portrait phone sculpture runs into the copy: no room for the cue there
       hintEl.style.display = mob && aspectRef.current < 1.3 ? "none" : ""
-      hintEl.style.left = clamp(rect.x + rect.w / 2, 80, w - 80) + "px"
-      hintEl.style.top = Math.min(rect.y + rect.h * 0.95, band.bottom - 20) + "px"
+      const hx = clamp(rect.x + rect.w / 2, 80, w - 80)
+      const hy = Math.min(rect.y + rect.h * 0.95, band.bottom - 20)
+      hintEl.style.transform = `translate(${hx}px, ${hy}px) translateX(-50%)`
     }
-    engineRef.current?.resize(w, h, rect)
+    root.dataset.laid = "1"
+    // the copy starts here: particles fade out before they reach it (unless the design tucks it in)
+    const clipY = content && !nav ? content.offsetTop + 4 : 1e6
+    engineRef.current?.resize(w, h, rect, clipY)
   }, [])
 
   // engine lifecycle (re-created only when the image changes)
@@ -1502,17 +1570,26 @@ export default function SculptureHero(props: SculptureHeroProps) {
     canvas.className = "sh-canvas"
     stage.appendChild(canvas)
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
-    const coarse = window.matchMedia("(hover: none), (pointer: coarse)")
-    setIsTouch(coarse.matches)
     let engine: LiquidEngine | null = null
-    const fail = () => {
+    const fail = (reason = "lost") => {
       root.dataset.gl = "off"
+      root.dataset.glReason = reason
+      root.dataset.loop = "off"
     }
     try {
-      engine = new LiquidEngine(canvas, optsRef.current(mq.matches), fail)
+      engine = new LiquidEngine(canvas, optsRef.current(mq.matches), () => fail())
       engineRef.current = engine
-    } catch {
-      fail()
+      root.dataset.loop = "paused"
+      engine.onLoop = (running) => {
+        root.dataset.loop = running ? "running" : "paused"
+      }
+      // read-only diagnostics hook: frames the loop has rendered (tests check it stays still off screen)
+      const eng = engine
+      Object.defineProperty(root, "sculptureFrames", { configurable: true, get: () => eng.frames })
+    } catch (err) {
+      fail(err instanceof GLUnavailable ? err.reason : "unavailable")
+      // no engine: the static image stays, and the unused canvas goes
+      canvas.remove()
     }
 
     const ro = new ResizeObserver(() => relayout())
@@ -1520,12 +1597,17 @@ export default function SculptureHero(props: SculptureHeroProps) {
     // the band moves when fonts load or the copy reflows
     if (navRef.current) ro.observe(navRef.current)
     if (contentRef.current) ro.observe(contentRef.current)
+    // The loop runs only while the hero is on screen (display:none counts as off) and the tab is
+    // visible; both are tracked separately so a tab switch never restarts an off-screen hero.
+    let onScreen = false
+    const sync = () => engine?.setVisible(onScreen && !document.hidden)
     const io = new IntersectionObserver((entries) => {
-      for (const e of entries) engine?.setVisible(e.isIntersecting && !document.hidden)
+      const last = entries[entries.length - 1]
+      if (last) onScreen = last.isIntersecting
+      sync()
     })
     io.observe(root)
-    const onVis = () => engine?.setVisible(!document.hidden)
-    document.addEventListener("visibilitychange", onVis)
+    document.addEventListener("visibilitychange", sync)
     const onMq = () => engine?.setOptions({ reducedMotion: mq.matches })
     mq.addEventListener?.("change", onMq)
 
@@ -1569,7 +1651,7 @@ export default function SculptureHero(props: SculptureHeroProps) {
     return () => {
       ro.disconnect()
       io.disconnect()
-      document.removeEventListener("visibilitychange", onVis)
+      document.removeEventListener("visibilitychange", sync)
       mq.removeEventListener?.("change", onMq)
       root.removeEventListener("pointermove", onMove)
       root.removeEventListener("pointerdown", onDown)
@@ -1580,6 +1662,9 @@ export default function SculptureHero(props: SculptureHeroProps) {
       engineRef.current = null
       canvas.remove()
       delete root.dataset.gl
+      delete root.dataset.glReason
+      delete root.dataset.loop
+      delete (root as { sculptureFrames?: number }).sculptureFrames
     }
   }, [relayout])
 
@@ -1648,8 +1733,6 @@ export default function SculptureHero(props: SculptureHeroProps) {
     "--sh-h": height,
   } as React.CSSProperties
 
-  const hintText = isTouch ? hintTouch : hint
-
   return (
     <section ref={rootRef} className={"sh-root" + (className ? " " + className : "")} style={{ ...vars, ...style }}>
       <style>{CSS}</style>
@@ -1699,9 +1782,11 @@ export default function SculptureHero(props: SculptureHeroProps) {
         </nav>
       )}
 
-      {interactive && hintText ? (
-        <div ref={hintRef} className="sh-hint" aria-hidden="true">
-          {hintText}
+      {interactive && (hint || hintTouch) ? (
+        // both are rendered; a media query picks the one for the pointer, so no hydration swap
+        <div ref={hintRef} className="sh-hint" aria-hidden="true" data-sh-hint>
+          <span className="sh-hint-mouse">{hint}</span>
+          <span className="sh-hint-touch">{hintTouch || hint}</span>
         </div>
       ) : null}
 

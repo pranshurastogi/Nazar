@@ -7,10 +7,13 @@ import { timeAgo } from '@/components/nazar/status-pill'
 import { attr, type DirectoryEntity, type DirectoryReadError, type DirectoryType } from '@/lib/source/directory'
 import { formatWait } from '@/lib/format-wait'
 import { cn } from '@/lib/utils'
-import { blk, Chip, CopyButton, ExplorerLink, explorerEntity, nf, placeName, shortDate, shortKey, Skeleton, sourceLabel, ym } from './shared'
+import { blk, categoryLabel, Chip, CopyButton, ExplorerLink, explorerEntity, monthYear, nf, placeName, shortKey, Skeleton, sourceLabel, ym } from './shared'
 
 // The results list: one row per entity, the attributes people filter on as chips, and the
 // expiry block turned into a date. Opening a row shows the entity drawer.
+//
+// Two different expiries meet in an alert row and are labelled apart: the medicine's own
+// "Batch expiry" (from the regulator notice) and "On Arkiv until", the entity's lifetime.
 
 export type ResultsState =
   | { kind: 'loading' }
@@ -39,9 +42,23 @@ function TypeIcon({ type }: { type: string }) {
   )
 }
 
+/** The entity's lifetime on Arkiv: a month for alerts and notices, a time for the short heartbeat lease. */
+function lifetime(e: DirectoryEntity) {
+  if (!e.expiresAtEstimate) return null
+  if (e.type === 'heartbeat') {
+    const d = new Date(e.expiresAtEstimate)
+    return Number.isNaN(d.getTime()) ? null : `Lease ends ~${d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`
+  }
+  const m = monthYear(e.expiresAtEstimate)
+  return m ? `On Arkiv until ~${m}` : null
+}
+
+/** Chips that hold words (not codes) read better, and narrower, in the text face. */
+const WORDS = 'font-sans text-xs'
+
 function Row({ e, onOpen, onNoticeAlerts }: { e: DirectoryEntity; onOpen: () => void; onNoticeAlerts: () => void }) {
   const p = payloadOf(e)
-  const exp = shortDate(e.expiresAtEstimate)
+  const exp = lifetime(e)
   let title: string
   let lead: React.ReactNode
   let chips: React.ReactNode
@@ -54,11 +71,11 @@ function Row({ e, onOpen, onNoticeAlerts }: { e: DirectoryEntity; onOpen: () => 
     chips = (
       <>
         <Chip tone="primary" title="batch">{String(attr(e, 'batch_raw') ?? attr(e, 'batch') ?? '')}</Chip>
-        <Chip title="src">{sourceLabel(String(attr(e, 'src') ?? ''))}</Chip>
-        {state && <Chip title="state">{placeName(String(state))}</Chip>}
-        <Chip title="cat">{String(attr(e, 'cat') ?? '')}</Chip>
-        {expYm && <Chip title="exp_ym">exp {expYm}</Chip>}
-        {attr(e, 'peds') === 1 && <Chip tone="caution" title="peds">Child Shield</Chip>}
+        <Chip title="src" className={WORDS}>{sourceLabel(String(attr(e, 'src') ?? ''))}</Chip>
+        {state && <Chip title="state" className={WORDS}>{placeName(String(state))}</Chip>}
+        <Chip title={`cat = ${String(attr(e, 'cat') ?? '')}`} className={WORDS}>{categoryLabel(String(attr(e, 'cat') ?? ''))}</Chip>
+        {expYm && <Chip title="exp_ym: the medicine's expiry, from the notice" className={WORDS}>Batch expiry {expYm}</Chip>}
+        {attr(e, 'peds') === 1 && <Chip tone="caution" title="peds" className={WORDS}>Child Shield</Chip>}
       </>
     )
   } else if (e.type === 'notice') {
@@ -66,8 +83,8 @@ function Row({ e, onOpen, onNoticeAlerts }: { e: DirectoryEntity; onOpen: () => 
     lead = <TypeIcon type="notice" />
     chips = (
       <>
-        <Chip title="src">{sourceLabel(String(attr(e, 'src') ?? ''))}</Chip>
-        {ym(attr(e, 'notice_ym')) && <Chip title="notice_ym">{ym(attr(e, 'notice_ym'))}</Chip>}
+        <Chip title="src" className={WORDS}>{sourceLabel(String(attr(e, 'src') ?? ''))}</Chip>
+        {ym(attr(e, 'notice_ym')) && <Chip title="notice_ym" className={WORDS}>{ym(attr(e, 'notice_ym'))}</Chip>}
         <Chip tone="primary" title="rows">{nf(Number(attr(e, 'rows') ?? 0))} rows</Chip>
       </>
     )
@@ -78,35 +95,40 @@ function Row({ e, onOpen, onNoticeAlerts }: { e: DirectoryEntity; onOpen: () => 
     chips = <Chip tone="primary" title="last_ok">last ok {last ? timeAgo(last) : 'unknown'}</Chip>
   }
   return (
-    <li className="flex items-stretch gap-2 border-b py-2.5 last:border-b-0" data-entity-row={e.key} data-entity-type={e.type}>
+    // Phones: the chips get the row's full width and the key, its lifetime and the actions share
+    // a footer line, so a row stays a few lines tall instead of one chip per line. From sm up the
+    // footer dissolves into the grid (display: contents) and the actions sit to the right.
+    <li className="grid grid-cols-1 border-b py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2" data-entity-row={e.key} data-entity-type={e.type}>
       <button
         type="button"
         onClick={onOpen}
         aria-haspopup="dialog"
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex w-full min-w-0 items-start gap-3 rounded-xl p-1.5 text-left transition-colors sm:col-start-1 sm:row-start-1 hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         {lead}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{title}</span>
           <span className="mt-1.5 flex flex-wrap gap-1">{chips}</span>
-          <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span className="font-mono">{shortKey(e.key)}</span>
-            {exp && (
-              <span className="inline-flex items-center gap-1">
-                <Hourglass className="size-3" aria-hidden="true" /> expires ~{exp}
-              </span>
-            )}
-          </span>
         </span>
       </button>
-      <div className="flex shrink-0 flex-col gap-1.5 pt-1.5 sm:flex-row sm:items-start">
-        <CopyButton value={e.key} what="Entity key" />
-        <ExplorerLink href={explorerEntity(e.key)} label="Open entity in the Arkiv explorer" />
-        {e.type === 'notice' && (
-          <Button variant="outline" className="hidden h-10 rounded-xl px-3 text-xs sm:inline-flex" onClick={onNoticeAlerts}>
-            Its alerts
-          </Button>
-        )}
+      <div className="mt-0.5 flex items-center justify-between gap-2 pr-1.5 sm:contents">
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 pl-[3.625rem] text-[11px] text-muted-foreground sm:col-start-1 sm:row-start-2 sm:pb-1">
+          <span className="font-mono">{shortKey(e.key)}</span>
+          {exp && (
+            <span className="inline-flex items-center gap-1" title="When this entity expires on Arkiv (estimated from block times)" data-entity-lifetime>
+              <Hourglass className="size-3" aria-hidden="true" /> {exp}
+            </span>
+          )}
+        </span>
+        <div className="flex shrink-0 items-center gap-1.5 sm:col-start-2 sm:row-[1/span_2] sm:flex-col sm:items-end sm:self-start sm:pt-1.5">
+          {e.type === 'notice' && (
+            <Button variant="outline" className="hidden h-11 rounded-xl px-3 text-xs sm:inline-flex" onClick={onNoticeAlerts}>
+              Its alerts
+            </Button>
+          )}
+          <CopyButton value={e.key} what="Entity key" />
+          <ExplorerLink href={explorerEntity(e.key)} label="Open entity in the Arkiv explorer" />
+        </div>
       </div>
     </li>
   )

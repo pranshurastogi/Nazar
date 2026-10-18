@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useShell } from '@/components/nazar/app-shell'
 import { CabinetFormDialog } from '@/components/nazar/cabinet-form'
-import { CabinetShelf, EmptyShelf } from '@/components/nazar/cabinet-shelf'
+import { CabinetShelf, EmptyShelf, ShelfPlaceholder } from '@/components/nazar/cabinet-shelf'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { timeAgo } from '@/components/nazar/status-pill'
 import {
@@ -69,15 +69,14 @@ const ordered = (items: CabinetItem[]) =>
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
+/** On a phone the shelf is the index, so the list keeps only the cards that need a look. */
+const needsLook = (i: CabinetItem) => i.last?.state === 'flagged' || i.last?.state === 'retracted' || i.last?.state === 'unreadable'
+
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms)
     signal.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true })
   })
-
-function Skeleton({ className }: { className?: string }) {
-  return <span aria-hidden="true" className={cn('block animate-pulse rounded bg-muted motion-reduce:animate-none', className)} />
-}
 
 function Pill({ className, children, ...rest }: React.ComponentProps<'span'>) {
   return (
@@ -212,6 +211,10 @@ export function Cabinet() {
   const [results, setResults] = useState<Record<string, CheckResult>>({})
   const [progress, setProgress] = useState<{ current: string | null; done: number; total: number } | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
+  /** Phone only: show every card, not just the ones that need a look. */
+  const [showAll, setShowAll] = useState(false)
+  /** Cards opened from the shelf this visit stay in the phone's short list. */
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set())
   const [form, setForm] = useState<{ open: boolean; editing: CabinetItem | null; initial?: Partial<CabinetDraft> }>({ open: false, editing: null })
   const [now, setNow] = useState(() => Date.now())
   const queue = useRef<CabinetItem[]>([])
@@ -286,6 +289,10 @@ export function Cabinet() {
 
   const list = ordered(items)
   const flagged = list.filter((i) => i.last?.state === 'flagged')
+  const shortList = (i: CabinetItem) => needsLook(i) || revealed.has(i.id) || openId === i.id
+  const hiddenCount = list.filter((i) => !shortList(i)).length
+  /** Phone: collapse only when it actually hides something. */
+  const collapsible = hiddenCount > 0
   const running = progress !== null
   const sources = [...new Set(items.map((i) => i.last?.source).filter(Boolean))]
   const latest = items.reduce((m, i) => Math.max(m, i.last?.at ?? 0), 0)
@@ -315,6 +322,7 @@ export function Cabinet() {
   /** Opens an item's row in the list and brings it into view (from the banner or a shelf capsule). */
   const openItem = (id: string, focus = false) => {
     setOpenId(id)
+    setRevealed((r) => (r.has(id) ? r : new Set(r).add(id)))
     requestAnimationFrame(() => {
       const row = listRef.current?.querySelector<HTMLElement>(`[data-cabinet-item="${id}"]`)
       const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -395,49 +403,29 @@ export function Cabinet() {
           </div>
         </div>
 
-        <AnimatePresence initial={false}>
-          {flagged.length > 0 && (
-            <motion.div
-              key="alert-banner"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              role="alert"
-              data-cabinet-banner
-              className="mt-5 flex flex-col gap-3 rounded-2xl border border-flagged-border bg-flagged-soft p-4 sm:flex-row sm:items-center sm:p-5"
-            >
-              <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-flagged text-white dark:text-background">
-                  <TriangleAlert className="size-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-flagged">
-                    {flagged.length === 1 ? '1 medicine in your cabinet has an official alert' : `${flagged.length} medicines in your cabinet have official alerts`}
-                  </p>
-                  <p className="mt-0.5 text-sm text-foreground/80">Stop using {flagged.length === 1 ? 'it' : 'them'} and keep the pack. Open it for what to do and the proof.</p>
-                </div>
-              </div>
-              <Button className="h-12 bg-flagged px-4 font-semibold text-white hover:bg-flagged/90 dark:text-background" onClick={review}>
-                {flagged.length === 1 ? 'Review alert' : 'Review alerts'}
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!hydrated ? (
+          <div className="mt-5">
+            <ShelfPlaceholder />
+          </div>
+        ) : (
+          <>
+            <div className="mt-5">
+              {items.length > 0 ? (
+                <CabinetShelf
+                  items={list}
+                  now={now}
+                  checkingId={progress?.current ?? null}
+                  progress={progress}
+                  onOpen={(id) => openItem(id, true)}
+                  onReview={review}
+                />
+              ) : (
+                <EmptyShelf onAdd={() => openForm()} onTry={() => openForm(null, { batch: 'SR-13', name: 'COLDRIF syrup' })} />
+              )}
+            </div>
 
-        {hydrated && items.length > 0 && (
-          <CabinetShelf
-            items={list}
-            now={now}
-            checkingId={progress?.current ?? null}
-            progress={progress}
-            onOpen={(id) => openItem(id, true)}
-          />
-        )}
-
-        <div className={cn('mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1', hydrated && !items.length && 'sr-only')}>
-          <p className="text-sm" aria-live="polite" data-cabinet-count>
-            {hydrated ? (
-              <>
+            <div className={cn('mt-6 flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1', !items.length && 'sr-only')}>
+              <p className="text-sm" aria-live="polite" data-cabinet-count>
                 <span className="font-semibold">{plural(items.length, 'medicine')}</span>
                 <span className="text-muted-foreground">
                   {progress
@@ -446,74 +434,80 @@ export function Cabinet() {
                       ? ` · checked ${timeAgo(latest, now)}`
                       : ''}
                 </span>
-              </>
-            ) : (
-              <Skeleton className="h-4 w-36" />
-            )}
-          </p>
-          {!running && sources.length === 1 && sources[0] && <SourceTag source={sources[0]} />}
-        </div>
+              </p>
+              {!running && sources.length === 1 && sources[0] && <SourceTag source={sources[0]} />}
+            </div>
 
-        {running && <div className="nazar-progress mt-2 h-0.5 rounded-full bg-primary/15" aria-hidden="true" />}
-
-        {!hydrated ? (
-          <div className="mt-3 grid gap-3" aria-busy="true">
-            {[0, 1].map((i) => (
-              <div key={i} className="flex min-h-[4.75rem] items-start gap-3.5 rounded-2xl border bg-card p-4">
-                <Skeleton className="size-11 rounded-xl" />
-                <span className="grid flex-1 gap-2 pt-1">
-                  <Skeleton className="h-3.5 w-2/5" />
-                  <Skeleton className="h-3 w-3/5" />
-                  <Skeleton className="h-5 w-24 rounded-full" />
-                </span>
+            {/* The bar's room is kept whether or not a re-check runs, so the list never jumps. */}
+            {items.length > 0 && (
+              <div className="mt-2 h-0.5" aria-hidden="true">
+                {running && <div className="nazar-progress h-full rounded-full bg-primary/15" />}
               </div>
-            ))}
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyShelf onAdd={() => openForm()} onTry={() => openForm(null, { batch: 'SR-13', name: 'COLDRIF syrup' })} />
-        ) : (
-          <ul ref={listRef} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3" aria-label="Medicines in your cabinet">
-            <AnimatePresence initial={false}>
-              {list.map((item) => (
-                <motion.li
-                  key={item.id}
-                  layout="position"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                  data-cabinet-item={item.id}
-                  data-batch={item.batch}
-                  className="scroll-mt-6 scroll-mb-28"
-                >
-                  <CabinetRow
-                    item={item}
-                    result={results[item.id]}
-                    checking={progress?.current === item.id}
-                    open={openId === item.id}
-                    now={now}
-                    onToggle={() => setOpenId((id) => (id === item.id ? null : item.id))}
-                    onEdit={() => openForm(item)}
-                    onRemove={() => remove(item)}
-                    onCheck={shell.requestCheck}
-                  />
-                </motion.li>
-              ))}
-            </AnimatePresence>
-          </ul>
-        )}
+            )}
 
-        <section className="mt-8 flex items-start gap-3 rounded-2xl border bg-card p-5" aria-label="Privacy">
-          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-            <ShieldCheck className="size-5" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h3 className="font-semibold">Never leaves this device</h3>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Your cabinet is stored in this browser&apos;s local storage and is never sent to any server. A re-check looks up each batch number on its own, never the names, notes or the list. Use Export to keep a copy or move it to another phone.
-            </p>
-          </div>
-        </section>
+            {items.length > 0 && (
+              <>
+                <ul ref={listRef} className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3" aria-label="Medicines in your cabinet" data-cabinet-list={collapsible ? (showAll ? 'all' : 'short') : 'all'}>
+                  <AnimatePresence initial={false}>
+                    {list.map((item) => (
+                      <motion.li
+                        key={item.id}
+                        layout="position"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                        data-cabinet-item={item.id}
+                        data-batch={item.batch}
+                        data-short={shortList(item) ? '' : undefined}
+                        className={cn('scroll-mt-6 scroll-mb-28', collapsible && !showAll && !shortList(item) && 'max-md:hidden')}
+                      >
+                        <CabinetRow
+                          item={item}
+                          result={results[item.id]}
+                          checking={progress?.current === item.id}
+                          open={openId === item.id}
+                          now={now}
+                          onToggle={() => setOpenId((id) => (id === item.id ? null : item.id))}
+                          onEdit={() => openForm(item)}
+                          onRemove={() => remove(item)}
+                          onCheck={shell.requestCheck}
+                        />
+                      </motion.li>
+                    ))}
+                  </AnimatePresence>
+                </ul>
+                {collapsible && (
+                  <div className="mt-3 flex flex-col items-center gap-1.5 text-center md:hidden" data-cabinet-showall>
+                    {!showAll && (
+                      <p className="text-xs leading-5 text-pretty text-muted-foreground">
+                        {hiddenCount === items.length
+                          ? 'None of these needs a look right now. Tap a capsule on the shelf for its details.'
+                          : `${plural(hiddenCount, 'more medicine')} on the shelf above, with no alert found or not checked yet.`}
+                      </p>
+                    )}
+                    <Button variant="outline" className="h-11 w-full max-w-sm rounded-xl text-sm font-semibold" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+                      {showAll ? 'Show only what needs a look' : `Show all ${plural(items.length, 'medicine')}`}
+                      <ChevronDown className={cn('transition-transform duration-200', showAll && 'rotate-180')} aria-hidden="true" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            <section className="mt-8 flex items-start gap-3 rounded-2xl border bg-card p-5" aria-label="Privacy">
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <ShieldCheck className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-semibold">Never leaves this device</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Your cabinet is stored in this browser&apos;s local storage and is never sent to any server. A re-check looks up each batch number on its own, never the names, notes or the list. Use Export to keep a copy or move it to another phone.
+                </p>
+              </div>
+            </section>
+          </>
+        )}
 
         <CabinetFormDialog
           open={form.open}

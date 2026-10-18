@@ -30,6 +30,7 @@ import type { PackLabel } from '@/lib/scan/pack'
 import { checkBatch, type AlertFeed, type CheckResult, type ResultState, type Stage } from '@/lib/source'
 import { HOME_KEYS, loadChild, loadSevere, notDemo } from '@/lib/source/prefetch'
 import { peek, revalidate } from '@/lib/source/swr'
+import { serif } from '@/lib/fonts'
 import { cn } from '@/lib/utils'
 
 const RECENT_KEY = 'nazar:recent'
@@ -90,6 +91,8 @@ export default function Page() {
   const [scanning, setScanning] = useState(false)
   const [pack, setPack] = useState<PackLabel | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
+  /** Set when "Check batch" is pressed with an empty box; cleared as soon as something is typed. */
+  const [emptyHint, setEmptyHint] = useState(false)
 
   useEffect(() => {
     try {
@@ -126,9 +129,11 @@ export default function Page() {
     // A typed check has no label; a scan carries the label it read, for "About this medicine".
     setPack(label ?? null)
     if (!value.trim()) {
+      setEmptyHint(true)
       inputRef.current?.focus()
       return
     }
+    setEmptyHint(false)
     checkRef.current?.abort()
     const ctrl = new AbortController()
     checkRef.current = ctrl
@@ -223,11 +228,11 @@ export default function Page() {
                 className="w-24 shrink-0 md:w-44"
               />
             </div>
-            <h2 className="mt-3 text-[clamp(2.5rem,8vw,3.25rem)] md:text-[2.5rem] xl:text-[3.25rem] font-semibold leading-[0.98] tracking-[-0.05em]">
+            <h1 className="mt-3 text-[clamp(2.5rem,8vw,3.25rem)] md:text-[2.5rem] xl:text-[3.25rem] font-semibold leading-[0.98] tracking-[-0.05em]" data-check-hero>
               Check the batch,
               <br />
-              <span className="text-muted-foreground">not just the brand.</span>
-            </h2>
+              <span className={cn(serif.className, 'pr-1 text-[1.12em] font-normal tracking-[-0.01em] text-primary')}>not just the brand.</span>
+            </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-muted-foreground">
               Match any batch number against alerts published by CDSCO and state drug regulators. Every answer shows where it came from.
             </p>
@@ -246,7 +251,10 @@ export default function Page() {
                 ref={inputRef}
                 id="batch"
                 value={batch}
-                onChange={(e) => setBatch(e.target.value.toUpperCase())}
+                onChange={(e) => {
+                  setBatch(e.target.value.toUpperCase())
+                  if (emptyHint) setEmptyHint(false)
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && runCheck()}
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
                 placeholder="e.g. SR-13"
@@ -254,7 +262,9 @@ export default function Page() {
                 autoCapitalize="characters"
                 spellCheck={false}
                 enterKeyHint="search"
-                className="h-14 min-w-0 flex-1 bg-transparent font-mono text-xl tracking-wider uppercase outline-none focus-visible:outline-none placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:normal-case placeholder:text-muted-foreground/70"
+                aria-invalid={emptyHint || undefined}
+                aria-describedby={emptyHint ? 'batch-empty' : undefined}
+                className="h-14 min-w-0 flex-1 bg-transparent font-mono text-xl tracking-wider uppercase outline-none focus-visible:outline-none placeholder:font-sans placeholder:text-base placeholder:tracking-normal placeholder:normal-case placeholder:text-muted-foreground"
               />
               {batch && (
                 <button
@@ -274,6 +284,10 @@ export default function Page() {
                 </button>
               )}
             </div>
+            {/* Always mounted, so screen readers announce the message when it appears. */}
+            <p id="batch-empty" role="status" className={cn('text-sm font-medium text-caution', emptyHint && 'mt-2')} data-empty-hint={emptyHint ? 'shown' : 'hidden'}>
+              {emptyHint ? 'Enter the batch number from the pack (B.No.)' : ''}
+            </p>
             <div className="mt-4 flex gap-3">
               <Button className="h-13 flex-1 rounded-xl text-base font-semibold" onClick={() => runCheck()} aria-busy={!!pending}>
                 {pending ? (
@@ -380,11 +394,11 @@ export default function Page() {
               <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><Baby className="size-5" /></span>
               <div>
                 <h3 className="font-semibold">Child Shield</h3>
-                <p className="text-xs text-muted-foreground">Syrups, drops and suspensions</p>
+                <p className="text-xs text-muted-foreground">Children&apos;s medicines with an official alert</p>
               </div>
             </div>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
-              Children&apos;s medicines with a glycol contamination alert are ranked at the highest severity.{' '}
+              Medicines made for children that a regulator has flagged. A toxic glycol found in any medicine is ranked at the highest severity.{' '}
               {childFeed ? (
                 <span className="font-semibold text-foreground">{childFeed.total} active right now.</span>
               ) : (
