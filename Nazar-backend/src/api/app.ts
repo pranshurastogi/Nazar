@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono'
+import { compress } from 'hono/compress'
 import { cors } from 'hono/cors'
 import { etag } from 'hono/etag'
 import type { Hex } from 'viem'
@@ -10,11 +11,16 @@ import { env } from '../config/env.ts'
 import { BATCH_SHAPE, confusionKey, matchKey } from '../domain/batch.ts'
 import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
+import { ExplainError, MedicineExplainer } from '../medicine/explain.ts'
+import { clientIp } from '../medicine/limits.ts'
+import { ExplainInput, MAX_BODY_BYTES } from '../medicine/schema.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
 import { isPublishableTier } from '../resolve/case.ts'
 import type { EgressStatus } from '../pipeline/egress.ts'
 import type { AlertRow, Ledger } from '../storage/ledger.ts'
 import { alertDto, noticeDto, viewDto, type AlertDTO, type DtoContext } from './dto.ts'
+import { CACHE, CheckCache, cdnCacheHeaders } from './cache-policy.ts'
+import { SnapshotService, serveSnapshot } from './snapshot.ts'
 
 const log = child('api')
 
@@ -56,6 +62,10 @@ export interface AppDeps {
   egress?: () => EgressStatus | null
   /** Arkiv directory (/v1/arkiv/*): live counts and filtered entity pages read from Arkiv; null disables it. */
   directory?: Pick<ArkivDirectory, 'summary' | 'entities'> | null
+  /** Pre-compressed alert snapshot for on-device checks (/v1/snapshot); defaults to one over the ledger. */
+  snapshot?: SnapshotService
+  /** "About this medicine" (POST /v1/medicine/explain); defaults to one built from env. */
+  medicine?: Pick<MedicineExplainer, 'explain'>
 }
 
 export type CheckState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
@@ -70,7 +80,7 @@ export interface CheckResponse {
 
 class HttpError extends Error {
   constructor(
-    readonly status: 400 | 404 | 410 | 500 | 503,
+    readonly status: 400 | 404 | 410 | 413 | 500 | 503,
     readonly code: string,
     message: string,
     readonly details?: unknown,
@@ -106,8 +116,8 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   return r.data
 }
 
-const LIST_CACHE = 'public, max-age=30, stale-while-revalidate=120'
-const CHECK_CACHE = 'public, max-age=15'
+const LIST_CACHE = CACHE.list
+const CHECK_CACHE = CACHE.check
 
 const publishable = (rows: AlertRow[]) => rows.filter((r) => isPublishableTier(r.record.tier))
 
@@ -192,14 +202,24 @@ export function createApp(deps: AppDeps) {
     '*',
     cors({
       origin: origins.includes('*') ? '*' : origins,
-      allowMethods: ['GET', 'HEAD', 'OPTIONS'],
+      allowMethods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+      allowHeaders: ['Content-Type'],
+      exposeHeaders: ['Retry-After'],
       maxAge: 600,
     }),
   )
+  // Outside etag, so tags are computed on the plain body; the snapshot ships pre-compressed and is skipped.
+  app.use('*', compress())
+  app.use('/v1/*', cdnCacheHeaders())
   app.use('/v1/*', etag({ weak: true }))
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: { code: err.code, message: redactSecrets(err.message), details: err.details } }, err.status)
+    if (err instanceof ExplainError) {
+      if (err.retryAfterSec) c.header('Retry-After', String(err.retryAfterSec))
+      c.header('Cache-Control', 'no-store')
+      return c.json({ error: { code: err.code, message: err.message, ...(err.retryAfterSec ? { retryAfterSec: err.retryAfterSec } : {}) } }, err.status)
+    }
     if (err instanceof DirectoryError) {
       if (err.retryAfterSec) c.header('Retry-After', String(err.retryAfterSec))
       c.header('Cache-Control', 'no-store')
@@ -229,9 +249,14 @@ export function createApp(deps: AppDeps) {
     }),
   )
 
+  const checkCache = new CheckCache<CheckResponse>(ledger)
+  const snapshot = deps.snapshot ?? new SnapshotService(ledger)
+  app.get('/v1/snapshot', (c) => serveSnapshot(c, snapshot))
+
   app.get('/v1/check', async (c) => {
     const { batch: raw } = parse(CheckQuery, c.req.query())
-    const result = await check(raw)
+    const key = raw.trim().replace(/\s+/g, ' ').toUpperCase()
+    const result = { ...(await checkCache.get(key, () => check(raw))), asOf: now().toISOString() }
     c.header('Cache-Control', CHECK_CACHE)
     return c.json(result)
   })
@@ -316,7 +341,7 @@ export function createApp(deps: AppDeps) {
 
   app.get('/v1/arkiv/summary', async (c) => {
     const body = await directory().summary()
-    c.header('Cache-Control', body.stale ? 'public, max-age=15' : 'public, max-age=60, stale-while-revalidate=240')
+    c.header('Cache-Control', body.stale ? CACHE.arkivSummaryStale : CACHE.arkivSummary)
     return c.json(body)
   })
 
@@ -324,11 +349,31 @@ export function createApp(deps: AppDeps) {
     const q = parse(EntitiesQuery, c.req.query())
     const body = await directory().entities(q)
     // Pages read at a pinned block never change; first pages follow the chain head.
-    c.header('Cache-Control', q.cursor ? 'public, max-age=300' : 'public, max-age=30')
+    c.header('Cache-Control', q.cursor ? CACHE.arkivPinnedPage : CACHE.arkivFirstPage)
     return c.json(body)
   })
 
-  return Object.assign(app, { check })
+  // ---- About this medicine: general LLM reference text + Nazar's own alert count. Opt-in from the app.
+  let medicine = deps.medicine
+  app.post('/v1/medicine/explain', async (c) => {
+    if (Number(c.req.header('content-length') ?? 0) > MAX_BODY_BYTES) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${MAX_BODY_BYTES} bytes`)
+    const raw = await c.req.text()
+    if (Buffer.byteLength(raw) > MAX_BODY_BYTES) throw new HttpError(413, 'TOO_LARGE', `body must be at most ${MAX_BODY_BYTES} bytes`)
+    let body: unknown
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      throw new HttpError(400, 'BAD_REQUEST', 'body must be JSON')
+    }
+    const input = parse(ExplainInput, body)
+    const socket = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress
+    medicine ??= new MedicineExplainer({ ledger })
+    const result = await medicine.explain(input, clientIp(c.req.header(), socket))
+    c.header('Cache-Control', 'no-store')
+    return c.json(result)
+  })
+
+  return Object.assign(app, { check, checkCache, snapshot })
 }
 
 export type NazarApp = ReturnType<typeof createApp>

@@ -76,6 +76,17 @@ const EnvSchema = z.object({
   NAZAR_LLM_MODEL: z.string().default('claude-haiku-5-5'),
   NAZAR_LLM_ENABLED: bool(true),
 
+  // "About this medicine" (POST /v1/medicine/explain): general reference text from an LLM.
+  NAZAR_LLM_PROVIDER: z.enum(['gemini', 'anthropic']).default('gemini'),
+  GEMINI_API_KEY: optional,
+  NAZAR_GEMINI_MODEL: z.string().default('gemini-flash-latest'),
+  /** Used when the primary model is overloaded (Gemini answers 503 "high demand" at peaks). Empty disables it. */
+  NAZAR_GEMINI_FALLBACK_MODEL: z.string().default('gemini-flash-lite-latest'),
+  /** Salt for hashing client IPs in the rate limiter; a random one is made at boot when unset. */
+  NAZAR_IP_SALT: optional,
+  /** Upstream LLM calls allowed per UTC day across all clients (cache hits are free). */
+  NAZAR_LLM_DAILY_CAP: z.coerce.number().int().min(0).default(500),
+
   // API
   PORT: z.coerce.number().int().default(8787),
   NAZAR_CORS_ORIGINS: z

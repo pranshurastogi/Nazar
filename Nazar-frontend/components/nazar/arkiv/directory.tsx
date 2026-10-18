@@ -18,11 +18,14 @@ import {
   predicates,
   queryString,
   sdkSnippet,
+  type ArkivSummary,
   type DirectoryEntity,
   type DirectoryFilters,
   type DirectoryPage,
   type DirectoryType,
 } from '@/lib/source/directory'
+import { SUMMARY_KEY } from '@/lib/source/prefetch'
+import { peek, put, revalidate } from '@/lib/source/swr'
 import { cn } from '@/lib/utils'
 import { EntityDrawer } from './entity-drawer'
 import { FilterPanel } from './filters'
@@ -70,9 +73,11 @@ export function ArkivDirectory() {
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
   }, [filters, mode, ready])
 
-  const loadSummary = useCallback((signal?: AbortSignal) => {
-    setSummary((s) => (s.kind === 'ok' ? s : { kind: 'loading' }))
-    apiSummary(signal).then(
+  const loadSummary = useCallback((signal?: AbortSignal, force = false) => {
+    // Last counts first (back/forward, reloads), then the fresh read; Refresh skips the shared copy.
+    const cached = peek<ArkivSummary>(SUMMARY_KEY)
+    setSummary((s) => (s.kind === 'ok' ? s : cached ? { kind: 'ok', data: cached.value, fetchedAt: cached.at } : { kind: 'loading' }))
+    ;(force ? apiSummary(signal).then((d) => (put(SUMMARY_KEY, d), d)) : revalidate(SUMMARY_KEY, () => apiSummary())).then(
       (data) => !signal?.aborted && setSummary({ kind: 'ok', data, fetchedAt: Date.now() }),
       (err) => {
         if (signal?.aborted) return
@@ -173,7 +178,7 @@ export function ArkivDirectory() {
 
   return (
     <div className="space-y-4" data-arkiv-directory>
-      <DirectoryHeader summary={summary} block={block} onRefresh={() => loadSummary()} />
+      <DirectoryHeader summary={summary} block={block} onRefresh={() => loadSummary(undefined, true)} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Overview summary={summary} filters={filters} onApply={apply} />

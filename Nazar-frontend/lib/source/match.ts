@@ -1,4 +1,4 @@
-import type { Alert, CheckResult, SourceKind } from './types'
+import type { Alert, Answerer, CheckResult } from './types'
 
 // Matching rules. Must stay identical to Nazar-backend/src/domain/batch.ts so a batch
 // typed here and a batch read from a PDF meet at the same key.
@@ -52,7 +52,7 @@ export function orderAlerts(alerts: Alert[]) {
  * Turns the alerts found for one batch into a result. A look-alike is never shown as a
  * flag; we ask the person to re-read the pack instead.
  */
-export function resolveResult(batch: string, exact: Alert[], lookAlike: string | undefined, source: SourceKind): CheckResult {
+export function resolveResult(batch: string, exact: Alert[], lookAlike: string | undefined, source: Answerer): CheckResult {
   const asOf = new Date()
   if (exact.length) {
     const alerts = orderAlerts(exact)

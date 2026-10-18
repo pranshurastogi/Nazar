@@ -20,6 +20,8 @@ import {
   type FeedFilters,
   type FeedPage,
 } from '@/lib/source'
+import { feedKey, notDemo } from '@/lib/source/prefetch'
+import { peek, revalidate } from '@/lib/source/swr'
 import { cn } from '@/lib/utils'
 
 // The Feed tab: every alert Nazar holds, newest first, from whichever source answers
@@ -222,9 +224,18 @@ export function Feed() {
     ctrlRef.current?.abort()
     const ctrl = new AbortController()
     ctrlRef.current = ctrl
-    setLoading('first')
     setOpenId(null)
-    loadFeed(toQuery(filters), ctrl.signal).then(
+    const q = toQuery(filters)
+    const key = feedKey(q)
+    // Paint the last answer for these filters at once, then refresh it in the background.
+    // A page restored from sessionStorage has no `more` until the fresh one arrives.
+    const cached = peek<FeedPage>(key)
+    if (cached) {
+      setItems(cached.value.items)
+      setPage({ ...cached.value, more: cached.value.more ?? null })
+      setLoading(null)
+    } else setLoading('first')
+    revalidate(key, () => loadFeed(q), { keep: notDemo }).then(
       (p) => {
         if (ctrl.signal.aborted) return
         setItems(p.items)

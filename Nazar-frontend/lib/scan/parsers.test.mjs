@@ -131,3 +131,106 @@ test('Confusable characters are flagged, not changed', () => {
   assert.equal(hasConfusableChars('SR-13'), true)
   assert.equal(hasConfusableChars('AX-77'), false)
 })
+
+// ---- Whole-label grammar (pack.ts)
+import { detectForm, parseComposition, parseLicence, parseMrp, parsePackLabel, parsePackSize, parseSchedule, stateOf } from './pack.ts'
+
+const DOLO = `Rx
+DOLO-650
+Paracetamol Tablets IP 650 mg
+Each uncoated tablet contains:
+Paracetamol IP 650 mg
+Excipients q.s.
+15 Tablets
+Store below 30°C. Keep out of reach of children.
+Mfd. by: Micro Labs Limited, 92 Sipcot Industrial Complex,
+Hosur 635126, Tamil Nadu
+Mfg. Lic. No.: 28/MD/AP/2010/F/R
+B.No.: DOBS3975 Mfg. Dt.: 06/2025 Exp. Dt.: 05/2028
+M.R.P. Rs. 33.60 (Incl. of all taxes)`
+
+test('Pack label: Dolo 650 strip', () => {
+  const p = parsePackLabel(DOLO)
+  assert.equal(p.product?.value, 'Paracetamol Tablets IP 650 mg')
+  assert.deepEqual(p.composition.map((c) => c.value), ['Paracetamol IP 650 mg'])
+  assert.equal(p.form?.value, 'tablet')
+  assert.equal(p.packSize?.value, '15 tablets')
+  assert.equal(p.manufacturer?.value, 'Micro Labs Limited')
+  assert.equal(p.manufacturerState?.value, 'Tamil Nadu')
+  assert.match(p.manufacturerAddress?.value ?? '', /Hosur 635126/)
+  assert.equal(p.licence?.value, '28/MD/AP/2010/F/R')
+  assert.equal(p.mrp?.value, '33.60')
+  assert.equal(p.rawText, DOLO)
+  assert.ok(p.composition[0].confidence > 0.5 && p.product.confidence > 0 && p.product.confidence <= 1)
+})
+
+test('Pack label: syrup with "Each 5 ml contains", combination, Schedule H, marketer + maker', () => {
+  const t = `COLDRIF Syrup
+Each 5 ml contains:
+Paracetamol IP 125 mg
+Phenylephrine Hydrochloride IP 5 mg
+Chlorpheniramine Maleate IP 2 mg
+Flavoured syrup base q.s.
+SCHEDULE H PRESCRIPTION DRUG - CAUTION
+60 ml
+Manufactured by: Sresan Pharmaceutical, No. 787, Bangalore Highway,
+Sunguvarchatram, Kancheepuram Dt., Tamil Nadu
+Marketed by: Example Health Pvt Ltd, Mumbai, Maharashtra
+Mfg Lic No. 1747
+Batch No. SR-13 MFD 05/2025 EXP 04/2027 MRP Rs. 72.50`
+  const p = parsePackLabel(t)
+  assert.equal(p.product?.value, 'COLDRIF Syrup')
+  assert.deepEqual(p.composition.map((c) => c.value), ['Paracetamol IP 125 mg', 'Phenylephrine Hydrochloride IP 5 mg', 'Chlorpheniramine Maleate IP 2 mg'])
+  assert.equal(p.form?.value, 'syrup')
+  assert.equal(p.packSize?.value, '60 ml')
+  assert.equal(p.schedule?.value, 'H')
+  assert.equal(p.manufacturer?.value, 'Sresan Pharmaceutical')
+  assert.equal(p.manufacturerState?.value, 'Tamil Nadu')
+  assert.equal(p.marketedBy?.value, 'Example Health Pvt Ltd')
+  assert.equal(p.licence?.value, '1747')
+  assert.equal(p.mrp?.value, '72.50')
+})
+
+test('Pack label: capsule with "eq. to", Schedule H1, 1 x 10 pack, Composition heading', () => {
+  const t = `MOXIKIND-CV 625
+Composition: Each film coated tablet contains Amoxycillin Trihydrate IP eq. to Amoxycillin 500 mg Potassium Clavulanate Diluted IP eq. to Clavulanic Acid 125 mg
+Schedule H1 Drug - Warning
+1 x 10 Tablets
+Mkt. by: Mankind Pharma Ltd, New Delhi
+M.L. 25/UA/2011
+M.R.P. ₹ 204.00`
+  const p = parsePackLabel(t)
+  assert.equal(p.schedule?.value, 'H1')
+  assert.equal(p.composition.length, 2)
+  assert.match(p.composition[0].value, /Amoxycillin Trihydrate IP 500 mg/)
+  assert.match(p.composition[1].value, /Potassium Clavulanate Diluted IP 125 mg/)
+  assert.equal(p.packSize?.value, '1 x 10 tablets')
+  assert.equal(p.manufacturer?.value, 'Mankind Pharma Ltd')
+  assert.equal(p.manufacturerState?.value, 'Delhi')
+  assert.equal(p.licence?.value, '25/UA/2011')
+  assert.equal(p.mrp?.value, '204.00')
+})
+
+test('Pack label pieces and OCR confidence', () => {
+  assert.equal(detectForm('Azithromycin Oral Suspension'), 'suspension')
+  assert.equal(parsePackSize('Each 5 ml contains Paracetamol 250 mg. 100 ml'), '100 ml')
+  assert.equal(parsePackSize('Strip of 10 capsules'), '10 capsules')
+  assert.equal(parseMrp('MRP: 45'), '45')
+  assert.equal(parseMrp('No price here'), undefined)
+  assert.equal(parseSchedule('To be sold by retail on the prescription of a Registered Medical Practitioner only'), 'H')
+  assert.equal(parseSchedule('Paracetamol tablets'), undefined)
+  assert.equal(parseLicence('Mfg. Lic. No. : G/25/1234'), 'G/25/1234')
+  assert.equal(stateOf('Plot 12, Baddi, Distt. Solan (H.P.)'), 'Himachal Pradesh')
+  assert.deepEqual(parseComposition('No composition here 500 mg'), [])
+  const low = parsePackLabel(DOLO, (v) => (v.includes('Micro') ? 40 : 95))
+  assert.equal(low.manufacturer?.confidence, 0.4)
+  assert.equal(low.licence?.confidence, 0.85)
+})
+
+test('Pack label: noise yields no invented fields', () => {
+  const p = parsePackLabel('%%% ~~ 12 34\n')
+  assert.deepEqual(p.composition, [])
+  assert.equal(p.product, undefined)
+  assert.equal(p.manufacturer, undefined)
+  assert.equal(p.licence, undefined)
+})

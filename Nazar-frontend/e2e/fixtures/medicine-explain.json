@@ -1,0 +1,56 @@
+{
+  "medicine": {
+    "name": "COLDRIF syrup",
+    "genericNames": [
+      "Paracetamol",
+      "Phenylephrine",
+      "Chlorpheniramine"
+    ],
+    "drugClass": "Cold and allergy medicine combination",
+    "whatItIsFor": [
+      "Relief from common cold symptoms",
+      "Reducing fever and mild body aches",
+      "Relieving runny nose, sneezing, and blocked nose"
+    ],
+    "howItWorks": "It lowers fever, clears nasal congestion, and blocks histamine to stop allergy symptoms.",
+    "commonSideEffects": [
+      "Sleepiness or drowsiness",
+      "Dizziness or lightheadedness",
+      "Dry mouth or throat",
+      "Nausea or mild stomach upset"
+    ],
+    "seriousWarnings": [
+      "Swelling of the face, lips, or throat causing breathing trouble",
+      "Rapid, irregular heartbeat or severe chest flutter",
+      "Severe dizziness or sudden extreme drowsiness"
+    ],
+    "whoShouldBeCareful": [
+      "People with high blood pressure or heart problems",
+      "People with liver or kidney disease",
+      "Pregnant or breastfeeding women",
+      "Very young children without clear pediatric guidance"
+    ],
+    "interactions": [
+      "Other medicines containing paracetamol, to avoid liver damage",
+      "Sedatives, sleeping pills, or alcohol, which increase drowsiness",
+      "Certain medicines for depression or high blood pressure"
+    ],
+    "storage": "Store in a cool, dry place away from direct sunlight.",
+    "prescriptionStatus": "Usually prescription-only in India (Schedule H)",
+    "lookAlikeNames": [
+      "Coldact",
+      "Corex",
+      "Colimex"
+    ],
+    "confidence": "high",
+    "notMedicalAdvice": true
+  },
+  "disclaimer": "General information, not medical advice. Ask your doctor or pharmacist before you start, stop or change a medicine.",
+  "aiGenerated": true,
+  "nazarAlerts": 3,
+  "nazarQuery": "Paracetamol",
+  "batchAlerts": 2,
+  "cached": false,
+  "model": "gemini:gemini-flash-latest",
+  "generatedAt": "2026-10-18T07:30:22.402Z"
+}

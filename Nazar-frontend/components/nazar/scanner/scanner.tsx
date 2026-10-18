@@ -19,8 +19,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Rings } from '@/components/nazar/rings'
 import { decodeFrame, decodePhoto, warmDecoders, type DecodedCode } from '@/lib/scan/decode'
-import { confidenceOf, prepareForOcr, recognize, releaseOcrSoon, warmOcr } from '@/lib/scan/ocr'
-import { interpretCode, interpretOcr, readsDisagree, Vote, type ScanRead } from '@/lib/scan/read'
+import { confidenceOf, prepareForOcr, recognize, recognizeLabel, releaseOcrSoon, warmOcr } from '@/lib/scan/ocr'
+import type { PackLabel } from '@/lib/scan/pack'
+import { interpretCode, interpretOcr, readPack, readsDisagree, Vote, type ScanRead } from '@/lib/scan/read'
 import { cn } from '@/lib/utils'
 import { ScanResult, type Found } from './scan-result'
 import { ViewfinderOverlay, cropFor } from './viewfinder'
@@ -76,8 +77,8 @@ export function Scanner({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Runs the normal batch check. The scanner closes first. */
-  onCheck: (batch: string) => void
+  /** Runs the normal batch check (with the label read, when there is one). The scanner closes first. */
+  onCheck: (batch: string, pack?: PackLabel) => void
   /** "Type it instead": close and hand focus to the batch input. */
   onType: () => void
   typeTarget?: React.RefObject<HTMLElement | null>
@@ -122,18 +123,22 @@ export function Scanner({
     [stopCamera],
   )
 
-  /** Reads the printed label as a second opinion on a code, and raises a mismatch if they name different batches. */
-  const crossCheck = useCallback((canvas: HTMLCanvasElement, codeBatch: string, gen: number) => {
+  /**
+   * Reads the whole printed label in the background: product, composition, maker and the rest. After a
+   * code read it is also a second opinion, raising a mismatch when the printed batch differs from the code's.
+   */
+  const crossCheck = useCallback((canvas: HTMLCanvasElement, codeBatch: string | null, gen: number) => {
     const timeout = new Promise<null>((r) => setTimeout(() => r(null), CROSS_CHECK_MS))
-    Promise.race([recognize(canvas, 'page').then((r) => interpretOcr(r.text)), timeout])
+    Promise.race([recognizeLabel(canvas).then((r) => ({ printed: interpretOcr(r.text), pack: readPack(r) })), timeout])
       .catch(() => null)
-      .then((printed) => {
+      .then((read) => {
         if (gen !== genRef.current) return
         setPhase((p) => {
           if (p.kind !== 'result') return p
-          const mismatch = printed?.batch && readsDisagree(codeBatch, printed.batch) ? { code: codeBatch, printed: printed.batch } : undefined
+          const printed = read?.printed
+          const mismatch = codeBatch && printed?.batch && readsDisagree(codeBatch, printed.batch) ? { code: codeBatch, printed: printed.batch } : undefined
           if (mismatch) setAnnounce("Label details don't match. Show this pack to your chemist.")
-          return { kind: 'result', found: { ...p.found, crossCheck: 'done', mismatch } }
+          return { kind: 'result', found: { ...p.found, crossCheck: codeBatch ? 'done' : p.found.crossCheck, mismatch, pack: read?.pack ?? p.found.pack, packPending: false } }
         })
       })
   }, [])
@@ -173,6 +178,7 @@ export function Scanner({
                   gtin: read.gtin,
                   votes: { votes: lead.votes, of: codeVote.count },
                   crossCheck: 'pending',
+                  packPending: true,
                 })
                 crossCheck(snapshot, lead.batch, gen)
                 return
@@ -197,6 +203,7 @@ export function Scanner({
                 textConf.set(read.batch, confidenceOf(r, read.batch))
                 const lead = textVote.leader()!
                 if (lead.votes >= TEXT_VOTES) {
+                  const still = prepareForOcr(video, video.videoWidth, video.videoHeight, undefined, 1800)
                   finishRead({
                     batch: lead.batch,
                     source: 'text',
@@ -207,7 +214,9 @@ export function Scanner({
                     votes: { votes: lead.votes, of: textVote.count },
                     confidence: textConf.get(lead.batch),
                     crossCheck: 'none',
+                    packPending: true,
                   })
+                  crossCheck(still, null, gen)
                 } else setStatus(`Reading ${lead.batch} · ${lead.votes} of ${TEXT_VOTES} reads`)
               })
               .catch(() => gen === genRef.current && setStatus('Printed text reader unavailable. Try a photo or type it.'))
@@ -348,14 +357,15 @@ export function Scanner({
       if (gen !== genRef.current) return
       const ocrInput = prepareForOcr(canvas, canvas.width, canvas.height, undefined, 2000)
       if (code?.batch) {
-        finishRead({ batch: code.batch, source: code.source, kind: code.kind, expiry: code.expiry, mfg: code.mfg, gtin: code.gtin, crossCheck: 'pending' })
+        finishRead({ batch: code.batch, source: code.source, kind: code.kind, expiry: code.expiry, mfg: code.mfg, gtin: code.gtin, crossCheck: 'pending', packPending: true })
         crossCheck(ocrInput, code.batch, gen)
         return
       }
       setAnnounce('No batch in a code. Reading the printed text on this device')
-      const r = await recognize(ocrInput, 'page')
+      const r = await recognizeLabel(ocrInput, { tryHarder: true })
       if (gen !== genRef.current) return
       const text = interpretOcr(r.text)
+      const pack = readPack(r)
       if (text?.batch) {
         finishRead({
           batch: text.batch,
@@ -366,6 +376,7 @@ export function Scanner({
           gtin: code?.gtin,
           confidence: confidenceOf(r, text.batch),
           crossCheck: 'none',
+          pack,
         })
         return
       }
@@ -480,8 +491,8 @@ export function Scanner({
             {phase.kind === 'result' && (
               <ScanResult
                 found={phase.found}
-                onCheck={(b) => {
-                  onCheck(b)
+                onCheck={(b, pack) => {
+                  onCheck(b, pack)
                 }}
                 onRescan={() => startCamera()}
               />

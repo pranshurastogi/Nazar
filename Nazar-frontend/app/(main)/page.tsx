@@ -24,7 +24,10 @@ import { CheckingCard } from '@/components/nazar/checking-card'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
 import { Scanner } from '@/components/nazar/scanner/scanner'
-import { checkBatch, loadAlerts, type AlertFeed, type CheckResult, type ResultState, type Stage } from '@/lib/source'
+import type { PackLabel } from '@/lib/scan/pack'
+import { checkBatch, type AlertFeed, type CheckResult, type ResultState, type Stage } from '@/lib/source'
+import { HOME_KEYS, loadChild, loadSevere, notDemo } from '@/lib/source/prefetch'
+import { peek, revalidate } from '@/lib/source/swr'
 import { cn } from '@/lib/utils'
 
 const RECENT_KEY = 'nazar:recent'
@@ -48,6 +51,8 @@ export default function Page() {
   const [batch, setBatch] = useState('')
   const [result, setResult] = useState<CheckResult | null>(null)
   const [pending, setPending] = useState<{ batch: string; stage: Stage } | null>(null)
+  /** True while an instant snapshot answer is on screen and the live check is still running. */
+  const [confirming, setConfirming] = useState(false)
   const [feed, setFeed] = useState<AlertFeed | null>(null)
   const [childFeed, setChildFeed] = useState<AlertFeed | null>(null)
   const checkRef = useRef<AbortController | null>(null)
@@ -55,6 +60,7 @@ export default function Page() {
   const shell = useShell()
   const inputRef = useRef<HTMLInputElement>(null)
   const [scanning, setScanning] = useState(false)
+  const [pack, setPack] = useState<PackLabel | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -78,12 +84,19 @@ export default function Page() {
       if (!ctrl.signal.aborted) console.info('Nazar source unavailable', err)
     }
     // Lead with the most dangerous: severity 4-5 (spurious, toxic glycol, sterility, injectables).
-    loadAlerts({ minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
-    loadAlerts({ peds: true, minSeverity: 4, limit: 20 }, ctrl.signal).then((f) => !ctrl.signal.aborted && setChildFeed(f), quiet)
+    // The last answer paints at once (back/forward, reloads); a background refresh replaces it.
+    const severe = peek<AlertFeed>(HOME_KEYS.severe)
+    const child = peek<AlertFeed>(HOME_KEYS.child)
+    if (severe) setFeed(severe.value)
+    if (child) setChildFeed(child.value)
+    revalidate(HOME_KEYS.severe, loadSevere, { keep: notDemo }).then((f) => !ctrl.signal.aborted && setFeed(f), quiet)
+    revalidate(HOME_KEYS.child, loadChild, { keep: notDemo }).then((f) => !ctrl.signal.aborted && setChildFeed(f), quiet)
     return () => ctrl.abort()
   }, [])
 
-  const runCheck = async (value = batch) => {
+  const runCheck = async (value = batch, label?: PackLabel) => {
+    // A typed check has no label; a scan carries the label it read, for "About this medicine".
+    setPack(label ?? null)
     if (!value.trim()) {
       inputRef.current?.focus()
       return
@@ -93,9 +106,11 @@ export default function Page() {
     checkRef.current = ctrl
     const shown = value.trim().toUpperCase()
     let stage: Stage = 'api'
+    let instant = false
     setBatch(shown)
+    setConfirming(false)
     const timer = setTimeout(() => {
-      if (ctrl.signal.aborted) return
+      if (ctrl.signal.aborted || instant) return
       setResult(null)
       setPending({ batch: shown, stage })
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
@@ -103,9 +118,20 @@ export default function Page() {
     try {
       const r = await checkBatch(value, {
         signal: ctrl.signal,
+        // The on-device snapshot answers at once; the live answer below confirms or corrects it.
+        onInstant: (snap) => {
+          if (ctrl.signal.aborted) return
+          instant = true
+          clearTimeout(timer)
+          setPending(null)
+          setBatch(snap.batch)
+          setResult(snap)
+          setConfirming(true)
+          requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+        },
         onStage: (s) => {
           stage = s
-          if (!ctrl.signal.aborted) setPending((p) => (p ? { ...p, stage: s } : p))
+          if (!ctrl.signal.aborted && !instant) setPending((p) => (p ? { ...p, stage: s } : p))
         },
       })
       if (ctrl.signal.aborted) return
@@ -121,13 +147,15 @@ export default function Page() {
           return next
         })
       }
-      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+      if (!instant) requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
     } catch {
       if (ctrl.signal.aborted) return
-      toast.error("Couldn't check right now. Please try again.")
+      // The instant answer stays on screen; only say so when there is nothing to show.
+      if (!instant) toast.error("Couldn't check right now. Please try again.")
     } finally {
       clearTimeout(timer)
       if (checkRef.current === ctrl) {
+        setConfirming(false)
         setPending(null)
         checkRef.current = null
       }
@@ -195,6 +223,7 @@ export default function Page() {
                     checkRef.current?.abort()
                     checkRef.current = null
                     setPending(null)
+                    setConfirming(false)
                     setBatch('')
                     setResult(null)
                     inputRef.current?.focus()
@@ -240,7 +269,21 @@ export default function Page() {
           {pending ? (
             <div className="mt-8"><CheckingCard batch={pending.batch} stage={pending.stage} /></div>
           ) : (
-            result && <div className="mt-8"><ResultCard result={result} onCheck={runCheck} /></div>
+            result && (
+              // The confirming badge floats over the card, so the live answer never moves the layout.
+              <div className="relative mt-8" data-confirming={confirming ? 'true' : 'false'}>
+                <ResultCard key={result.batch} result={result} onCheck={(b) => runCheck(b)} pack={pack} />
+                {confirming && (
+                  <span
+                    role="status"
+                    className="pointer-events-none absolute -top-3 right-4 inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm"
+                  >
+                    <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    Confirming with the live record…
+                  </span>
+                )}
+              </div>
+            )
           )}
         </div>
 
@@ -371,9 +414,9 @@ export default function Page() {
         <Scanner
           open={scanning}
           onOpenChange={setScanning}
-          onCheck={(b) => {
+          onCheck={(b, label) => {
             setScanning(false)
-            runCheck(b)
+            runCheck(b, label)
           }}
           onType={() => setScanning(false)}
           typeTarget={inputRef}

@@ -29,7 +29,7 @@ export type CabinetItem = {
 export type CabinetDraft = Pick<CabinetItem, 'name' | 'batch' | 'expiry' | 'note'>
 
 const STATES = new Set<ResultState>(['flagged', 'retracted', 'no_alert', 'unreadable'])
-const ANSWERERS = new Set<Answerer>(['api', 'arkiv', 'demo', 'local'])
+const ANSWERERS = new Set<Answerer>(['api', 'arkiv', 'demo', 'local', 'snapshot'])
 const YM = /^\d{4}-(0[1-9]|1[0-2])$/
 
 const newId = () =>

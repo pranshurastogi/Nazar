@@ -215,7 +215,7 @@ To publish for real:
 
 **Deploy:**
 - **Backend:** Railway, Fly.io or any Docker host. See [`Nazar-backend/docs/deploy.md`](Nazar-backend/docs/deploy.md); keep it in an Asian region.
-- **Web app:** Vercel. Set `NEXT_PUBLIC_NAZAR_API_URL`, `NEXT_PUBLIC_NAZAR_PUBLISHER` and `NEXT_PUBLIC_ARKIV_RPC_URL`.
+- **Web app:** Vercel. Set `NEXT_PUBLIC_NAZAR_API_URL`, `NEXT_PUBLIC_NAZAR_PUBLISHER` and `NEXT_PUBLIC_ARKIV_RPC_URL`. Set `NAZAR_API_ORIGIN` (the API's https origin) to route the browser through the same-origin `/api/nazar/*` rewrite, so API reads are cached at Vercel's edge.
 
 ## Tests
 

@@ -4,6 +4,7 @@ import type { ArkivFeedPage } from './arkiv'
 import { checkDemo, demoActiveAlerts } from './demo'
 import { STATIC_SOURCES } from './sources'
 import { validateBatch } from './match'
+import { currentSnapshot, snapshotCheck, SNAPSHOT_MAX_AGE_MS } from './snapshot'
 import type { Alert, CheckResult, PipelineStatus, SourceKind } from './types'
 
 export * from './types'
@@ -13,6 +14,7 @@ export { API_URL } from './config'
 export { STATE_NAME, SOURCE_NAME, stateName } from './labels'
 export { PROJECT, PUBLISHER, EXPLORER_URL, explorerAddress } from './config'
 export type { SourceInfo } from './api'
+export { currentSnapshot, loadSnapshot, onSnapshot, scheduleSnapshot } from './snapshot'
 
 // One entry point per question. Each tries the Nazar API, then Arkiv directly, then the
 // built-in demo data, and reports which one answered. Arkiv code is loaded on demand so
@@ -38,14 +40,34 @@ function probeApi() {
   return probe.p
 }
 
+/** A snapshot "no alert" leads a live check only while this fresh; an alert found in it always does. */
+const INSTANT_NO_ALERT_MS = 24 * 60 * 60 * 1000
+
+const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false
+
+/**
+ * Checks a batch. When the on-device snapshot is loaded it answers first through `onInstant`
+ * (synchronously, before any network call), then the live API / Arkiv answer is returned so the
+ * caller can confirm or correct the card. Offline, or when every live source fails, the snapshot
+ * answer is returned instead of demo data.
+ */
 export async function checkBatch(
   input: string,
-  opts: { signal?: AbortSignal; onStage?: (stage: Stage) => void } = {},
+  opts: { signal?: AbortSignal; onStage?: (stage: Stage) => void; onInstant?: (result: CheckResult) => void } = {},
 ): Promise<CheckResult> {
-  const { signal, onStage } = opts
+  const { signal, onStage, onInstant } = opts
   const v = validateBatch(input)
   // Shape is checked here, before any network call: a garbled batch never leaves the device.
   if (!v.ok) return { state: 'unreadable', batch: v.batch, asOf: new Date(), source: 'local' }
+
+  const snap = currentSnapshot()
+  const instant = snapshotCheck(v.batch, snap)
+  if (instant && snap) {
+    const age = Date.now() - snap.generatedAt.getTime()
+    if (isOffline()) return instant
+    const leads = age < SNAPSHOT_MAX_AGE_MS && (instant.state !== 'no_alert' || age < INSTANT_NO_ALERT_MS)
+    if (leads) onInstant?.(instant)
+  }
 
   if (!apiLikelyDown()) {
     onStage?.('api')
@@ -64,7 +86,7 @@ export async function checkBatch(
     if (isAbort(err, signal)) throw err
   }
 
-  return checkDemo(v.batch)
+  return instant ?? checkDemo(v.batch)
 }
 
 export type AlertFeed = { items: Alert[]; total: number; source: SourceKind }

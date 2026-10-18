@@ -4,8 +4,8 @@ import type Tesseract from 'tesseract.js'
 
 export type OcrResult = { text: string; confidence: number; words: { text: string; confidence: number }[] }
 
-/** Letters, digits and the punctuation used in labels and batch numbers. Drops OCR noise like | ~ « ». */
-const WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.:-/()#, '
+/** Letters, digits and the punctuation used on labels (batch, composition, MRP, % w/v). Drops OCR noise like | ~ « ». */
+const WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.:-/()#,%&+;' "
 const IDLE_MS = 120_000
 
 let workerP: Promise<Tesseract.Worker> | null = null
@@ -107,4 +107,68 @@ export function prepareForOcr(
   }
   ctx.putImageData(img, 0, 0)
   return out
+}
+
+/** A copy of the canvas turned by 90, 180 or 270 degrees, for labels photographed sideways. */
+export function rotateCanvas(src: HTMLCanvasElement, deg: 90 | 180 | 270): HTMLCanvasElement {
+  const out = document.createElement('canvas')
+  const quarter = deg !== 180
+  out.width = quarter ? src.height : src.width
+  out.height = quarter ? src.width : src.height
+  const ctx = out.getContext('2d')!
+  ctx.translate(out.width / 2, out.height / 2)
+  ctx.rotate((deg * Math.PI) / 180)
+  ctx.drawImage(src, -src.width / 2, -src.height / 2)
+  return out
+}
+
+/** Black-and-white copy using Otsu's threshold: helps faint dot-matrix and foil print that greyscale leaves muddy. */
+export function binarize(src: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement('canvas')
+  out.width = src.width
+  out.height = src.height
+  const ctx = out.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(src, 0, 0)
+  const img = ctx.getImageData(0, 0, out.width, out.height)
+  const px = img.data
+  const hist = new Float64Array(256)
+  for (let i = 0; i < px.length; i += 4) hist[px[i]!]!++
+  const total = px.length / 4
+  let sum = 0
+  for (let i = 0; i < 256; i++) sum += i * hist[i]!
+  let sumB = 0
+  let wB = 0
+  let best = 0
+  let threshold = 128
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]!
+    if (!wB) continue
+    const wF = total - wB
+    if (!wF) break
+    sumB += t * hist[t]!
+    const between = wB * wF * (sumB / wB - (sum - sumB) / wF) ** 2
+    if (between > best) {
+      best = between
+      threshold = t
+    }
+  }
+  for (let i = 0; i < px.length; i += 4) px[i] = px[i + 1] = px[i + 2] = px[i]! > threshold ? 255 : 0
+  ctx.putImageData(img, 0, 0)
+  return out
+}
+
+/**
+ * Whole-label read for a photo or a still frame. One pass when the print reads well; when it does
+ * not, also tries a thresholded copy and the two sideways rotations, keeping the most confident read.
+ * The extra passes only run on poor reads, so a clear label costs a single recognition.
+ */
+export async function recognizeLabel(prepared: HTMLCanvasElement, opts: { tryHarder?: boolean } = {}): Promise<OcrResult> {
+  let best = await recognize(prepared, 'page')
+  if (!opts.tryHarder || best.confidence >= 60) return best
+  for (const variant of [() => binarize(prepared), () => rotateCanvas(prepared, 90), () => rotateCanvas(prepared, 270)]) {
+    const r = await recognize(variant(), 'page').catch(() => null)
+    if (r && r.confidence > best.confidence + 5) best = r
+    if (best.confidence >= 70) break
+  }
+  return best
 }

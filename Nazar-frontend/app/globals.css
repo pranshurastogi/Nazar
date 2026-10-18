@@ -37,6 +37,9 @@
   --color-quiet: var(--quiet);
   --color-quiet-soft: var(--quiet-soft);
   --color-quiet-border: var(--quiet-border);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-ai-border: var(--ai-border);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -81,6 +84,11 @@
   --quiet: hsl(215 18% 40%);
   --quiet-soft: hsl(215 25% 95%);
   --quiet-border: hsl(215 20% 85%);
+
+  /* AI-written content: a warm neutral, deliberately unlike brand blue, verdict red/amber or any green. */
+  --ai: hsl(28 14% 30%);
+  --ai-soft: hsl(36 22% 94%);
+  --ai-border: hsl(32 14% 78%);
 }
 
 .dark {
@@ -116,6 +124,10 @@
   --quiet: hsl(215 20% 72%);
   --quiet-soft: hsl(220 22% 14%);
   --quiet-border: hsl(220 18% 26%);
+
+  --ai: hsl(34 18% 78%);
+  --ai-soft: hsl(30 8% 13%);
+  --ai-border: hsl(30 8% 27%);
 }
 
 @layer base {

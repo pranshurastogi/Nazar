@@ -53,6 +53,8 @@ const proofText = () => js(`document.querySelector('[role="dialog"]')?.innerText
 const escape = async () => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await wait(700) }
 
 await send('Page.enable'); await send('Runtime.enable'); await send('Log.enable'); await send('Network.enable')
+// The production build registers a service worker; tests talk to the network (and the mocks) directly.
+await send('Network.setBypassServiceWorker', { bypass: true })
 
 // ---- Mock API via Fetch interception
 const KEY1 = '0x8b1c2a7e3f9d4c6b5a0e1f2d3c4b5a69788766554433221100ffeeddccbbaa99'
@@ -75,6 +77,19 @@ const FEED_EXTRA = Array.from({ length: 40 }, (_, i) => {
 })
 const MH_ROWS = FEED_EXTRA.filter(a => a.sourceId === 'mh-fda').length
 
+/** The on-device snapshot (format: Nazar-backend/src/api/snapshot.ts) mirroring MOCK_ALERTS for SR-13. */
+const SNAPSHOT_FIXTURE = {
+  v: 1, version: 'e2e0000000000001', generatedAt: new Date(Date.now() - 10 * 60_000).toISOString(), count: 3,
+  notices: [['World Health Organization', 'Medical Product Alert N°5/2025', 'https://example.org/notice.pdf', '2025-10-13', 'x'], ['Tamil Nadu Drugs Control', 'NSQ list, October 2025', 'https://example.org/notice.pdf', '2025-10-04', 'x']],
+  alerts: {
+    sr13: [
+      ['SR-13', 0, 'COLDRIF', 'COLDRIF Syrup', 'Paracetamol, Phenylephrine, Chlorpheniramine', 'syrup', 'adulterated', 'glycol', 'Diethylene glycol 48.6% w/v', 5, 1, 'Sresan Pharmaceutical, Kancheepuram', 0, 'IN-TN', 202505, 202704, 202510, 0, 1, 0],
+      ['SR-13', 1, 'COLDRIF', 'COLDRIF Syrup', 'Paracetamol, Phenylephrine, Chlorpheniramine', 'syrup', 'adulterated', 'glycol', 'Diethylene glycol 48.6% w/v', 5, 1, 'Sresan Pharmaceutical, Kancheepuram', 0, 'IN-TN', 202505, 202704, 202510, 1, 1, 0],
+    ],
+    ax77: [['AX-77', 0, 'Example Tabs', null, null, 'tablet', 'nsq', 'assay', 'Assay', 4, 0, null, 0, 'IN-GJ', null, null, 202510, 0, 1, 0]],
+  },
+}
+
 let mockResponse = function mockResponse(url) {
   const u = new globalThis.URL(url)
   if (u.pathname === '/v1/pipeline/status') return { heartbeat: { lastOkMs: Date.now() - 4 * 60_000, entityKey: KEY1 }, runs: [], stats: {}, publisher: { address: WALLET, balanceGlm: 0.4 }, mode: 'live' }
@@ -91,6 +106,7 @@ let mockResponse = function mockResponse(url) {
       { id: 'tg-dca', authority: 'Drugs Control Administration, Telangana', jurisdiction: 'IN-TG', homepage: 'https://dca.telangana.gov.in/', description: 'Telangana DCA', schedule: '0 */6 * * *', enabled: false, disabledReason: 'refuses connections from outside India', lastRun: null },
     ] }
   }
+  if (u.pathname === '/v1/snapshot') return mock.snapshot ? SNAPSHOT_FIXTURE : null
   if (u.pathname === '/v1/check') {
     const b = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     const asOf = new Date().toISOString()
@@ -100,7 +116,8 @@ let mockResponse = function mockResponse(url) {
   }
   return null
 }
-const mock = { apiDown: false, arkiv429: false, arkivHits: 0 }
+const mock = { apiDown: false, arkiv429: false, arkivHits: 0, medicine: 'ok', medicineBodies: [], snapshot: false, checkDelayMs: 0 }
+const MEDICINE_FIXTURE = JSON.parse(fs.readFileSync(new globalThis.URL('./fixtures/medicine-explain.json', import.meta.url), 'utf8'))
 const CORS = [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: 'content-type' }, { name: 'Access-Control-Allow-Methods', value: 'POST, OPTIONS' }, { name: 'Access-Control-Expose-Headers', value: 'Retry-After' }]
 if (MODE === 'mock') {
   await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }, { urlPattern: ARKIV_RPC + '*' }] })
@@ -114,6 +131,13 @@ if (MODE === 'mock') {
       return send('Fetch.fulfillRequest', { requestId, responseCode: 429, responseHeaders: [...CORS, { name: 'Retry-After', value: '120' }, { name: 'Content-Type', value: 'text/plain' }], body: Buffer.from('rate limited').toString('base64') })
     }
     if (mock.apiDown) return send('Fetch.failRequest', { requestId, errorReason: 'ConnectionRefused' })
+    if (request.method === 'OPTIONS') return send('Fetch.fulfillRequest', { requestId, responseCode: 204, responseHeaders: CORS })
+    if (new globalThis.URL(request.url).pathname === '/v1/medicine/explain') {
+      mock.medicineBodies.push(request.postData || '')
+      const [code, data] = mock.medicine === 'disabled' ? [503, { error: { code: 'LLM_DISABLED', message: 'Medicine information is not available on this server.' } }] : [200, MEDICINE_FIXTURE]
+      return send('Fetch.fulfillRequest', { requestId, responseCode: code, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, ...CORS], body: Buffer.from(JSON.stringify(data)).toString('base64') })
+    }
+    if (mock.checkDelayMs && new globalThis.URL(request.url).pathname === '/v1/check') await wait(mock.checkDelayMs)
     const data = mockResponse(m.params.request.url)
     await send('Fetch.fulfillRequest', { requestId: m.params.requestId, responseCode: data ? 200 : 404, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: Buffer.from(JSON.stringify(data ?? { error: 'not found' })).toString('base64') })
   })
@@ -501,6 +525,28 @@ if (MODE === 'mock' || MODE === 'live') {
     ok('timeline opens proof for the machine-read notice', p.includes('Tamil Nadu Drugs Control') && p.includes('Machine-read, awaiting pharmacist confirmation') && p.includes('OCR of a scanned page · 82% confidence'))
     ok('proof sheet: creator equal to the configured publisher is "Official Nazar publisher"', (await js(`document.querySelector('[role="dialog"] [data-publisher-check]')?.dataset.publisherCheck`)) === 'official' && p.includes('Official Nazar publisher'))
     await shot('mock-proof-machine-read'); await escape()
+    // ---- About this medicine: opt-in AI card, kept apart from (and after) the official verdict.
+    const med = `document.querySelector('[data-medicine]')`
+    ok('medicine: opt-in prompt below the verdict, nothing fetched until asked', (await js(`${med}?.dataset.medicine`)) === 'idle' && (await js(`${med}.innerText`)).includes('Want to know what this medicine is for?') && mock.medicineBodies.length === 0, String(mock.medicineBodies.length))
+    ok('medicine: verdict is labelled official and sits before the AI card, which is outside it', (await js(`document.querySelector('section[data-state] [data-official-label]')?.innerText || ''`)).toLowerCase().includes('official · from regulator notices, verified on arkiv') && (await js(`!!(document.querySelector('section[data-state]').compareDocumentPosition(${med}) & Node.DOCUMENT_POSITION_FOLLOWING) && !document.querySelector('section[data-state]').contains(${med})`)))
+    ok('medicine: flagged result leads with the official alert before any info', (await js(`${med}.innerText`)).startsWith("This batch has an official alert – don't use it."))
+    ok('medicine: AI label at the top of the card', (await js(`${med}.querySelector('[data-medicine-ai-label]')?.innerText || ''`)).includes('AI-generated general information · not from a regulator · may be wrong'))
+    await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').click()`); await wait(200)
+    ok('medicine: info button explains where the text comes from', (await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').getAttribute('aria-expanded')`)) === 'true' && (await js(`${med}.querySelector('[role="note"]')?.innerText || ''`)).includes('not part of any regulator notice'))
+    await js(`${med}.querySelector('[aria-label="Why this is marked AI-generated"]').click()`)
+    await js(`[...${med}.querySelectorAll('button')].find(b => b.textContent.includes('Show general information')).click()`)
+    await waitFor(`!!document.querySelector('[data-medicine-card]')`, 8000); await wait(500)
+    const medText = await js(`${med}.innerText`)
+    const sent = JSON.parse(mock.medicineBodies[0] || '{}')
+    ok('medicine: one request with the name and ingredients only', mock.medicineBodies.length === 1 && sent.product === 'COLDRIF' && Object.keys(sent).every(k => ['product', 'brand', 'composition', 'form', 'manufacturer', 'batch'].includes(k)), mock.medicineBodies[0])
+    const storyIds = await js(`[...document.querySelectorAll('[data-medicine-stories] > li')].map(l => l.dataset.story).join()`)
+    ok('medicine: 4–6 story cards, each with 1–4 bullets', storyIds === 'for,how,side,help,careful,store' && (await js(`[...document.querySelectorAll('[data-medicine-stories] > li')].every(l => { const n = l.querySelector(':scope > ul').children.length; return n >= 1 && n <= 4 })`)), storyIds)
+    ok('medicine: header with generic names and Rx chip', medText.includes('COLDRIF syrup') && medText.includes('Paracetamol, Phenylephrine, Chlorpheniramine') && (await js(`document.querySelector('[data-medicine-rx]')?.innerText || ''`)).includes('Schedule H'))
+    ok('medicine: Nazar alert count links to the Feed', (await js(`document.querySelector('[data-medicine-nazar]')?.innerText || ''`)).includes('Nazar has 3 regulator alerts') && (await js(`document.querySelector('[data-medicine-nazar] a')?.getAttribute('href')`)) === '/feed')
+    ok('medicine: footer says not medical advice and AI-written', medText.includes('Not medical advice. Ask your doctor or pharmacist.') && medText.includes('Written by AI from general medical knowledge – may be incomplete.'))
+    ok('medicine: card never says "safe"', !/\bsafe\b/i.test(medText))
+    ok('medicine: story list is keyboard-focusable', (await js(`document.querySelector('[data-medicine-stories]').tabIndex`)) === 0)
+    await js(`window.scrollTo(0, document.querySelector('[data-medicine]').getBoundingClientRect().top + scrollY - 260)`); await shot('medicine-desktop-light')
     await typeBatch('5R-13'); ok('API look-alike → Did you mean, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
     await typeBatch('(N)25567'); ok('API: (N)25567 is sent to the API, not rejected as unreadable', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && requests.some(u => u.includes('/v1/check?batch=(N)25567') || u.includes('/v1/check?batch=%28N%2925567')))
     await typeBatch('ZZ-404'); ok('API no-alert labelled + not a safety certificate', (await body()).includes('This is not a safety certificate') && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'api')
@@ -510,7 +556,53 @@ if (MODE === 'mock' || MODE === 'live') {
     await clickHas('How do we know'); await wait(900)
     ok('mock: proof drawer fits 360', (await js(`(() => { const d = document.querySelector('[role="dialog"]'); return !!d && d.scrollWidth <= d.clientWidth + 1 })()`)))
     await shot('mock-mobile-dark-proof'); await escape()
+    // About this medicine at 360, dark: swipeable stories, then the LLM_DISABLED path.
+    await js(`[...document.querySelectorAll('[data-medicine] button')].find(b => b.textContent.includes('Show general information')).click()`)
+    await waitFor(`!!document.querySelector('[data-medicine-card]')`, 8000); await wait(500)
+    ok('medicine 360: no horizontal page overflow; stories scroll sideways', (await js(`document.documentElement.scrollWidth`)) <= 360 && (await js(`(() => { const l = document.querySelector('[data-medicine-stories]'); return l.scrollWidth > l.clientWidth })()`)))
+    await js(`window.scrollTo(0, document.querySelector('[data-medicine]').getBoundingClientRect().top + scrollY - 16)`); await shot('medicine-360-dark')
+    await js(`document.querySelector('[data-medicine-stories]').scrollBy({ left: 600 })`); await shot('medicine-360-dark-swiped')
+    mock.medicine = 'disabled'
+    await fresh(true); await click('Skip'); await wait(600); await typeBatch('SR-13')
+    await js(`[...document.querySelectorAll('[data-medicine] button')].find(b => b.textContent.includes('Show general information')).click()`)
+    await waitFor(`document.querySelector('[data-medicine]')?.dataset.medicine === 'disabled'`, 8000); await wait(300)
+    ok('medicine: LLM_DISABLED hides the card and leaves one quiet note', (await js(`document.querySelectorAll('[data-medicine-card], [data-medicine-stories]').length`)) === 0 && (await js(`document.querySelector('[data-medicine="disabled"]')?.innerText || ''`)).includes("isn't available right now") && (await body()).includes('This batch failed a government quality test'))
+    await js(`window.scrollTo(0, document.querySelector('[data-medicine]').getBoundingClientRect().top + scrollY - 420)`); await shot('medicine-360-dark-disabled')
+    mock.medicine = 'ok'
   }
+}
+
+// ---- Pack Reader (mock): a whole printed label is read on the device into fields; "About this medicine" is opt-in there too.
+if (MODE === 'mock') {
+  const scanText = () => js(`document.querySelector('[data-scanner]')?.innerText || ''`)
+  const setScanFile = async file => {
+    const doc = await send('DOM.getDocument', { depth: -1, pierce: true })
+    const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: 'input[data-scan-upload]' })
+    return send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] })
+  }
+  await vp(360, 800, true); await fresh(true); await click('Skip'); await wait(600)
+  const lines = [['bold 56px Arial', 'DOLO-650'], ['38px Arial', 'Paracetamol Tablets IP 650 mg'], ['34px Arial', 'Each uncoated tablet contains:'], ['34px Arial', 'Paracetamol IP 650 mg'], ['34px Arial', '15 Tablets'], ['32px Arial', 'Mfd. by: Micro Labs Limited, Hosur 635126,'], ['32px Arial', 'Tamil Nadu'], ['32px Arial', 'Mfg. Lic. No.: 28/MD/AP/2010'], ['34px Arial', 'B.No.: DOBS3975   Exp: 05/2028'], ['34px Arial', 'M.R.P. Rs. 33.60']]
+  const packPng = await js(`(() => { const c = document.createElement('canvas'); c.width = 1000; c.height = 820; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 820); x.fillStyle = '#111'; ${JSON.stringify(lines)}.forEach(([f, t], i) => { x.font = f; x.fillText(t, 50, 90 + i * 75) }); return c.toDataURL('image/png') })()`)
+  const packFile = OUT + '/scan-pack-fixture.png'; fs.writeFileSync(packFile, Buffer.from(packPng.split(',')[1], 'base64'))
+  await js(`document.querySelector('[aria-label="Scan the pack"]').click()`); await waitFor(`!!document.querySelector('[data-scanner]')`, 5000); await wait(500)
+  await setScanFile(packFile)
+  await waitFor(`!!document.querySelector('[data-scan-result]') || document.querySelector('[data-scanner]')?.dataset.phase === 'empty'`, 60000); await wait(400)
+  const field = k => js(`document.querySelector('[data-pack-field="${k}"] dd')?.innerText || ''`)
+  ok('pack: batch read from the whole label (DOBS3975)', (await js(`document.getElementById('scan-batch')?.value`)) === 'DOBS3975', await scanText())
+  ok('pack: product, composition and form extracted', /Paracetamol Tablets IP 650/.test(await field('product')) && /Paracetamol IP 650 mg/.test(await field('composition')) && (await field('form')) === 'tablet', `${await field('product')} | ${await field('composition')} | ${await field('form')}`)
+  ok('pack: maker, state, licence, pack size and MRP extracted', /Micro Labs/.test(await field('manufacturer')) && (await field('manufacturerState')).includes('Tamil Nadu') && /28\/MD\/AP\/2010/.test(await field('licence')) && /15 tablets/.test(await field('packSize')) && (await field('mrp')).startsWith('33.60'), [await field('manufacturer'), await field('manufacturerState'), await field('licence'), await field('packSize'), await field('mrp')].join(' | '))
+  ok('pack: fields are editable', await js(`(() => { const b = [...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Edit'); b.click(); return true })()`) && (await waitFor(`document.querySelectorAll('[data-pack-fields] input, [data-pack-fields] textarea').length >= 5`, 2000)))
+  await js(`[...document.querySelectorAll('[data-pack-fields] button')].find(x => x.textContent.trim() === 'Done').click()`); await wait(200)
+  ok('pack: scanner has no horizontal overflow at 360', await js(`(() => { const d = document.querySelector('[data-scanner]'); return d.scrollWidth <= d.clientWidth + 1 })()`))
+  await shot('scan-pack-360-dark')
+  await js(`document.querySelector('[data-pack-fields]').scrollIntoView({ block: 'start' })`); await shot('scan-pack-360-dark-fields')
+  const before = mock.medicineBodies.length
+  await js(`[...document.querySelectorAll('[data-scanner] [data-medicine] button')].find(b => b.textContent.includes('Show general information')).click()`)
+  await waitFor(`!!document.querySelector('[data-scanner] [data-medicine-card]')`, 8000); await wait(400)
+  const sentScan = JSON.parse(mock.medicineBodies[before] || '{}')
+  ok('pack: scanner "About this medicine" asks with the label read on the device (no image)', sentScan.product === 'Paracetamol Tablets IP 650 mg' && (sentScan.composition || []).some(c => /Paracetamol/.test(c)) && !JSON.stringify(sentScan).includes('data:image'), mock.medicineBodies[before])
+  await js(`document.querySelector('[data-scanner] [data-medicine]').scrollIntoView({ block: 'start' })`); await shot('scan-pack-360-dark-medicine')
+  await escape()
 }
 
 // ---- Feed against the API (mock contract or the real backend)
@@ -569,6 +661,55 @@ if (MODE === 'mock') {
   await navTo('More'); await waitFor(`['api','static'].includes(document.querySelector('[data-sources-from]')?.dataset.sourcesFrom)`)
   ok('more: sources come live from GET /v1/sources', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'api' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 2)
   ok('more: API source shows its last run; disabled one its reason', (await js(`document.querySelector('[data-source-row="cdsco-online"]').innerText`)).includes('Last run 5 min ago') && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('refuses connections from outside India'))
+}
+
+// ---- Instant checks from the on-device snapshot (mock): answer at once, then the live API confirms.
+if (MODE === 'mock') {
+  mock.snapshot = true
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  ok('snapshot: loaded once the page is idle', await waitFor(`window.performance.getEntriesByType('resource').some(e => e.name.includes('/v1/snapshot'))`, 8000))
+  await wait(800)
+  mock.checkDelayMs = 1500
+  // Enter, then watch every frame for the first answer and record how long it took.
+  const timing = await js(`new Promise(resolve => {
+    const i = document.getElementById('batch'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    set.call(i, 'SR-13'); i.dispatchEvent(new Event('input', { bubbles: true }))
+    const t0 = performance.now(); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    const tick = () => { const s = document.querySelector('section[data-state] [data-source]'); if (s) return resolve({ ms: Math.round(performance.now() - t0), source: s.dataset.source, state: s.closest('section[data-state]').dataset.state, confirming: !!document.querySelector('[data-confirming="true"] [role="status"]') }); if (performance.now() - t0 > 3000) return resolve(null); requestAnimationFrame(tick) }
+    tick()
+  })`)
+  ok('snapshot: SR-13 answers instantly from the snapshot (< 250 ms, API still pending)', !!timing && timing.source === 'snapshot' && timing.state === 'flagged' && timing.ms < 250, JSON.stringify(timing))
+  ok('snapshot: labelled "Instant · from the latest snapshot" with a confirming badge', !!timing?.confirming && (await js(`document.querySelector('section[data-state] [data-source]')?.innerText`)) === 'Instant · from the latest snapshot')
+  await js(`window.__cls = 0; new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value }).observe({ type: 'layout-shift' })`)
+  await shot('mock-snapshot-instant', 0)
+  ok('snapshot: the live API answer replaces it', await waitFor(`document.querySelector('section[data-state] [data-source]')?.dataset.source === 'api'`, 6000))
+  await wait(400)
+  const cls = await js('window.__cls')
+  // The verdict, timeline and actions keep their place; only the proof block grows from "Not yet published"
+  // to the full chain (entity keys are not in the snapshot), well under the 0.1 "good" CLS line.
+  ok('snapshot: live answer lands with minimal layout shift (CLS < 0.05)', cls < 0.05, String(cls.toFixed?.(4) ?? cls))
+  ok('snapshot: confirming badge is gone; proof now links the entity', !(await js(`!!document.querySelector('[data-confirming="true"]')`)) && (await js(`document.querySelector('section[data-state="flagged"] [data-onchain-proof]')?.dataset.onchainProof`)) === 'published')
+  mock.checkDelayMs = 0
+
+  // Offline: the snapshot (saved in IndexedDB) answers every state, and the app says it is offline.
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await wait(300)
+  ok('offline: indicator shows "Offline · showing saved data"', await waitFor(`(document.querySelector('[data-offline-indicator]')?.innerText || '').includes('Offline · showing saved data')`, 3000))
+  await typeBatch('SR-13')
+  ok('offline: SR-13 flagged from the snapshot', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged' && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'snapshot')
+  await typeBatch('5R-13')
+  ok('offline: look-alike 5R-13 is "did you mean SR-13", never flagged', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'unreadable' && (await body()).includes('Did you mean'))
+  await typeBatch('ZZ-404')
+  ok('offline: unknown batch is no alert, from the snapshot', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'snapshot')
+  await shot('mock-offline-snapshot')
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await wait(300)
+  ok('offline: indicator clears when back online', !(await js(`!!document.querySelector('[data-offline-indicator]')`)))
+
+  // Leave no snapshot or cached lists behind for the blocks that follow.
+  mock.snapshot = false
+  await js(`new Promise(r => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
+  await js(`sessionStorage.clear()`)
 }
 
 // ---- Arkiv throttled (mock): API down and every RPC call answered 429 with Retry-After.

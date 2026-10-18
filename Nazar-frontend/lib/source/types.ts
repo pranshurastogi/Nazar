@@ -5,8 +5,11 @@ export type Category = 'adulterated' | 'spurious' | 'nsq' | 'misbranded'
 export type ResultState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
 export type Tier = 'auto' | 'machine_read' | 'drug_level' | 'curator_only'
 export type SourceKind = 'api' | 'arkiv' | 'demo'
-/** Who answered a check; 'local' means the input was rejected on the device before any lookup. */
-export type Answerer = SourceKind | 'local'
+/**
+ * Who answered a check; 'local' means the input was rejected on the device before any lookup,
+ * 'snapshot' that the on-device copy of the alert set answered (instantly, or while offline).
+ */
+export type Answerer = SourceKind | 'local' | 'snapshot'
 
 export type Alert = {
   /** Stable id: row id when known, else entity key, else batch. */
@@ -76,6 +79,7 @@ export const SOURCE_LABEL: Record<Answerer, string> = {
   arkiv: 'Live · Arkiv',
   demo: 'Demo data',
   local: 'Checked on this device',
+  snapshot: 'Instant · from the latest snapshot',
 }
 
 export const CATEGORY_MEANING: Record<Category, string> = {

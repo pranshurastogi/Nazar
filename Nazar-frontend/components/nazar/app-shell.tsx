@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/nazar/logo'
 import { Onboarding, ONBOARDED_KEY } from '@/components/nazar/onboarding'
 import { StatusPill } from '@/components/nazar/status-pill'
+import { PerfRuntime } from '@/components/nazar/perf/runtime'
+import { prefetchFor } from '@/lib/source/prefetch'
 import { loadPipelineStatus, type PipelineStatus } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
@@ -76,7 +78,15 @@ function NavItem({ icon: Icon, label, href, active, compact }: Omit<NavEntry, 'd
     </>
   )
   return (
-    <Link href={href} aria-current={active ? 'page' : undefined} className={cls}>
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={cls}
+      // Warm the tab's data while the pointer or focus is on its link.
+      onPointerEnter={() => prefetchFor(href)}
+      onFocus={() => prefetchFor(href)}
+      onTouchStart={() => prefetchFor(href)}
+    >
       {body}
     </Link>
   )
@@ -208,6 +218,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <Onboarding open={guideOpen} onOpenChange={setGuideOpen} onTry={requestCheck} />
+        <PerfRuntime />
       </main>
     </ShellContext.Provider>
   )

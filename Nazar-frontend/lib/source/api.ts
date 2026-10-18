@@ -137,3 +137,99 @@ export async function apiSources(opts?: Opts): Promise<SourceInfo[]> {
       lastRun: s.lastRun && typeof s.lastRun.lastCheckedMs === 'number' ? s.lastRun : null,
     }))
 }
+
+// ---- About this medicine (opt-in; general AI-written reference text, never regulator data)
+
+export type MedicineQuery = { product?: string; brand?: string; composition?: string[]; form?: string; manufacturer?: string; batch?: string }
+
+export type MedicineInfo = {
+  name: string
+  genericNames: string[]
+  drugClass: string
+  whatItIsFor: string[]
+  howItWorks: string
+  commonSideEffects: string[]
+  seriousWarnings: string[]
+  whoShouldBeCareful: string[]
+  interactions: string[]
+  storage: string
+  prescriptionStatus: string
+  lookAlikeNames: string[]
+  confidence: 'high' | 'medium' | 'low'
+  notMedicalAdvice: true
+}
+
+export type MedicineExplain = {
+  medicine: MedicineInfo
+  disclaimer: string
+  aiGenerated: true
+  nazarAlerts: number
+  nazarQuery: string | null
+  batchAlerts: number
+  cached: boolean
+  model: string
+  generatedAt: string
+}
+
+export type MedicineAnswer =
+  | { ok: true; data: MedicineExplain }
+  | { ok: false; kind: 'disabled' | 'limited' | 'error'; message: string; retryAfterSec?: number }
+
+const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
+
+/** Asks the API to explain a medicine. Never throws: every failure becomes a state the card can show. */
+export async function apiExplainMedicine(q: MedicineQuery, { signal, timeoutMs = 25_000 }: Opts = {}): Promise<MedicineAnswer> {
+  if (!API_URL) return { ok: false, kind: 'disabled', message: 'Medicine information is not available in this version.' }
+  const t = withTimeout(signal, timeoutMs)
+  try {
+    const res = await fetch(`${API_URL}/v1/medicine/explain`, {
+      method: 'POST',
+      signal: t.signal,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(q),
+    })
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string; retryAfterSec?: number } } & Partial<MedicineExplain> | null
+    if (res.status === 503 && body?.error?.code === 'LLM_DISABLED') return { ok: false, kind: 'disabled', message: 'Medicine information is not available right now.' }
+    if (res.status === 429) {
+      const retry = Number(res.headers.get('Retry-After') ?? body?.error?.retryAfterSec ?? 0) || undefined
+      return { ok: false, kind: 'limited', message: body?.error?.message || 'Too many questions right now. Please try again later.', retryAfterSec: retry }
+    }
+    const m = body?.medicine
+    if (!res.ok || !m || typeof m.name !== 'string') return { ok: false, kind: 'error', message: 'Could not get medicine information right now. Please try again.' }
+    const medicine: MedicineInfo = {
+      name: m.name,
+      genericNames: strings(m.genericNames),
+      drugClass: typeof m.drugClass === 'string' ? m.drugClass : 'unknown',
+      whatItIsFor: strings(m.whatItIsFor),
+      howItWorks: typeof m.howItWorks === 'string' ? m.howItWorks : '',
+      commonSideEffects: strings(m.commonSideEffects),
+      seriousWarnings: strings(m.seriousWarnings),
+      whoShouldBeCareful: strings(m.whoShouldBeCareful),
+      interactions: strings(m.interactions),
+      storage: typeof m.storage === 'string' ? m.storage : '',
+      prescriptionStatus: typeof m.prescriptionStatus === 'string' ? m.prescriptionStatus : 'unknown',
+      lookAlikeNames: strings(m.lookAlikeNames),
+      confidence: m.confidence === 'high' || m.confidence === 'medium' ? m.confidence : 'low',
+      notMedicalAdvice: true,
+    }
+    return {
+      ok: true,
+      data: {
+        medicine,
+        disclaimer: typeof body.disclaimer === 'string' ? body.disclaimer : 'General information, not medical advice. Ask your doctor or pharmacist.',
+        aiGenerated: true,
+        nazarAlerts: typeof body.nazarAlerts === 'number' ? body.nazarAlerts : 0,
+        nazarQuery: typeof body.nazarQuery === 'string' ? body.nazarQuery : null,
+        batchAlerts: typeof body.batchAlerts === 'number' ? body.batchAlerts : 0,
+        cached: !!body.cached,
+        model: typeof body.model === 'string' ? body.model : '',
+        generatedAt: typeof body.generatedAt === 'string' ? body.generatedAt : new Date().toISOString(),
+      },
+    }
+  } catch {
+    if (signal?.aborted) return { ok: false, kind: 'error', message: 'Cancelled.' }
+    return { ok: false, kind: 'error', message: 'Could not reach Nazar. Check your connection and try again.' }
+  } finally {
+    t.done()
+  }
+}

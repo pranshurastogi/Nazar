@@ -1,6 +1,8 @@
 import { matchKey, confusionKey } from '@/lib/source/match'
 import { parseGs1, type CodeDate } from './gs1'
 import { batchCandidates, isPlausibleBatch, parseBatchUrl, parseLabelText } from './labels'
+import { confidenceOf, type OcrResult } from './ocr'
+import { parsePackLabel, type PackLabel } from './pack'
 
 /** Where a read came from. Codes carry error correction; printed text does not. */
 export type ReadSource = 'qr' | 'datamatrix' | 'barcode' | 'text'
@@ -47,6 +49,18 @@ export function interpretOcr(text: string): ScanRead | null {
   const batch = batchCandidates(text)[0]
   if (!batch && !label.expiry) return null
   return { batch, expiry: label.expiry, mfg: label.mfg, source: 'text', kind: 'ocr' }
+}
+
+/** The whole label from one OCR pass: product, composition, maker, licence, MRP, plus batch and dates. */
+export function readPack(r: OcrResult): PackLabel {
+  const conf = (v: string) => confidenceOf(r, v)
+  const pack = parsePackLabel(r.text, conf)
+  const label = parseLabelText(r.text)
+  const batch = batchCandidates(r.text)[0]
+  if (batch) pack.batch = { value: batch, confidence: Math.min(0.9, conf(batch) / 100) }
+  if (label.mfg) pack.mfg = { value: label.mfg, confidence: 0.8 }
+  if (label.expiry) pack.expiry = { value: label.expiry, confidence: 0.8 }
+  return pack
 }
 
 /**

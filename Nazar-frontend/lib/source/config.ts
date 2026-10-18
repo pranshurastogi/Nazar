@@ -9,6 +9,9 @@ const trimSlash = (s: string) => s.replace(/\/+$/, '')
  * "off" disables the API in development too.
  */
 function apiUrl(): string | null {
+  // Same-origin proxy (next.config.mjs, set by NAZAR_API_ORIGIN) wins: no CORS, edge-cached GETs.
+  const proxy = process.env.NEXT_PUBLIC_NAZAR_API_PROXY?.trim()
+  if (proxy && process.env.NEXT_PUBLIC_NAZAR_API_URL?.trim().toLowerCase() !== 'off') return trimSlash(proxy)
   const configured = process.env.NEXT_PUBLIC_NAZAR_API_URL?.trim()
   if (configured) return configured.toLowerCase() === 'off' ? null : trimSlash(configured)
   return process.env.NODE_ENV === 'development' ? 'http://localhost:8787' : null

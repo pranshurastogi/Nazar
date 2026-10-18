@@ -4,11 +4,15 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, CalendarClock, LoaderCircle, QrCode, RotateCcw, ScanText, TriangleAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { AboutMedicine } from '@/components/nazar/medicine/about-medicine'
+import { queryFromPack } from '@/components/nazar/medicine/query'
 import type { CodeDate } from '@/lib/scan/gs1'
 import { hasConfusableChars } from '@/lib/scan/labels'
+import type { PackLabel } from '@/lib/scan/pack'
 import { formatCodeDate, isExpired, type ReadSource, type ScanRead } from '@/lib/scan/read'
 import { validateBatch } from '@/lib/source/match'
 import { cn } from '@/lib/utils'
+import { PackFields } from './pack-fields'
 
 export type Found = {
   batch: string
@@ -24,6 +28,10 @@ export type Found = {
   /** Printed-text second opinion on a code read. */
   crossCheck: 'pending' | 'done' | 'none'
   mismatch?: { code: string; printed: string }
+  /** The rest of the printed label (product, composition, maker…), read on the device. */
+  pack?: PackLabel
+  /** The whole-label read is still running. */
+  packPending?: boolean
 }
 
 const FROM: Record<ReadSource, string> = { qr: 'QR code', datamatrix: 'Data Matrix code', barcode: 'Barcode', text: 'Printed text' }
@@ -35,10 +43,12 @@ function confidenceLabel(f: Found): { text: string; tone: 'good' | 'ok' | 'low' 
   return { text: `${pct}% confidence`, tone: pct >= 85 ? 'ok' : 'low' }
 }
 
-export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck: (batch: string) => void; onRescan: () => void }) {
+export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck: (batch: string, pack?: PackLabel) => void; onRescan: () => void }) {
   const [value, setValue] = useState(found.batch)
+  const [pack, setPack] = useState<PackLabel | undefined>(found.pack)
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => setValue(found.batch), [found.batch])
+  useEffect(() => setPack(found.pack), [found.pack])
   const v = validateBatch(value)
   const conf = confidenceLabel(found)
   const expired = found.expiry && isExpired(found.expiry)
@@ -60,10 +70,10 @@ export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck
           </div>
         </div>
         <div className="mt-5 grid gap-2 min-[400px]:grid-cols-2">
-          <Button variant="outline" className="h-12 rounded-xl" onClick={() => onCheck(code)}>
+          <Button variant="outline" className="h-12 rounded-xl" onClick={() => onCheck(code, pack)}>
             Check code batch <span className="font-mono">{code}</span>
           </Button>
-          <Button variant="outline" className="h-12 rounded-xl" onClick={() => onCheck(printed)}>
+          <Button variant="outline" className="h-12 rounded-xl" onClick={() => onCheck(printed, pack)}>
             Check printed <span className="font-mono">{printed}</span>
           </Button>
         </div>
@@ -75,12 +85,13 @@ export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck
   }
 
   return (
+    <div className="flex flex-col">
     <form
       className="flex flex-col rounded-2xl border bg-card p-5"
       data-scan-result="read"
       onSubmit={(e) => {
         e.preventDefault()
-        if (v.ok) onCheck(v.batch)
+        if (v.ok) onCheck(v.batch, pack)
         else inputRef.current?.focus()
       }}
     >
@@ -149,6 +160,12 @@ export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck
           Printed text can be misread (0/O, 1/I, 5/S, 8/B). Compare it with the pack before you check.
         </p>
       )}
+      {pack && <PackFields pack={pack} onChange={setPack} />}
+      {found.packPending && found.crossCheck !== 'pending' && (
+        <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" data-pack-pending>
+          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> Reading the rest of the label…
+        </p>
+      )}
       {found.crossCheck === 'pending' && (
         <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" data-scan-crosscheck="pending">
           <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" /> Comparing with the printed label…
@@ -164,5 +181,7 @@ export function ScanResult({ found, onCheck, onRescan }: { found: Found; onCheck
         </Button>
       </div>
     </form>
+    <AboutMedicine query={queryFromPack(pack, value)} />
+    </div>
   )
 }
