@@ -153,7 +153,7 @@ All queries include `eq("project", "nazar-in-batch-alerts")` and `.createdBy(PUB
 | Q6 | Pipeline heartbeat | `eq("t","heartbeat")`, `.limit(1)` |
 | Q7 | Notices for a month | `eq("t","notice"), eq("notice_ym",202506)` |
 
-Lists use cursor pagination (`page.next()` while `page.hasNextPage()`).
+Lists use cursor pagination pinned to the first page's block: rebuild the query with `.atBlock(firstPage.blockNumber).cursor(page.cursor)` while `page.hasNextPage()`. A bare `page.next()` breaks once a new block arrives ([friction.md](friction.md) #11).
 
 Reproduce Q1 with the SDK:
 
