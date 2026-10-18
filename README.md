@@ -41,6 +41,9 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 |---|---|---|
 | 🔎 | **Check a batch** | Type the batch number from the pack and get one of four honest answers: **Flagged**, **Retracted**, **No alert found** or **Can't tell**. Look-alike characters (0/O, 1/I/L, 5/S, 8/B) only ever produce "Did you mean…?", never a flag. |
 | 📷 | **Strip Scan** | Point the camera at the pack, or upload a photo. QR, Data Matrix and GS1 codes are decoded on the device (BarcodeDetector or zxing-wasm), with an OCR fallback for the printed "B.No." line. If the code and the printed batch disagree you see "Label details don't match. Show this pack to your chemist." Images never leave the phone. |
+| 🏷️ | **Pack Reader** | The scanner reads the whole label on the device: product, composition and strengths, form, pack size, manufacturer and state, licence number, MRP and Schedule, each with a confidence you can edit. |
+| 🤖 | **About this medicine (opt-in)** | Tap "Show general information" for plain-language notes: what it is for, how it works, common side effects, when to get help, who should be careful, storage and prescription status. It comes from a strictly validated AI answer (Gemini) and is clearly labelled *AI-generated · not from a regulator*, kept apart from the official verdict. No doses, never "safe", and the batch number is never sent. Rate-limited per visitor, with a daily cap. |
+| ⚡ | **Instant and offline** | A 57 KB snapshot of every alert lives on the device, so a check answers in about 15 ms, then the live API confirms it with the on-chain proof. It also works offline. API reads are cached at Vercel's edge. |
 | 🧒 | **Child Shield** | Paediatric formulations with serious failures get a banner telling parents to contact a doctor now. |
 | ⚖️ | **Severity with reasons** | A versioned rule table, not a black box: "Adulterated with a toxic glycol: base 5 · Paediatric formulation: +1 (capped at 5)". |
 | 🔗 | **On-chain proof** | Every result shows the chain of custody: regulator document → SHA-256 → Arkiv notice entity → this alert entity. It also shows the transaction link, an "Official Nazar publisher" check against `$creator`, and the Read-only and Anyone-can-keep-alive flags. |
@@ -221,8 +224,8 @@ To publish for real:
 
 | Suite | What it covers | Run |
 |---|---|---|
-| Backend unit + golden | **317 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, API, watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
-| Scanner parsers | 17 tests: GS1 element strings and Digital Links, pack key-value text, noise | `cd Nazar-frontend && pnpm test:scan` |
+| Backend unit + golden | **352 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, snapshot and caches, medicine explainer (schema, guardrails, limits, Gemini retry and fallback), API, watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
+| Scanner parsers | 22 tests: GS1 element strings and Digital Links, pack key-value text, full pack labels, noise | `cd Nazar-frontend && pnpm test:scan` |
 | Frontend e2e | ~250 checks in headless Chrome over CDP, with the API down and with a mocked API. Covers onboarding, every result state, look-alikes, the proof sheet and on-chain module, Feed, Cabinet, More, the Arkiv directory, Strip Scan (upload path), 360–430px layouts, dark mode, reduced motion and console errors | `cd Nazar-frontend && pnpm build && pnpm e2e` |
 | Backend live | Hits the real regulator sites (opt-in) | `pnpm test:live` |
 
@@ -264,7 +267,8 @@ Nazar/
 - [x] Arkiv data contract, atomic and idempotent publisher, reader, heartbeat, keep-alive
 - [x] Live on Tiramisu: 21 notices, 1,404 alerts, heartbeat; backend on Railway with monitoring
 - [x] Strip Scan, Feed, medicine cabinet, Arkiv directory, on-chain proof module
-- [ ] "About this medicine": what a medicine is for, from a structured, guard-railed LLM answer (in progress)
+- [x] Pack Reader and opt-in "About this medicine" (structured, guard-railed Gemini answer, rate-limited)
+- [x] Instant snapshot checks, edge caching, offline service worker
 - [ ] Telangana and Karnataka adapters from an Indian host; Kerala when its site is back
 - [ ] Batch Passport timeline, Shelf Sweep CSV for pharmacies, MCP server for AI agents
 - [ ] Hindi and Kannada, then 10 languages with read-aloud
