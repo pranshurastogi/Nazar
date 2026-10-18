@@ -1599,7 +1599,16 @@ if (MODE === 'mock') {
     ok('arkiv: refresh, copy, explorer, "See the query" and the credit are 44px targets', small.length === 0, JSON.stringify(small))
   }
   ok('arkiv: hero credit stays visible and links to its author', await js(`(() => { const a = document.querySelector('[data-arkiv-hero] .sh-credit'); return !!a && a.href.startsWith('https://guglielmogiannattasio.it') && a.offsetParent !== null && getComputedStyle(a).opacity > 0.5 })()`))
-  ok('arkiv: desktop hint reads "Move across the mark"', (await js(`(() => { const m = document.querySelector('[data-sh-hint] .sh-hint-mouse'); return m && getComputedStyle(m).display !== 'none' ? m.textContent : '' })()`)) === 'Move across the mark')
+  {
+    // The hint follows the browser's pointer: a mouse gets "Move across the mark", a touch screen (or a
+    // headless browser that reports no hover, as CI does) gets "Drag across the mark". Exactly one shows.
+    const hint = await js(`(() => {
+      const touch = matchMedia('(hover: none), (pointer: coarse)').matches
+      const shown = [...document.querySelectorAll('[data-sh-hint] .sh-hint-mouse, [data-sh-hint] .sh-hint-touch')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.textContent)
+      return { touch, shown }
+    })()`)
+    ok('arkiv: the hero hint matches the pointer ("Move across the mark" with a mouse, "Drag across the mark" on touch)', hint.shown.length === 1 && hint.shown[0] === (hint.touch ? 'Drag across the mark' : 'Move across the mark'), JSON.stringify(hint))
+  }
   await heroPauseCheck('arkiv')
   const q0 = await arkivQuery()
   ok('arkiv: query string pins project, type and publisher', q0 === `project = str('nazar-in-batch-alerts') AND t = str('alert') AND $creator = addr(${BUILD_PUBLISHER})`, q0)
