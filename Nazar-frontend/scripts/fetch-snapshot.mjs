@@ -39,6 +39,11 @@ async function main() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const file = await res.json()
     if (!valid(file)) throw new Error('not a v1 snapshot with alerts')
+    // `version` hashes the content: an unchanged alert set leaves the file (and git) untouched.
+    if (have && have.version === file.version) {
+      console.log(`[snapshot] unchanged (${file.count} alerts, version ${file.version})`)
+      return
+    }
     if (have && Date.parse(have.generatedAt) > Date.parse(file.generatedAt)) {
       console.log(`[snapshot] kept the newer copy in the repo (${have.generatedAt}); ${origin} served ${file.generatedAt}`)
       return

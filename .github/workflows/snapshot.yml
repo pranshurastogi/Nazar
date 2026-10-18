@@ -1,0 +1,44 @@
+name: Refresh saved snapshot
+
+# The web app falls back to Nazar's saved copy of every published alert
+# (Nazar-frontend/public/data/snapshot.json) when the API and Arkiv cannot answer.
+# Vercel only refreshes that file when it rebuilds, so once a day this job fetches the API's
+# snapshot and commits it if the alert set changed. The push redeploys the site. An unchanged
+# alert set (same content hash) makes no commit.
+
+on:
+  schedule:
+    - cron: '40 1 * * *' # daily, 07:10 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Fetch the API snapshot
+        env:
+          NAZAR_API_ORIGIN: https://nazar-api-production.up.railway.app
+        run: node Nazar-frontend/scripts/fetch-snapshot.mjs
+      - name: Commit if the alert set changed
+        run: |
+          if git diff --quiet -- Nazar-frontend/public/data/snapshot.json; then
+            echo "No change in the alert set."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nazar-frontend/public/data/snapshot.json
+          git commit -m "Refresh the saved alert snapshot"
+          git push
