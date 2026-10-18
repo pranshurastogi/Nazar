@@ -47,6 +47,14 @@ export type Alert = {
   explorer: { entity: string | null; tx: string | null; creator: string | null }
   /** True for built-in sample records that are not published anywhere. */
   demo: boolean
+  /** Arkiv entity key of the parent notice (the regulator document), when known. */
+  noticeKey?: string | null
+  /** Block at which the alert entity expires on Arkiv (decimal string), when read from Arkiv. */
+  expiresAtBlock?: string | null
+  /** Creation flags read from the entity; null when the answer did not include them. */
+  flags?: { readonly: boolean; permissionlessExtension: boolean } | null
+  /** When Nazar published the entity (ISO), from the API. */
+  publishedAt?: string | null
   retraction?: { date: string; reason: string; authority: string }
 }
 

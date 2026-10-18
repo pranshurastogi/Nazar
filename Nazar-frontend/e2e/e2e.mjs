@@ -59,10 +59,13 @@ const KEY1 = '0x8b1c2a7e3f9d4c6b5a0e1f2d3c4b5a69788766554433221100ffeeddccbbaa99
 const KEY2 = '0x1f2e3d4c5b6a79881726354453627180a9b8c7d6e5f40312213243546576879a'
 const WALLET = '0xd06d85Eb20f126f796E4a341b711B1a757c66bD2'
 const TX = '0xabc0000000000000000000000000000000000000000000000000000000000def'
+const NOTICE_KEY = '0x5e1f0000000000000000000000000000000000000000000000000000000c0ffe'
+const BUILD_PUBLISHER = process.env.E2E_PUBLISHER || '0x000000000000000000000000000000000000dEaD'
 const dto = (o) => ({ rid: 'r-' + o.entityKey.slice(2, 10), caseId: 'c1', batch: 'SR-13', batchKey: 'sr13', brand: 'COLDRIF', product: 'COLDRIF Syrup', generic: 'Paracetamol, Phenylephrine, Chlorpheniramine', form: 'syrup', category: 'adulterated', failures: ['glycol'], reason: 'Diethylene glycol 48.6% w/v', severity: 5, severityRules: ['Toxic glycol: base 5'], ruleVersion: 'sev@1', peds: true, manufacturer: 'Sresan Pharmaceutical, Kancheepuram', manufacturerRole: 'maker', plantId: null, state: 'IN-TN', mfgYm: 202505, expYm: 202704, alertYm: 202510, sourceId: 'x', jurisdiction: 'IN', noticeSha: 'a'.repeat(64), noticeTitle: 'Notice', noticeUrl: 'https://example.org/notice.pdf', noticeDate: '2025-10-13', method: 'text', confidence: 0.97, tier: 'auto', creator: WALLET, txHash: TX, publishedAt: '2025-10-14T00:00:00Z', retracted: false, explorer: { entity: 'https://tiramisu.explorer.arkiv.network/entity/' + o.entityKey, tx: 'https://tiramisu.explorer.arkiv.network/tx/' + TX }, ...o })
 const MOCK_ALERTS = [
-  dto({ entityKey: KEY1, authority: 'World Health Organization', noticeTitle: 'Medical Product Alert N°5/2025', noticeDate: '2025-10-13', tier: 'auto' }),
-  dto({ entityKey: KEY2, authority: 'Tamil Nadu Drugs Control', noticeTitle: 'NSQ list, October 2025', noticeDate: '2025-10-04', alertYm: 202510, tier: 'machine_read', method: 'ocr', confidence: 0.82 }),
+  dto({ entityKey: KEY1, authority: 'World Health Organization', noticeTitle: 'Medical Product Alert N°5/2025', noticeDate: '2025-10-13', tier: 'auto', noticeEntityKey: NOTICE_KEY }),
+  // Signed by the build's publisher (CI builds with the dEaD address), so it is marked official.
+  dto({ entityKey: KEY2, authority: 'Tamil Nadu Drugs Control', noticeTitle: 'NSQ list, October 2025', noticeDate: '2025-10-04', alertYm: 202510, tier: 'machine_read', method: 'ocr', confidence: 0.82, creator: BUILD_PUBLISHER }),
 ]
 const FEED_TOP = [MOCK_ALERTS[0], { ...MOCK_ALERTS[0], rid: 'r-other', batch: 'AX-77', batchKey: 'ax77', brand: 'Example Tabs', peds: false, severity: 4, entityKey: KEY2 }, { ...MOCK_ALERTS[0], rid: 'r-low', batch: 'LW-1', batchKey: 'lw1', brand: 'Low Severity Tabs', peds: false, severity: 2, entityKey: KEY2 }]
 /** 40 lower-severity alerts for paging; every 7th is a Maharashtra FDA row, which has no notice date. */
@@ -81,6 +84,12 @@ function mockResponse(url) {
     const limit = Number(q.get('limit') || 50); const offset = Number(q.get('offset') || 0)
     const all = [...FEED_TOP, ...FEED_EXTRA].filter(a => (!peds || a.peds) && a.severity >= min && (!state || a.state === state))
     return { items: all.slice(offset, offset + limit), total: all.length }
+  }
+  if (u.pathname === '/v1/sources') {
+    return { items: [
+      { id: 'cdsco-online', authority: 'CDSCO', jurisdiction: 'IN', homepage: 'https://cdscoonline.gov.in/CDSCO/viewPublicNSQDrug', description: 'CDSCO NSQ portal', schedule: '0 */6 * * *', enabled: true, disabledReason: null, lastRun: { lastCheckedMs: Date.now() - 5 * 60_000, ok: true, docs: 3 } },
+      { id: 'tg-dca', authority: 'Drugs Control Administration, Telangana', jurisdiction: 'IN-TG', homepage: 'https://dca.telangana.gov.in/', description: 'Telangana DCA', schedule: '0 */6 * * *', enabled: false, disabledReason: 'refuses connections from outside India', lastRun: null },
+    ] }
   }
   if (u.pathname === '/v1/check') {
     const b = (u.searchParams.get('batch') || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -190,7 +199,6 @@ if (MODE === 'fallback') {
   await js(`document.querySelector('[aria-label="Toggle dark mode"]').click()`); await wait(400)
   ok('theme toggle switches dark mode', (await js(`document.documentElement.classList.contains('dark')`)) !== before)
   await js(`document.querySelector('[aria-label="Toggle dark mode"]').click()`); await wait(300)
-  await clickHas('Cabinet'); await wait(500); ok('unbuilt tabs show a toast', (await body()).includes('coming in the next build'))
   await js(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Clear')?.click()`); await wait(300)
   ok('clear recent checks shows empty state', (await body()).includes('No checks yet'))
   await clickHas('Guide') || await js(`document.querySelector('header button:nth-last-child(2)').click()`); await wait(800)
@@ -271,6 +279,193 @@ if (MODE === 'fallback') {
   ok('feed: Check tab link returns to the checker', backSpa && (await js(`location.pathname`)) === '/' && (await js(`!!document.getElementById('batch')`)), `${backSpa} ${await js('location.pathname')}`)
 }
 
+// ==== Cabinet, More and navigation (fallback: demo data answers every check) ====
+if (MODE === 'fallback') {
+  const PUB = process.env.E2E_PUBLISHER || '0x000000000000000000000000000000000000dEaD'
+  const items = () => js(`[...document.querySelectorAll('[data-cabinet-item]')].map(li => li.dataset.batch)`)
+  const stored = () => js(`JSON.parse(localStorage.getItem('nazar:cabinet') || '[]')`)
+  const itemState = b => js(`document.querySelector('[data-cabinet-item][data-batch="${b}"] [data-cabinet-state]')?.dataset.cabinetState || ''`)
+  const itemText = b => js(`document.querySelector('[data-cabinet-item][data-batch="${b}"]')?.textContent || ''`)
+  const cabinetIdle = () => waitFor(`!document.querySelector('[data-cabinet-state="pending"]') && ![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true' && b.textContent.includes('Checking'))`, 30000)
+  const formOpen = () => js(`!!document.querySelector('[data-cabinet-form]')`)
+  const fill = async (f) => { await js(`(() => { const ins = [...document.querySelectorAll('[data-cabinet-form] input')]; const v = ${JSON.stringify(f)}; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; [['name',0],['batch',1],['expiry',2],['note',3]].forEach(([k,i]) => { if (v[k] === undefined) return; set.call(ins[i], v[k]); ins[i].dispatchEvent(new Event('input', { bubbles: true })) }) })()`); await wait(100) }
+  const submit = async () => { await js(`document.querySelector('[data-cabinet-form] button[type="submit"]').click()`); await wait(500) }
+  const ym = (offsetMonths) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + offsetMonths); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
+  /** Toasts sit over the header; screenshots wait for them to leave. */
+  const noToasts = () => waitFor(`!document.querySelector('[data-sonner-toast]')`, 8000)
+
+  // ---- Navigation: Cabinet and More are real routes (desktop)
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  ok('nav: Cabinet link routes client-side', await navTo('Cabinet'))
+  ok('nav: /cabinet with Cabinet marked current', (await js(`location.pathname`)) === '/cabinet' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'Cabinet')
+  ok('nav: no "coming soon" toast any more', !(await body()).includes('coming in the next build'))
+
+  // ---- Cabinet: empty state, validation, add
+  ok('cabinet: empty state with ring motif and SR-13 hint', await js(`!!document.querySelector('[data-cabinet-empty] svg circle')`) && (await body()).includes('Your cabinet is empty') && (await js(`[...document.querySelectorAll('[data-cabinet-empty] button')].some(b => b.textContent.replace(/\\s+/g, ' ').trim() === 'Try adding SR-13')`)))
+  ok('cabinet: says it is private and never sent to a server', (await body()).includes('never sent to any server'))
+  await click('Add a medicine'); await wait(500)
+  ok('cabinet: Add opens the form', await formOpen())
+  await submit()
+  ok('cabinet: empty form shows name and batch errors', (await js(`document.querySelectorAll('[data-cabinet-form] [aria-invalid="true"]').length`)) === 2 && await formOpen())
+  await fill({ name: 'Bad batch', batch: 'AB#12' }); await submit()
+  ok('cabinet: batch shape is validated like Check', (await js(`document.querySelector('[data-cabinet-form]')?.innerText || ''`)).includes('letters, digits and - / . ( ) only') && (await stored()).length === 0)
+  await escape()
+  await clickHas('Try adding'); await wait(500)
+  ok('cabinet: "Try adding SR-13" pre-fills the form', (await js(`[...document.querySelectorAll('[data-cabinet-form] input')].slice(0, 2).map(i => i.value).join('|')`)) === 'COLDRIF syrup|SR-13')
+  await submit(); await cabinetIdle(); await wait(300)
+  ok('cabinet: SR-13 saved and re-checked as Flagged', (await items()).join() === 'SR-13' && (await itemState('SR-13')) === 'flagged')
+  ok('cabinet: item shows last checked + answering source', /Last checked just now/.test(await itemText('SR-13')) && (await js(`document.querySelector('[data-cabinet-item] [data-source]')?.dataset.source`)) === 'demo')
+  await click('Add a medicine'); await wait(400); await fill({ name: "Dad's BP tablets", batch: 'ab1234', expiry: ym(-3), note: 'for Dad' }); await submit(); await cabinetIdle()
+  await click('Add a medicine'); await wait(400); await fill({ name: 'Kids syrup', batch: 'XY-9', expiry: ym(1), note: "kids' syrup" }); await submit(); await cabinetIdle()
+  await click('Add a medicine'); await wait(400); await fill({ name: 'Duplicate', batch: 'sr 13' }); await submit()
+  ok('cabinet: duplicate batch is refused', (await js(`document.querySelector('[data-cabinet-form]')?.innerText || ''`)).includes('already in your cabinet'))
+  await escape()
+  ok('cabinet: three items, flagged floats to the top', (await items()).join() === 'SR-13,XY-9,AB1234', (await items()).join())
+  ok('cabinet: batch normalised to upper case', (await stored()).some(i => i.batch === 'AB1234' && i.note === 'for Dad'))
+  ok('cabinet: no-alert item uses the slate badge', (await itemState('AB1234')) === 'no_alert' && (await itemText('AB1234')).includes('No alert found'))
+  ok("cabinet: past expiry shows \"Expired – don't use\"", (await js(`document.querySelector('[data-batch="AB1234"] [data-expiry]')?.dataset.expiry`)) === 'expired' && (await itemText('AB1234')).includes("Expired – don't use"))
+  ok('cabinet: expiry within 60 days shows "Expires soon"', (await js(`document.querySelector('[data-batch="XY-9"] [data-expiry]')?.dataset.expiry`)) === 'soon' && (await itemText('XY-9')).includes('Expires soon'))
+  ok('cabinet: SR-13 has no expiry label', !(await js(`!!document.querySelector('[data-batch="SR-13"] [data-expiry]')`)))
+  ok('cabinet: red banner summarises the flagged medicine', (await js(`document.querySelector('[data-cabinet-banner]')?.innerText || ''`)).includes('1 medicine in your cabinet has an official alert'))
+  const greenCab = await js(`[...document.querySelectorAll('[data-batch="AB1234"], [data-batch="AB1234"] *')].some(n => { const c = getComputedStyle(n); return [c.color, c.backgroundColor].some(v => { const m = v.match(/\\d+(\\.\\d+)?/g); if (!m) return false; const [r,g,b] = m.map(Number); return g > r + 40 && g > b + 40 }) })`)
+  ok('cabinet: no-alert item uses no green', greenCab === false)
+  await vp(1440, 1000, false); await js(`window.scrollTo(0, 0)`); await noToasts(); await shot('cabinet-desktop')
+  await click('Review alert'); await wait(800)
+  ok('cabinet: Review opens the full flagged result card', (await js(`document.querySelector('[data-batch="SR-13"] section[data-state="flagged"]')?.innerText || ''`)).includes('This batch failed a government quality test'))
+  ok('cabinet: result card inside the cabinet has no Save button', !(await js(`!!document.querySelector('[data-batch="SR-13"] [data-save-cabinet]')`)))
+  await js(`[...document.querySelectorAll('[data-batch="SR-13"] button')].find(b => b.textContent.includes('How do we know'))?.click()`); await wait(900)
+  ok('cabinet: proof sheet opens from a cabinet item', (await proofText()).includes('Source SHA-256') && (await proofText()).includes('World Health Organization'))
+  await escape()
+
+  // Re-check all: sequential, updates every item's last-checked time.
+  const before = (await stored()).map(i => i.last?.at || 0)
+  await wait(1100)
+  await click('Re-check all'); await wait(150)
+  const busyRe = await js(`[...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true' && b.textContent.includes('Checking'))`)
+  await cabinetIdle(); await waitFor(`![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true')`, 20000); await wait(300)
+  const after = (await stored()).map(i => i.last?.at || 0)
+  ok('cabinet: Re-check all runs (busy) and refreshes every item', busyRe && after.length === 3 && after.every((t, i) => t > before[i]), `${busyRe} ${before} → ${after}`)
+  ok('cabinet: Re-check all confirms with a toast', (await body()).includes('Re-checked 3 medicines'))
+
+  // Persist across reload, then export.
+  await send('Page.reload'); await wait(1500); await cabinetIdle(); await wait(400)
+  ok('cabinet: persists across reload', (await items()).join() === 'SR-13,XY-9,AB1234' && (await itemState('SR-13')) === 'flagged')
+  await js(`window.__blobs = []; const o = URL.createObjectURL.bind(URL); URL.createObjectURL = b => { window.__blobs.push(b); return o(b) }`)
+  await click('Export'); await wait(400)
+  const exported = await js(`window.__blobs[0]?.text()`)
+  let parsed = null; try { parsed = JSON.parse(exported) } catch {}
+  ok('cabinet: export downloads a JSON file with every item', !!parsed && parsed.kind === 'cabinet' && parsed.items.length === 3 && parsed.items.some(i => i.name === "Dad's BP tablets" && i.expiry === ym(-3)))
+
+  // Remove with undo, then remove for real.
+  await js(`document.querySelector('[data-batch="XY-9"] button[aria-expanded]').click()`); await wait(500)
+  await js(`[...document.querySelectorAll('[data-batch="XY-9"] button')].find(b => b.textContent.trim() === 'Remove').click()`); await wait(600)
+  ok('cabinet: Remove takes the item out', (await items()).join() === 'SR-13,AB1234')
+  await js(`[...document.querySelectorAll('[data-sonner-toast] button')].find(b => b.textContent.trim() === 'Undo')?.click()`); await wait(600)
+  ok('cabinet: Undo puts it back', (await items()).length === 3 && (await stored()).length === 3)
+  await js(`document.querySelector('[data-batch="XY-9"] button[aria-expanded]').click()`); await wait(400)
+  await js(`[...document.querySelectorAll('[data-batch="XY-9"] button')].find(b => b.textContent.trim() === 'Edit').click()`); await wait(500)
+  ok('cabinet: Edit pre-fills the item', (await js(`[...document.querySelectorAll('[data-cabinet-form] input')].map(i => i.value).join('|')`)) === `Kids syrup|XY-9|${ym(1)}|kids' syrup`)
+  await fill({ name: 'Kids cough syrup' }); await submit(); await cabinetIdle()
+  ok('cabinet: Edit saves the change', (await stored()).some(i => i.name === 'Kids cough syrup' && i.batch === 'XY-9'))
+
+  // Import round trip: empty the cabinet, import the exported file.
+  const file = `${OUT}/cabinet-export.json`; fs.writeFileSync(file, exported)
+  await js(`localStorage.setItem('nazar:cabinet', '[]')`); await send('Page.reload'); await wait(1500)
+  ok('cabinet: emptied before import', (await body()).includes('Your cabinet is empty'))
+  const doc = await send('DOM.getDocument', { depth: -1 })
+  const node = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: '[data-cabinet-import]' })
+  await send('DOM.setFileInputFiles', { nodeId: node.result.nodeId, files: [file] }); await wait(800); await cabinetIdle(); await wait(300)
+  ok('cabinet: import restores every item (round trip)', (await items()).join() === 'SR-13,XY-9,AB1234' && (await stored()).some(i => i.note === 'for Dad') && (await body()).includes('3 medicines added'))
+  ok('cabinet: flagged state is re-checked after import', (await itemState('SR-13')) === 'flagged')
+  ok('cabinet: no horizontal overflow at 1440', (await js(`document.documentElement.scrollWidth`)) <= 1440)
+
+  // ---- Save to cabinet from Check and Feed
+  await navTo('Check'); await wait(300)
+  await typeBatch('LSL25160')
+  ok('check: result card offers Save to cabinet', await js(`!!document.querySelector('section[data-state="flagged"] [data-save-cabinet]')`))
+  await js(`document.querySelector('[data-save-cabinet]').click()`); await wait(500)
+  ok('check: Save pre-fills batch + product name', (await js(`[...document.querySelectorAll('[data-cabinet-form] input')].slice(0, 2).map(i => i.value).join('|')`)) === 'ReLife|LSL25160')
+  await submit()
+  ok('check: saved item appears in the cabinet store', (await stored()).some(i => i.batch === 'LSL25160' && i.name === 'ReLife'))
+  ok('check: card now says it is in the cabinet', await js(`!!document.querySelector('section[data-state] a[href="/cabinet"]')`))
+  await typeBatch('!!')
+  ok("check: no Save action on a can't-tell result", !(await js(`!!document.querySelector('[data-save-cabinet]')`)))
+  await openFeed()
+  await js(`[...document.querySelectorAll('[data-alert-row]')].find(b => b.innerText.includes('R01GL2523'))?.click()`); await wait(800)
+  ok('feed: open alert offers Save to cabinet', await js(`!!document.querySelector('[data-feed] section[data-state] [data-save-cabinet]')`))
+  await js(`document.querySelector('[data-feed] [data-save-cabinet]').click()`); await wait(500)
+  ok('feed: Save pre-fills the feed alert', (await js(`[...document.querySelectorAll('[data-cabinet-form] input')].slice(0, 2).map(i => i.value).join('|')`)) === 'Respifresh TR|R01GL2523')
+  await escape()
+  ok('fallback: demo result shows "Not yet on Arkiv" instead of fake proof', (await js(`document.querySelector('[data-feed] [data-onchain-proof]')?.dataset.onchainProof`)) === 'unpublished' && (await js(`document.querySelector('[data-feed] [data-onchain-proof]').innerText`)).includes('Not yet on Arkiv'))
+  ok('feed: demo rows carry no Live on Arkiv badge', (await js(`document.querySelectorAll('[data-live-arkiv]').length`)) === 0)
+
+  // ---- More
+  ok('nav: More link routes client-side', await navTo('More'))
+  ok('more: /more with More marked current', (await js(`location.pathname`)) === '/more' && (await js(`[...new Set([...document.querySelectorAll('nav a[aria-current="page"]')].map(a => a.textContent.trim()))].join()`)) === 'More')
+  ok('more: renders every section', (await js(`[...document.querySelectorAll('[data-more-section]')].map(s => s.id).join()`)) === 'how,sources,proof,privacy,settings,about')
+  const mb = await body()
+  ok('more: How it works lists the pipeline and four answers', ['Regulator documents', 'Read', 'Resolved', 'Published on Arkiv', 'You check', 'Four honest answers', 'Flagged', 'Retracted', 'No alert found', "Can't tell"].every(t => mb.includes(t)))
+  await waitFor(`document.querySelector('[data-sources-from]')?.dataset.sourcesFrom !== 'loading'`)
+  ok('more: sources fall back to the built-in list', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'static' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 9)
+  ok('more: disabled sources say why (Telangana, Karnataka, Kerala)', (await js(`['tg-dca','ka-dc','kl-dc'].every(id => { const r = document.querySelector('[data-source-row="' + id + '"]'); return r && r.dataset.enabled === 'false' && r.innerText.includes('Off') })`)) && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('outside India'))
+  ok('more: each source links to its regulator', (await js(`document.querySelector('[data-source-row="tn-dc"] a').href`)) === 'https://drugscontrol.tn.gov.in/list_nsq_drugs.html')
+  ok('more: publisher wallet shown with explorer link', (await js(`document.querySelector('[data-publisher]').innerText`)) === PUB && (await js(`document.querySelector('a[aria-label="Open publisher wallet in the Arkiv explorer"]').href`)) === `https://tiramisu.explorer.arkiv.network/address/${PUB}`)
+  ok('more: project tag, entity lifetimes and schema link', mb.includes('nazar-in-batch-alerts') && mb.includes('20 minutes, renewed every 5') && mb.includes('5 years') && (await js(`[...document.querySelectorAll('a')].some(a => a.href === 'https://github.com/pranshurastogi/Nazar/blob/main/arkiv/schema.md')`)))
+  await js(`window.__copied = []; navigator.clipboard.writeText = async t => { window.__copied.push(t) }`)
+  await js(`document.querySelector('[aria-label="Copy publisher wallet"]').click()`); await wait(300)
+  ok('more: copy wallet button copies the publisher', (await js(`window.__copied[0]`)) === PUB && (await body()).includes('Publisher wallet copied'))
+  await js(`document.querySelector('[aria-label="Copy SDK query"]').click()`); await wait(200)
+  ok('more: SDK snippet is copyable and pinned to project + publisher', (await js(`window.__copied[1] || ''`)).includes("eq('project', str('nazar-in-batch-alerts'))") && (await js(`window.__copied[1] || ''`)).includes(`.createdBy('${PUB}')`))
+  ok('more: privacy says what stays and what is never collected', mb.includes('Stays on this device') && mb.includes('Never collected') && mb.includes('medicine cabinet'))
+  ok('more: about credits, licence, GitHub and disclaimer', mb.includes('Pranshu Rastogi') && mb.includes('MIT licence') && (await js(`[...document.querySelectorAll('a')].some(a => a.href === 'https://github.com/pranshurastogi/Nazar')`)) && mb.includes('Nazar repeats what regulators publish. It does not test medicines and is not medical advice. If a medicine has harmed someone, contact a doctor.'))
+  ok('more: never says safe', !/\bsafe\b/i.test(mb.replace(/not a safety certificate|never certifies a medicine as safe/gi, '')))
+  await js(`document.querySelector('[data-theme-option="dark"]').click()`); await wait(400)
+  ok('more: theme Dark applies dark mode', (await js(`document.documentElement.classList.contains('dark')`)) && (await js(`document.querySelector('[data-theme-option="dark"]').getAttribute('aria-checked')`)) === 'true')
+  await js(`document.querySelector('[data-theme-option="light"]').click()`); await wait(400)
+  ok('more: theme Light removes dark mode', !(await js(`document.documentElement.classList.contains('dark')`)))
+  await js(`document.querySelector('[data-theme-option="system"]').click()`); await wait(300)
+  ok('more: theme System is saved', (await js(`localStorage.getItem('theme')`)) === 'system')
+  await js(`document.querySelector('[data-theme-option="light"]').click()`); await wait(300)
+  await click('Replay the guide'); await wait(800)
+  ok('more: Replay the guide opens onboarding at step 1', (await body()).includes('An eye on every batch'))
+  await click('Skip'); await wait(600)
+  ok('more: Clear recent checks is enabled when checks exist', await js(`[...document.querySelectorAll('button')].some(b => b.textContent.includes('Clear recent checks') && !b.disabled)`))
+  await clickHas('Clear recent checks'); await wait(300)
+  ok('more: Clear recent checks empties them', (await js(`localStorage.getItem('nazar:recent')`)) === null)
+  const n = (await stored()).length
+  await clickHas('Clear cabinet'); await wait(300)
+  ok('more: Clear cabinet asks to confirm in the page', (await js(`!!document.querySelector('[role="group"][aria-label="Confirm clearing the cabinet"]')`)) && (await stored()).length === n && n > 0)
+  await js(`[...document.querySelectorAll('[data-clear-cabinet] button')].find(b => b.textContent.trim() === 'Cancel').click()`); await wait(300)
+  ok('more: Cancel keeps the cabinet', !(await js(`!!document.querySelector('[aria-label="Confirm clearing the cabinet"]')`)) && (await stored()).length === n)
+  await clickHas('Clear cabinet'); await wait(300); await click('Yes, clear it'); await wait(400)
+  ok('more: confirming clears the cabinet', (await stored()).length === 0 && (await js(`document.querySelector('[data-clear-cabinet]').innerText`)).includes('Empty.'))
+  await noToasts(); await js(`window.scrollTo(0, 0)`); await shot('more-desktop')
+  await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-desktop-proof')
+
+  // ---- 360px dark: nav reaches each route, no overflow; screenshots with flagged + expired + no-alert items
+  await vp(360, 800, true); await js(`localStorage.setItem('theme', 'dark'); localStorage.setItem('nazar:cabinet', JSON.stringify(${JSON.stringify(parsed?.items ?? [])}))`)
+  await send('Page.navigate', { url: URL }); await wait(1500); await settle()
+  ok('360: Cabinet tab in the bottom nav', await navTo('Cabinet') && (await js(`location.pathname`)) === '/cabinet' && (await js(`[...document.querySelectorAll('nav[aria-label="Mobile navigation"] a[aria-current="page"]')].map(a => a.textContent.trim()).join()`)) === 'Cabinet')
+  await cabinetIdle(); await wait(400)
+  ok('360: cabinet fits without horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  const minCab = await js(`Math.min(...[...document.querySelectorAll('[data-cabinet-item] button[aria-expanded], main > div button')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().height)))`)
+  ok('360: cabinet buttons are at least 44px tall', minCab >= 44, String(minCab))
+  await js(`window.scrollTo(0, 0)`); await shot('cabinet-360-dark')
+  await js(`document.querySelector('[data-cabinet-banner]')?.scrollIntoView({ block: 'start' }); window.scrollBy(0, -12)`); await shot('cabinet-360-dark-list')
+  await click('Review alert'); await wait(900)
+  ok('360: open flagged item fits', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await shot('cabinet-360-dark-open')
+  ok('360: More tab in the bottom nav', await navTo('More') && (await js(`location.pathname`)) === '/more')
+  ok('360: More fits without horizontal scroll', (await js(`document.documentElement.scrollWidth`)) <= 360)
+  await js(`window.scrollTo(0, 0)`); await shot('more-360-dark')
+  await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-proof')
+  await js(`document.getElementById('settings').scrollIntoView({ block: 'start' })`); await shot('more-360-dark-settings')
+  ok('360: Check tab returns home', await navTo('Check') && (await js(`location.pathname`)) === '/')
+  await vp(360, 800, false, true); await js(`localStorage.setItem('theme', 'light')`); await send('Page.navigate', { url: URL + 'cabinet' }); await wait(1500); await cabinetIdle()
+  ok('reduced motion: cabinet renders and settles', (await items()).length === 3)
+}
+// ==== end Cabinet / More ====
+
 if (MODE === 'mock' || MODE === 'live') {
   await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
   const pill = await js(`document.querySelector('[data-status]')?.innerText`)
@@ -285,6 +480,13 @@ if (MODE === 'mock' || MODE === 'live') {
   ok('API answer labelled Live · Nazar API', (await js(`document.querySelector('section[data-state] [data-source]')?.innerText`)) === 'Live · Nazar API')
   if (MODE === 'mock') {
     ok('flagged from API', (await body()).includes('This batch failed a government quality test'))
+    const proofCard = `document.querySelector('section[data-state="flagged"] [data-onchain-proof]')`
+    ok('on-chain proof: card shows the chain of custody, live on Arkiv', (await js(`${proofCard}?.dataset.onchainProof`)) === 'published' && (await js(`[...${proofCard}.querySelectorAll('[data-chain-node]')].map(n => n.dataset.chainNode).join()`)) === 'document,sha,notice,alert' && (await js(`${proofCard}.innerText`)).includes('Live on Arkiv'))
+    ok('on-chain proof: notice and alert entities link to the explorer', (await js(`${proofCard}.querySelector('a[aria-label="Open notice entity in the Arkiv explorer"]')?.href`)) === 'https://tiramisu.explorer.arkiv.network/entity/' + NOTICE_KEY && (await js(`${proofCard}.querySelector('a[aria-label="Open entity key in the Arkiv explorer"]')?.href`)) === 'https://tiramisu.explorer.arkiv.network/entity/' + KEY1)
+    ok('on-chain proof: prominent transaction link', (await js(`${proofCard}.querySelector('[data-tx-link]')?.href`)) === 'https://tiramisu.explorer.arkiv.network/tx/' + TX && (await js(`${proofCard}.querySelector('[data-tx-link]').innerText`)).includes('View transaction on Arkiv explorer'))
+    ok('on-chain proof: creator not equal to the configured publisher is not marked official', (await js(`${proofCard}.querySelector('[data-publisher-check]')?.dataset.publisherCheck`)) === 'unlisted' && (await js(`${proofCard}.innerText`)).includes('Not from a listed publisher'))
+    ok('on-chain proof: entity flags shown as chips', (await js(`[...${proofCard}.querySelectorAll('[data-flag]')].map(f => f.innerText.trim()).join('|')`)) === 'Read-only|Anyone can keep alive')
+    ok('on-chain proof: card shows no "Source SHA-256" label (sheet only)', !(await js(`${proofCard}.innerText`)).includes('Source SHA-256'))
     ok('timeline lists both notices, newest first', /2 notices name this batch/i.test(await body()) && (await js(`[...document.querySelectorAll('[aria-label="Notice timeline"] li')].map(l => l.innerText.split('\\n')[0]).join('|')`)) === 'World Health Organization|Tamil Nadu Drugs Control')
     await js(`document.querySelector('section[data-state]').scrollIntoView({block:'start'})`); await shot('mock-flagged-timeline')
     await clickHas('How do we know'); await wait(900)
@@ -297,6 +499,7 @@ if (MODE === 'mock' || MODE === 'live') {
     await js(`[...document.querySelectorAll('[aria-label="Notice timeline"] button')][1].click()`); await wait(900)
     p = await proofText()
     ok('timeline opens proof for the machine-read notice', p.includes('Tamil Nadu Drugs Control') && p.includes('Machine-read, awaiting pharmacist confirmation') && p.includes('OCR of a scanned page · 82% confidence'))
+    ok('proof sheet: creator equal to the configured publisher is "Official Nazar publisher"', (await js(`document.querySelector('[role="dialog"] [data-publisher-check]')?.dataset.publisherCheck`)) === 'official' && p.includes('Official Nazar publisher'))
     await shot('mock-proof-machine-read'); await escape()
     await typeBatch('5R-13'); ok('API look-alike → Did you mean, not flagged', (await body()).includes('Did you mean') && !(await body()).includes('This batch failed'))
     await typeBatch('(N)25567'); ok('API: (N)25567 is sent to the API, not rejected as unreadable', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert' && requests.some(u => u.includes('/v1/check?batch=(N)25567') || u.includes('/v1/check?batch=%28N%2925567')))
@@ -317,6 +520,7 @@ if (MODE === 'mock' || MODE === 'live') {
   ok('feed: answered by the API, labelled Live · Nazar API', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'api' && (await js(`[...document.querySelectorAll('[data-source]')].some(e => e.innerText === 'Live · Nazar API')`)))
   const allCount = await feedCount(); const firstRows = await feedRows()
   ok('feed: first page has rows and a count', firstRows > 0 && /^[\d,]+ alerts?/.test(allCount), `${firstRows} rows · ${allCount}`)
+  ok('feed: rows with an entity key carry a Live on Arkiv badge', (await js(`document.querySelectorAll('[data-live-arkiv]').length`)) === firstRows)
   if (MODE === 'mock') ok('feed: first page is 20 of 43', firstRows === 20 && allCount.startsWith('43 alerts') && (await body()).includes('Showing 20 of 43'))
   if (await js(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Load more alerts')`)) {
     await click('Load more alerts'); await waitFor(`![...document.querySelectorAll('button')].some(b => b.getAttribute('aria-busy') === 'true')`); await wait(300)
@@ -359,6 +563,14 @@ if (MODE === 'mock' || MODE === 'live') {
   await shot(`${MODE}-feed-360-dark`)
 }
 
+// ---- More › Sources from the API (mock)
+if (MODE === 'mock') {
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  await navTo('More'); await waitFor(`['api','static'].includes(document.querySelector('[data-sources-from]')?.dataset.sourcesFrom)`)
+  ok('more: sources come live from GET /v1/sources', (await js(`document.querySelector('[data-sources-from]').dataset.sourcesFrom`)) === 'api' && (await js(`document.querySelectorAll('[data-source-row]').length`)) === 2)
+  ok('more: API source shows its last run; disabled one its reason', (await js(`document.querySelector('[data-source-row="cdsco-online"]').innerText`)).includes('Last run 5 min ago') && (await js(`document.querySelector('[data-source-row="tg-dca"]').innerText`)).includes('refuses connections from outside India'))
+}
+
 // ---- Arkiv throttled (mock): API down and every RPC call answered 429 with Retry-After.
 if (MODE === 'mock') {
   mock.apiDown = true; mock.arkiv429 = true
@@ -379,6 +591,113 @@ if (MODE === 'mock') {
   ok('429: feed during the backoff uses demo data, no retry storm', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
   mock.apiDown = false; mock.arkiv429 = false
 }
+
+// ======== Strip Scan: camera scanner (fallback mode). Self-contained block; uses only the shared helpers above. ========
+if (MODE === 'fallback') {
+  const SCAN_FIXTURE = decodeURIComponent(new globalThis.URL('./fixtures/scan-gs1-qr.png', import.meta.url).pathname)
+  const SCAN_PNG = 'data:image/png;base64,' + fs.readFileSync(SCAN_FIXTURE).toString('base64')
+  const ORIGIN = new globalThis.URL(URL).origin
+  const scanPhase = () => js(`document.querySelector('[data-scanner]')?.dataset.phase || null`)
+  const scanText = () => js(`document.querySelector('[data-scanner]')?.innerText || ''`)
+  const openScanner = async () => { await js(`document.querySelector('[aria-label="Scan the pack"]').click()`); await waitFor(`!!document.querySelector('[data-scanner]')`, 5000); await wait(500) }
+  const setScanFile = async file => {
+    const doc = await send('DOM.getDocument', { depth: -1, pierce: true })
+    const q = await send('DOM.querySelector', { nodeId: doc.result.root.nodeId, selector: 'input[data-scan-upload]' })
+    return send('DOM.setFileInputFiles', { nodeId: q.result.nodeId, files: [file] })
+  }
+  /** Replaces the camera with a canvas stream that shows the QR fixture (or a blank card), and records every track. */
+  const fakeCamera = withQr => js(`(() => {
+    window.__scanTracks = []
+    navigator.mediaDevices.getUserMedia = async () => {
+      const c = document.createElement('canvas'); c.width = 640; c.height = 480
+      const ctx = c.getContext('2d'); const img = new Image(); img.src = ${JSON.stringify(SCAN_PNG)}; await img.decode()
+      const draw = () => { ctx.fillStyle = '#f4efe6'; ctx.fillRect(0, 0, 640, 480); if (${withQr}) ctx.drawImage(img, 209, 129) }
+      draw(); setInterval(draw, 100)
+      const s = c.captureStream(15); window.__scanTracks.push(...s.getTracks()); return s
+    }
+    return true
+  })()`)
+  const tracksState = () => js(`(window.__scanTracks || []).map(t => t.readyState).join(',')`)
+
+  await vp(360, 800, true); await fresh(true); await click('Skip'); await wait(600)
+  await openScanner()
+  ok('scan: scan button opens the scanner as a modal dialog', (await js(`document.querySelector('[data-scanner]')?.getAttribute('role')`)) === 'dialog')
+  const st = await scanText()
+  ok('scan: before any permission, explains the camera and offers Use camera, upload and type', (await scanPhase()) === 'prompt' && st.includes('Use camera') && st.includes('Upload a photo of the pack') && st.includes('Type it instead'), String(await scanPhase()))
+  ok('scan: says images never leave the device', st.includes('Images are read on this device and never leave it'))
+  ok('scan: full screen at 360 with no horizontal scroll', (await js(`(() => { const d = document.querySelector('[data-scanner]'); const r = d.getBoundingClientRect(); return r.width === 360 && d.scrollWidth <= d.clientWidth + 1 })()`)))
+  const minBtn = await js(`Math.min(...[...document.querySelectorAll('[data-scanner] button')].map(b => Math.round(Math.min(b.getBoundingClientRect().height, b.getBoundingClientRect().width))))`)
+  ok('scan: every scanner button is at least 48px', minBtn >= 48, String(minBtn))
+  ok('scan: focus is trapped inside the scanner', await js(`document.querySelector('[data-scanner]').contains(document.activeElement)`))
+  await shot('scan-360-dark-prompt')
+
+  await setScanFile(SCAN_FIXTURE)
+  await waitFor(`!!document.querySelector('[data-scan-result]')`, 20000)
+  ok('scan: uploaded QR photo is decoded on the device (GS1 Digital Link → SR-13)', (await js(`document.getElementById('scan-batch')?.value`)) === 'SR-13' && (await scanText()).includes('We read SR-13 – check it?'), await scanText())
+  ok('scan: shows expiry from GS1 (17) and how it was read', (await js(`document.querySelector('[data-scan-expiry]')?.innerText || ''`)).includes('Exp 30 Apr 2027') && (await scanText()).includes('QR code · GS1') && (await scanText()).includes('High confidence'))
+  ok('scan: live region announces the read', (await js(`document.querySelector('[data-scan-announce]')?.textContent`)) === 'Read batch SR-13 from the QR code. Check it?')
+  ok('scan: does not auto-check; waits for confirmation', !(await body()).includes('This batch failed a government quality test'))
+  ok('scan: image was not uploaded anywhere', !requests.some(u => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !u.includes('cdn.jsdelivr.net') && !u.startsWith('https://rpc.tiramisu') && !u.startsWith('http://localhost:8787')), requests.filter(u => !u.startsWith(ORIGIN)).slice(-5).join(' '))
+  await shot('scan-360-dark-read')
+  await js(`[...document.querySelectorAll('[data-scanner] button')].find(b => b.textContent.trim().startsWith('Check'))?.click()`)
+  await wait(500); await waitIdle(); await wait(400)
+  ok('scan: confirming closes the scanner and runs the normal check (SR-13 flagged)', !(await scanPhase()) && (await body()).includes('This batch failed a government quality test') && (await js(`document.getElementById('batch').value`)) === 'SR-13')
+
+  await openScanner(); await clickHas('Type it instead'); await wait(700)
+  ok('scan: Type it instead closes the scanner and focuses the batch input', !(await scanPhase()) && (await js(`document.activeElement?.id`)) === 'batch')
+  await js(`document.activeElement.blur()`)
+
+  // Live camera path with a fake stream; permission granted so the scanner starts straight away.
+  await send('Browser.grantPermissions', { origin: ORIGIN, permissions: ['videoCapture'] })
+  await fakeCamera(false); await openScanner()
+  await waitFor(`document.querySelector('[data-scanner]')?.dataset.phase === 'live'`, 5000); await wait(600)
+  ok('scan: with permission, the camera starts and shows the viewfinder', (await scanPhase()) === 'live' && (await tracksState()) === 'live' && (await js(`!!document.querySelector('[data-scan-video]')?.srcObject`)))
+  await shot('scan-360-dark-live')
+  ok('scan: viewfinder status reads aloud (role=status)', (await js(`document.querySelector('[data-scanner] [role="status"]')?.innerText || ''`)).includes('Looking for a QR code'))
+  await escape()
+  ok('scan: Escape closes the scanner and stops the camera (no lingering light)', !(await scanPhase()) && (await tracksState()) === 'ended', await tracksState())
+
+  await fakeCamera(true); await openScanner()
+  await waitFor(`!!document.querySelector('[data-scan-result]')`, 15000)
+  ok('scan: live camera reads the QR by majority vote over frames', (await js(`document.getElementById('scan-batch')?.value`)) === 'SR-13' && /\d of \d frames agree/.test(await scanText()), await scanText())
+  ok('scan: camera stops once a batch is read', (await tracksState()) === 'ended', await tracksState())
+  await escape()
+  await send('Browser.resetPermissions')
+
+  await send('Browser.setPermission', { origin: ORIGIN, permission: { name: 'camera' }, setting: 'denied' })
+  await openScanner(); await waitFor(`!!document.querySelector('[data-blocked]')`, 5000)
+  ok('scan: camera blocked → instructions to allow it, upload still offered', (await js(`document.querySelector('[data-blocked]')?.dataset.blocked`)) === 'denied' && (await scanText()).includes('Website Settings → Camera → Allow') && (await scanText()).includes('Upload a photo of the pack'))
+  await shot('scan-360-dark-denied')
+  await escape()
+  await send('Browser.resetPermissions')
+
+  // Printed label without a code: OCR fallback (tesseract.js downloads its engine and English model once).
+  const labelPng = await js(`(() => { const c = document.createElement('canvas'); c.width = 900; c.height = 360; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 900, 360); x.fillStyle = '#111'; x.font = 'bold 44px Arial'; x.fillText('ReLife Syrup 100 ml', 40, 80); x.font = '40px Arial'; x.fillText('B.No.: LSL25160', 40, 170); x.fillText('Mfg: 01/2025   Exp: 12/2026', 40, 250); return c.toDataURL('image/png') })()`)
+  const labelFile = OUT + '/scan-label-fixture.png'; fs.writeFileSync(labelFile, Buffer.from(labelPng.split(',')[1], 'base64'))
+  await openScanner(); await setScanFile(labelFile)
+  await waitFor(`!!document.querySelector('[data-scan-result]') || document.querySelector('[data-scanner]')?.dataset.phase === 'empty'`, 60000)
+  ok('scan: printed label photo is read by OCR on the device (LSL25160, Exp Dec 2026)', (await js(`document.getElementById('scan-batch')?.value`)) === 'LSL25160' && (await scanText()).includes('Printed text') && (await scanText()).includes('Exp Dec 2026'), await scanText())
+  await shot('scan-360-dark-ocr')
+  await escape()
+
+  // QR says SR-13 but the printed label says SR-14: warn, never auto-check.
+  const mixPng = await js(`(async () => { const img = new Image(); img.src = ${JSON.stringify(SCAN_PNG)}; await img.decode(); const c = document.createElement('canvas'); c.width = 1000; c.height = 420; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 1000, 420); x.drawImage(img, 30, 100); x.fillStyle = '#111'; x.font = '42px Arial'; x.fillText('B.No.: SR-14', 320, 190); x.fillText('Exp: 04/2027', 320, 270); return c.toDataURL('image/png') })()`)
+  const mixFile = OUT + '/scan-mismatch-fixture.png'; fs.writeFileSync(mixFile, Buffer.from(mixPng.split(',')[1], 'base64'))
+  await openScanner(); await setScanFile(mixFile)
+  await waitFor(`document.querySelector('[data-scan-result]')?.dataset.scanResult === 'mismatch'`, 30000)
+  ok('scan: QR and printed batch disagree → mismatch warning, no auto-check', (await scanText()).includes("Label details don't match. Show this pack to your chemist.") && (await scanText()).includes('SR-14') && (await scanPhase()) === 'result', await scanText())
+  await shot('scan-360-dark-mismatch')
+  await escape()
+
+  await vp(1440, 1000, false); await fresh(); await click('Skip'); await wait(600)
+  await openScanner()
+  ok('scan: centred dialog on desktop', (await js(`(() => { const r = document.querySelector('[data-scanner]').getBoundingClientRect(); return r.width <= 560 && Math.abs(r.left + r.width / 2 - 720) < 2 })()`)))
+  await setScanFile(SCAN_FIXTURE); await waitFor(`!!document.querySelector('[data-scan-result]')`, 20000)
+  await shot('scan-desktop-read')
+  await escape()
+  ok('scan: Escape closes on desktop', !(await scanPhase()))
+}
+// ======== end Strip Scan ========
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))

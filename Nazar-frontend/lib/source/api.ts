@@ -112,3 +112,28 @@ export type PipelineStatusResponse = {
 }
 
 export const apiPipelineStatus = (opts?: Opts) => getJson<PipelineStatusResponse>('/v1/pipeline/status', opts)
+
+export type SourceInfo = {
+  id: string
+  authority: string
+  jurisdiction: string
+  homepage: string
+  description: string
+  schedule: string
+  enabled: boolean
+  disabledReason: string | null
+  lastRun: { lastCheckedMs: number; ok: boolean; docs: number; alerts?: number; error?: string | null } | null
+}
+
+export async function apiSources(opts?: Opts): Promise<SourceInfo[]> {
+  const r = await getJson<{ items: SourceInfo[] }>('/v1/sources', opts)
+  if (!r || !Array.isArray(r.items)) throw new ApiError('Unexpected /v1/sources response')
+  return r.items
+    .filter((s) => s && typeof s.id === 'string' && typeof s.authority === 'string')
+    .map((s) => ({
+      ...s,
+      enabled: s.enabled !== false,
+      disabledReason: s.disabledReason ?? null,
+      lastRun: s.lastRun && typeof s.lastRun.lastCheckedMs === 'number' ? s.lastRun : null,
+    }))
+}

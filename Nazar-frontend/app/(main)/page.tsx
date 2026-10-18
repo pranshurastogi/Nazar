@@ -23,6 +23,7 @@ import { soon, useShell } from '@/components/nazar/app-shell'
 import { CheckingCard } from '@/components/nazar/checking-card'
 import { ResultCard, SourceTag } from '@/components/nazar/result-card'
 import { Rings } from '@/components/nazar/rings'
+import { Scanner } from '@/components/nazar/scanner/scanner'
 import { checkBatch, loadAlerts, type AlertFeed, type CheckResult, type ResultState, type Stage } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +54,7 @@ export default function Page() {
   const [recent, setRecent] = useState<Recent[]>([])
   const shell = useShell()
   const inputRef = useRef<HTMLInputElement>(null)
+  const [scanning, setScanning] = useState(false)
   const resultRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -216,7 +218,7 @@ export default function Page() {
                   </>
                 )}
               </Button>
-              <Button variant="outline" className="size-13 rounded-xl text-primary" aria-label="Scan the pack" onClick={() => soon('Camera scan')}>
+              <Button variant="outline" className="size-13 rounded-xl text-primary" aria-label="Scan the pack" onClick={() => setScanning(true)} aria-haspopup="dialog">
                 <ScanLine className="size-5" />
               </Button>
             </div>
@@ -366,6 +368,16 @@ export default function Page() {
           </Button>
         </section>
 
+        <Scanner
+          open={scanning}
+          onOpenChange={setScanning}
+          onCheck={(b) => {
+            setScanning(false)
+            runCheck(b)
+          }}
+          onType={() => setScanning(false)}
+          typeTarget={inputRef}
+        />
     </>
   )
 }

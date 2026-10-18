@@ -1,15 +1,18 @@
-import { apiAlerts, apiCheck, apiLikelyDown, apiPipelineStatus, type PipelineStatusResponse } from './api'
+import { apiAlerts, apiCheck, apiLikelyDown, apiPipelineStatus, apiSources, type PipelineStatusResponse, type SourceInfo } from './api'
 import { API_URL } from './config'
 import type { ArkivFeedPage } from './arkiv'
 import { checkDemo, demoActiveAlerts } from './demo'
+import { STATIC_SOURCES } from './sources'
 import { validateBatch } from './match'
 import type { Alert, CheckResult, PipelineStatus, SourceKind } from './types'
 
 export * from './types'
-export { matchKey, confusionKey, BATCH_SHAPE } from './match'
+export { matchKey, confusionKey, BATCH_SHAPE, validateBatch } from './match'
 export { formatYm } from './map'
 export { API_URL } from './config'
 export { STATE_NAME, SOURCE_NAME, stateName } from './labels'
+export { PROJECT, PUBLISHER, EXPLORER_URL, explorerAddress } from './config'
+export type { SourceInfo } from './api'
 
 // One entry point per question. Each tries the Nazar API, then Arkiv directly, then the
 // built-in demo data, and reports which one answered. Arkiv code is loaded on demand so
@@ -189,4 +192,33 @@ export async function loadPipelineStatus(signal?: AbortSignal): Promise<Pipeline
     if (isAbort(err, signal) || (err instanceof Error && err.name === 'ArkivBackoffError')) throw err
   }
   return { kind: 'offline' }
+}
+
+export type SourceList = { items: SourceInfo[]; source: 'api' | 'static' }
+
+/** The regulator sources the pipeline reads: live from the API (with last runs), else the built-in list. */
+export async function loadSources(signal?: AbortSignal): Promise<SourceList> {
+  try {
+    if (!(await probeApi())) throw new Error('API unreachable')
+    const items = await apiSources({ signal })
+    if (items.length) return { items, source: 'api' }
+  } catch (err) {
+    if (isAbort(err, signal)) throw err
+  }
+  return { items: STATIC_SOURCES, source: 'static' }
+}
+
+/**
+ * Estimated date an Arkiv entity expires, from its expiry block. Null when Arkiv cannot
+ * say (paused after a 429, offline); the proof then shows the block number alone.
+ */
+export async function estimateExpiry(expiresAtBlock: string, signal?: AbortSignal): Promise<Date | null> {
+  try {
+    const t = await (await loadArkiv()).arkivBlockTiming(signal)
+    const blocks = Number(BigInt(expiresAtBlock) - t.currentBlock)
+    const ms = (t.currentBlockTime + blocks * (t.blockDuration || 2)) * 1000
+    return Number.isFinite(ms) ? new Date(ms) : null
+  } catch {
+    return null
+  }
 }

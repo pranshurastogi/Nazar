@@ -153,6 +153,11 @@ function FeedRow({ alert, open, onToggle }: { alert: Alert; open: boolean; onTog
               <Baby className="size-3" aria-hidden="true" /> Child
             </span>
           )}
+          {alert.entityKey && (
+            <span data-live-arkiv className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary uppercase">
+              <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" /> Live on Arkiv
+            </span>
+          )}
         </span>
         <span className="mt-0.5 block truncate text-[13px] text-foreground/85">
           <span className="font-mono font-semibold">{alert.batch}</span>

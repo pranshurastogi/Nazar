@@ -22,16 +22,24 @@ const STATUS_REFRESH_MS = 2 * 60 * 1000
 
 export const soon = (what: string) => toast(`${what} is coming in the next build.`)
 
-type NavEntry = { icon: typeof House; label: string; href?: string }
+type NavEntry = { icon: typeof House; label: string; href: string }
 
 const NAV: NavEntry[] = [
   { icon: House, label: 'Check', href: '/' },
   { icon: History, label: 'Feed', href: '/feed' },
-  { icon: BookOpen, label: 'Cabinet' },
-  { icon: Menu, label: 'More' },
+  { icon: BookOpen, label: 'Cabinet', href: '/cabinet' },
+  { icon: Menu, label: 'More', href: '/more' },
 ]
 
-const TITLES: Record<string, string> = { '/': 'Check a medicine batch', '/feed': 'Alert feed' }
+const TITLES: Record<string, string> = {
+  '/': 'Check a medicine batch',
+  '/feed': 'Alert feed',
+  '/cabinet': 'My medicine cabinet',
+  '/more': 'More about Nazar',
+}
+
+/** A tab is current on its own path and below it (/more#proof, /cabinet/…). */
+const isActive = (href: string, pathname: string) => (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`))
 
 type Shell = {
   /** Runs a batch check on the Check tab, navigating there first when needed. */
@@ -40,6 +48,8 @@ type Shell = {
   registerCheck: (run: ((batch: string) => void) | null) => void
   /** A check requested from another tab, consumed once by the Check tab. */
   takePendingCheck: () => string | null
+  /** Opens the onboarding guide (Guide button, More › Settings). */
+  openGuide: () => void
 }
 
 const ShellContext = createContext<Shell | null>(null)
@@ -62,17 +72,10 @@ function NavItem({ icon: Icon, label, href, active, compact }: NavEntry & { acti
       {label}
     </>
   )
-  if (href) {
-    return (
-      <Link href={href} aria-current={active ? 'page' : undefined} className={cls}>
-        {body}
-      </Link>
-    )
-  }
   return (
-    <button onClick={() => soon(label)} className={cls}>
+    <Link href={href} aria-current={active ? 'page' : undefined} className={cls}>
       {body}
-    </button>
+    </Link>
   )
 }
 
@@ -143,6 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         pending.current = null
         return b
       },
+      openGuide: () => setGuideOpen(true),
     }),
     [requestCheck],
   )
@@ -157,12 +161,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Logo />
           </Link>
           <nav className="mt-12 flex flex-col gap-1.5" aria-label="Main navigation">
-            {NAV.map((n) => <NavItem key={n.label} {...n} active={n.href === pathname} />)}
+            {NAV.map((n) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} />)}
           </nav>
           <div className="mt-auto rounded-2xl border bg-card p-4">
             <ShieldCheck className="size-5 text-primary" />
             <p className="mt-2.5 text-sm font-semibold">Private by design</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">Your checks stay on this device.</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">Your checks and cabinet stay on this device.</p>
           </div>
           <p className="mt-4 text-xs text-muted-foreground">Built by Pranshu Rastogi</p>
         </aside>
@@ -197,7 +201,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           aria-label="Mobile navigation"
           className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-10 flex gap-1 rounded-2xl border bg-card/90 p-1.5 shadow-lg backdrop-blur-lg lg:hidden"
         >
-          {NAV.map((n) => <NavItem key={n.label} {...n} active={n.href === pathname} compact />)}
+          {NAV.map((n) => <NavItem key={n.label} {...n} active={isActive(n.href, pathname)} compact />)}
         </nav>
 
         <Onboarding open={guideOpen} onOpenChange={setGuideOpen} onTry={requestCheck} />

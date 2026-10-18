@@ -112,6 +112,9 @@ export type AlertDTO = {
   txHash?: string | null
   creator?: string | null
   publishedAt?: string | null
+  /** Parent notice entity, on servers that expose it. */
+  noticeEntityKey?: string | null
+  noticeKey?: string | null
   retracted?: boolean
   explorer?: { entity?: string | null; tx?: string | null }
 }
@@ -153,6 +156,8 @@ export function fromDto(d: AlertDTO): Alert {
       creator: d.creator ? explorerAddress(d.creator) : null,
     },
     demo: false,
+    noticeKey: d.noticeEntityKey ?? d.noticeKey ?? null,
+    publishedAt: d.publishedAt ?? null,
     ...(d.retracted ? { retraction: { date: '', reason: 'Withdrawn by the regulator', authority } } : {}),
   }
 }
@@ -178,6 +183,9 @@ export type ArkivAlert = {
   confidence: number
   method: string
   tier: string
+  noticeKey?: string | null
+  expiresAtBlock?: string | null
+  flags?: { readonly: boolean; permissionlessExtension: boolean } | null
   payload: {
     product?: string
     generic?: string | null
@@ -239,6 +247,9 @@ export function fromArkiv(a: ArkivAlert): Alert {
       creator: a.creator ? explorerAddress(a.creator) : null,
     },
     demo: false,
+    noticeKey: a.noticeKey ?? null,
+    expiresAtBlock: a.expiresAtBlock ?? null,
+    flags: a.flags ?? null,
     ...(a.retraction
       ? { retraction: { date: '', reason: RETRACTION_REASON[a.retraction.reason] ?? 'Withdrawn by the regulator', authority } }
       : {}),
