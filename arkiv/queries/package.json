@@ -1,0 +1,21 @@
+{
+  "name": "nazar-arkiv-queries",
+  "private": true,
+  "type": "module",
+  "description": "Runnable examples of every Arkiv query the Nazar app uses. No keys needed: reads only.",
+  "scripts": {
+    "check": "tsx check-batch.ts",
+    "child-shield": "tsx child-shield.ts",
+    "feed": "tsx feed.ts",
+    "notice": "tsx notice-with-alerts.ts",
+    "count": "tsx count.ts",
+    "heartbeat": "tsx heartbeat.ts"
+  },
+  "dependencies": {
+    "@arkiv-network/sdk": "0.8.0",
+    "viem": "^2.57.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

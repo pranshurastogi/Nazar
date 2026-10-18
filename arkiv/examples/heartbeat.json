@@ -1,0 +1,59 @@
+{
+  "key": "0x43dd67026c7eb65ffaa1eec0784c6a8576d965f6c35f5b62ca583ef98cb58465",
+  "creator": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2",
+  "official": true,
+  "expiresAtBlock": "728221",
+  "attributes": {
+    "last_ok": "1792305000008",
+    "project": "nazar-in-batch-alerts",
+    "t": "heartbeat",
+    "v": 1,
+    "worker": "nazar"
+  },
+  "payload": {
+    "worker": "nazar",
+    "lastOkMs": 1792305000008,
+    "sources": {
+      "cdsco-online": {
+        "lastCheckedMs": 1792304195766,
+        "ok": true,
+        "docs": 0
+      },
+      "cdsco-pdf": {
+        "lastCheckedMs": 1792304226431,
+        "ok": true,
+        "docs": 0
+      },
+      "tn-dc": {
+        "lastCheckedMs": 1792304231729,
+        "ok": true,
+        "docs": 0
+      },
+      "mh-fda": {
+        "lastCheckedMs": 1792304234889,
+        "ok": true,
+        "docs": 0
+      },
+      "who-mpa": {
+        "lastCheckedMs": 1792304294995,
+        "ok": true,
+        "docs": 0
+      },
+      "curated": {
+        "lastCheckedMs": 1792304295092,
+        "ok": true,
+        "docs": 0
+      }
+    },
+    "alerts": 1404,
+    "version": "0.1.0"
+  },
+  "owner": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2",
+  "createdAtBlock": "726146",
+  "creationFlags": {
+    "readonly": false,
+    "permissionlessExtension": false,
+    "raw": 0
+  },
+  "explorer": "https://tiramisu.explorer.arkiv.network/entity/0x43dd67026c7eb65ffaa1eec0784c6a8576d965f6c35f5b62ca583ef98cb58465"
+}

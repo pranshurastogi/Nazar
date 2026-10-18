@@ -177,7 +177,7 @@ pnpm cli sources | discover | harvest | extract <sha|file> | run | publish | che
 
 ## Arkiv
 
-Nazar uses Arkiv as its data layer. The full data contract is in [`arkiv/schema.md`](arkiv/schema.md), and building notes are in [`arkiv/friction.md`](arkiv/friction.md).
+Nazar uses Arkiv as its data layer. Everything Arkiv-specific is organised in [`arkiv/`](arkiv/README.md): the data contract ([`schema.md`](arkiv/schema.md)), real entities read from the chain ([`examples/`](arkiv/examples)), runnable queries ([`queries/`](arkiv/queries)) and building notes ([`friction.md`](arkiv/friction.md)).
 
 - **Publisher wallet:** `0xd06d85Eb20f126f796E4a341b711B1a757c66bD2` ([explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2))
 - **Live on Tiramisu since 18 Oct 2026:** **21 notices, 1,404 alerts and the pipeline heartbeat**, all created by the publisher, written in 106 atomic transactions for about 0.25 GLM. You can recount them with the query below.

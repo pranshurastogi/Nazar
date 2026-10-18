@@ -1,0 +1,36 @@
+{
+  "key": "0xe0d907687317e1eabcb599044d3679481c73fd5fdd67ff6b62b9d73cbc1b5c5f",
+  "creator": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2",
+  "official": true,
+  "expiresAtBlock": "79565137",
+  "attributes": {
+    "juris": "IN",
+    "notice_ym": 202510,
+    "parser": "who-annex@1",
+    "project": "nazar-in-batch-alerts",
+    "rows": 3,
+    "sha": "353dbcd674192bfee9f3621b073d5116cdb89cc78204aa23d6c6f9fb9d1e7a96",
+    "src": "who-mpa",
+    "t": "notice",
+    "v": 1
+  },
+  "payload": {
+    "title": "WHO Medical Product Alert N°5/2025: Substandard (contaminated) oral liquid medicines",
+    "authority": "WHO",
+    "jurisdiction": "IN",
+    "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n5_2025_syrup-medicines_en.pdf?sfvrsn=652770c2_7",
+    "publishedAt": "2025-10-13",
+    "sha256": "353dbcd674192bfee9f3621b073d5116cdb89cc78204aa23d6c6f9fb9d1e7a96",
+    "rows": 3,
+    "parser": "who-annex@1",
+    "method": "text"
+  },
+  "owner": "0xd06d85Eb20f126f796E4a341b711B1a757c66bD2",
+  "createdAtBlock": "725137",
+  "creationFlags": {
+    "readonly": true,
+    "permissionlessExtension": false,
+    "raw": 1
+  },
+  "explorer": "https://tiramisu.explorer.arkiv.network/entity/0xe0d907687317e1eabcb599044d3679481c73fd5fdd67ff6b62b9d73cbc1b5c5f"
+}
