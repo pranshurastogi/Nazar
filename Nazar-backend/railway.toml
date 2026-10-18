@@ -1,0 +1,17 @@
+# Railway config-as-code for the Nazar backend.
+# In the service settings set Root Directory = Nazar-backend (or point "Config-as-code" at
+# /Nazar-backend/railway.toml), attach a volume at /app/data, and set the variables listed in
+# docs/deploy.md (NAZAR_CORS_ORIGINS, NAZAR_PUBLISHER_PRIVATE_KEY, NAZAR_PUBLISH_MODE, NAZAR_ROLE).
+# Railway injects PORT; the API honours it and listens on 0.0.0.0.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+# One replica only: the worker publishes from one wallet, and key prediction needs a single writer.
+numReplicas = 1

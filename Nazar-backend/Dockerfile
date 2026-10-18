@@ -33,8 +33,9 @@ COPY docker/entrypoint.sh /usr/local/bin/nazar-entrypoint
 COPY docker/nazar /usr/local/bin/nazar
 RUN chmod 0755 /usr/local/bin/nazar-entrypoint /usr/local/bin/nazar \
   && mkdir -p /app/data && chown -R node:node /app/data
-# The ledger, raw documents and OCR data live here. Mount a volume to keep them across deploys.
-VOLUME ["/app/data"]
+# The ledger, raw documents and OCR data live in /app/data: mount a volume there to keep them
+# across deploys (fly.toml [[mounts]], a Railway volume, or `docker run -v`). No VOLUME
+# instruction on purpose: Railway rejects Dockerfiles that declare one.
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"

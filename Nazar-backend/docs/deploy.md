@@ -70,6 +70,25 @@ fly ssh sftp shell        # put data/nazar.sqlite /app/data/nazar.sqlite  (stop 
 fly machine restart
 ```
 
+## Railway
+
+`railway.toml` (Dockerfile build, `/health` check, restart on failure, one replica) is in this folder. There is no Indian region; pick **Southeast Asia (Singapore)** for the lowest latency to Indian sites, and keep `tg-dca`/`ka-dc` off.
+
+1. New Project → Deploy from GitHub repo → `pranshurastogi/Nazar`.
+2. Service → Settings → **Root Directory** `Nazar-backend` (Railway then finds `railway.toml` and the `Dockerfile`).
+3. Service → **Volumes** → add a volume mounted at **`/app/data`** (1 GB is plenty).
+4. Service → **Variables**:
+   - `NAZAR_ROLE=all`
+   - `NAZAR_RUN_ON_START=true`
+   - `NAZAR_DATA_DIR=/app/data`
+   - `NAZAR_CORS_ORIGINS=https://nazar-nu.vercel.app`
+   - `NAZAR_PUBLISH_MODE=dry-run`, then `live`
+   - `NAZAR_PUBLISHER_PRIVATE_KEY=0x…` (Railway variables are encrypted)
+5. Settings → Networking → **Generate Domain**; check `https://<service>.up.railway.app/health`.
+6. Set `NEXT_PUBLIC_NAZAR_API_URL` to that domain in Vercel and redeploy.
+
+Or use the CLI from `Nazar-backend/`: `railway init`, then `railway up`, `railway volume add --mount-path /app/data` and `railway domain`.
+
 ## Render
 
 The blueprint is `render.yaml` (Docker runtime, `rootDir: Nazar-backend`, a 1 GB disk at `/app/data`, health check `/health`):
