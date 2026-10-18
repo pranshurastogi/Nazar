@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BadgeCheck, Boxes, ExternalLink, FileText, Fingerprint, Infinity as KeepAlive, Link2, Lock, ShieldAlert, Unlink } from 'lucide-react'
+import { BadgeCheck, Boxes, ExternalLink, FileText, Fingerprint, Infinity as KeepAlive, Link2, Lock, ShieldAlert, Unlink, LoaderCircle } from 'lucide-react'
 
 import { buttonVariants } from '@/components/ui/button'
 import { estimateExpiry, explorerAddress, PUBLISHER, type Alert } from '@/lib/source'
@@ -157,6 +157,10 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
             <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" /> Live on Arkiv
           </span>
+        ) : alert.fromSnapshot ? (
+          <span data-proof-pending className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+            <LoaderCircle className="size-3 motion-safe:animate-spin" aria-hidden="true" /> Confirming on Arkiv…
+          </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
             <Unlink className="size-3" aria-hidden="true" /> Not yet on Arkiv
@@ -235,7 +239,9 @@ export function OnchainProof({ alert, variant = 'card' }: { alert: Alert; varian
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs leading-5 text-muted-foreground">
           {alert.demo
             ? 'Built-in demo record, shown because the Nazar API and Arkiv could not answer. There is nothing on Arkiv to verify for it.'
-            : 'Nazar has read this alert but has not published it on Arkiv yet. The regulator document above is the source.'}
+            : alert.fromSnapshot
+              ? 'Answered instantly from the copy of the alert list saved on this device. The entity key, signer and transaction load from Arkiv with the live check; if you are offline, the regulator document above is the source.'
+              : 'Nazar has read this alert but has not published it on Arkiv yet. The regulator document above is the source.'}
         </p>
       )}
     </div>

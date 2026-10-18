@@ -117,7 +117,7 @@ export function snapshotCheck(batch: string, s = index): CheckResult | null {
   if (!s) return null
   const key = matchKey(batch)
   const rows = s.file.alerts[key]
-  const exact: Alert[] = rows ? rows.map((r, i) => fromDto(toDto(key, r, i, s.file.notices))) : []
+  const exact: Alert[] = rows ? rows.map((r, i) => ({ ...fromDto(toDto(key, r, i, s.file.notices)), fromSnapshot: true })) : []
   let lookAlike: string | undefined
   if (!exact.length) {
     const best = (s.lookAlikes.get(confusionKey(batch)) ?? []).filter(([k]) => k !== key).sort((a, b) => b[1] - a[1])[0]

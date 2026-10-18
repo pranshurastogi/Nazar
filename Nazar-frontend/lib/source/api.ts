@@ -41,8 +41,10 @@ async function getJson<T>(path: string, { signal, timeoutMs = 4000 }: Opts = {})
     downUntil = 0
     return (await res.json()) as T
   } catch (err) {
-    // Only network-level failures cool the API off; an HTTP error means it is up.
-    if (!(err instanceof ApiError) && !signal?.aborted) downUntil = Date.now() + COOL_OFF_MS
+    // Only real connection failures and timeouts cool the API off. An HTTP error means it is up,
+    // and a cancelled request (a superseded check, an aborted prefetch) says nothing about it.
+    const timedOut = err instanceof DOMException && err.name === 'TimeoutError'
+    if ((err instanceof TypeError || timedOut) && !signal?.aborted) downUntil = Date.now() + COOL_OFF_MS
     throw err
   } finally {
     t.done()

@@ -50,6 +50,8 @@ export type Alert = {
   explorer: { entity: string | null; tx: string | null; creator: string | null }
   /** True for built-in sample records that are not published anywhere. */
   demo: boolean
+  /** Answered from the on-device snapshot, which leaves out entity keys: the on-chain proof comes with the live check. */
+  fromSnapshot?: boolean
   /** Arkiv entity key of the parent notice (the regulator document), when known. */
   noticeKey?: string | null
   /** Block at which the alert entity expires on Arkiv (decimal string), when read from Arkiv. */
