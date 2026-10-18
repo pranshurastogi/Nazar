@@ -1,0 +1,33 @@
+{
+  "id": "who-n4-2023-guaifenesin",
+  "title": "WHO Medical Product Alert N°4/2023: Substandard (contaminated) syrup medicines identified in WHO Region of the Western Pacific",
+  "authority": "WHO",
+  "jurisdiction": "IN",
+  "url": "https://www.who.int/news/item/25-04-2023-medical-product-alert-n-4-2023--substandard-(contaminated)-syrup-medicines",
+  "publishedAt": "2023-04-25",
+  "noticeYm": 202304,
+  "reviewedBy": "Claude Code, transcribed from the WHO alert PDF; pending review by Pranshu Rastogi",
+  "reviewedAt": "2026-10-18",
+  "sources": [
+    {
+      "label": "WHO Medical Product Alert N°4/2023 (2023-04-25)",
+      "url": "https://www.who.int/news/item/25-04-2023-medical-product-alert-n-4-2023--substandard-(contaminated)-syrup-medicines"
+    },
+    {
+      "label": "WHO alert PDF with the annex of affected batches",
+      "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n4_2023_guaifenesin-syrup_en.pdf"
+    }
+  ],
+  "notes": "Identified in the Marshall Islands and Micronesia (Federated States of), reported to WHO on 6 April 2023.",
+  "rows": [
+    {
+      "product": "GUAIFENESIN SYRUP TG SYRUP",
+      "batch": "SL-429",
+      "mfg": null,
+      "exp": "10/2023",
+      "manufacturer": "QP PHARMACHEM LTD (Punjab, India); marketed by TRILLIUM PHARMA (Haryana, India)",
+      "reason": "Contaminated with diethylene glycol and ethylene glycol (quality control laboratory analysis)",
+      "reportedBy": "WHO (identified in the Marshall Islands and Micronesia)"
+    }
+  ]
+}

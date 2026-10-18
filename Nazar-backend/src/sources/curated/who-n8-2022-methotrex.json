@@ -1,0 +1,33 @@
+{
+  "id": "who-n8-2022-methotrex",
+  "title": "WHO Medical Product Alert N°8/2022: Substandard (contaminated) METHOTREX 50mg identified in the WHO Eastern Mediterranean region",
+  "authority": "WHO",
+  "jurisdiction": "IN",
+  "url": "https://www.who.int/news/item/27-12-2022-medical-product-alert-n-8-2022-substandard-(contaminated)-methotrex",
+  "publishedAt": "2022-12-27",
+  "noticeYm": 202212,
+  "reviewedBy": "Claude Code, transcribed from the WHO alert PDF; pending review by Pranshu Rastogi",
+  "reviewedAt": "2026-10-18",
+  "sources": [
+    {
+      "label": "WHO Medical Product Alert N°8/2022 (2022-12-27)",
+      "url": "https://www.who.int/news/item/27-12-2022-medical-product-alert-n-8-2022-substandard-(contaminated)-methotrex"
+    },
+    {
+      "label": "WHO alert PDF with the annex of affected batches",
+      "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n8_2022_contaminated-methotrexate_en.pdf"
+    }
+  ],
+  "notes": "Identified in Yemen and Lebanon. WHO: the batch \"was intended to be sold exclusively on the Indian market\"; the stated manufacturer confirmed the batch, manufacturing and expiry combination matches its records.",
+  "rows": [
+    {
+      "product": "METHOTREX 50mg (methotrexate 50mg/2mL)",
+      "batch": "MTI2101BAQ",
+      "mfg": "01/2021",
+      "exp": "12/2022",
+      "manufacturer": "CELON LABORATORIES PVT LTD (Telangana, India); marketed by RMPL PHARMA LLP, Mumbai",
+      "reason": "Contaminated: samples positive for Pseudomonas aeruginosa (WHO alert)",
+      "reportedBy": "WHO (identified in Yemen and Lebanon)"
+    }
+  ]
+}

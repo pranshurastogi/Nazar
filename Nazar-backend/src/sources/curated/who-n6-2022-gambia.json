@@ -1,0 +1,64 @@
+{
+  "id": "who-n6-2022-gambia",
+  "title": "WHO Medical Product Alert N°6/2022: Substandard (contaminated) paediatric medicines identified in WHO region of Africa",
+  "authority": "WHO",
+  "jurisdiction": "IN",
+  "url": "https://www.who.int/news/item/05-10-2022-medical-product-alert-n-6-2022-substandard-(contaminated)-paediatric-medicines",
+  "publishedAt": "2022-10-05",
+  "noticeYm": 202210,
+  "reviewedBy": "Claude Code, transcribed from the WHO alert PDF; pending review by Pranshu Rastogi",
+  "reviewedAt": "2026-10-18",
+  "sources": [
+    {
+      "label": "WHO Medical Product Alert N°6/2022 (2022-10-05)",
+      "url": "https://www.who.int/news/item/05-10-2022-medical-product-alert-n-6-2022-substandard-(contaminated)-paediatric-medicines"
+    },
+    {
+      "label": "WHO alert PDF with the annex of affected batches",
+      "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n6_2022_contaminated-pediatric-syrups_en.pdf"
+    }
+  ],
+  "notes": "Identified in The Gambia and reported to WHO in September 2022. WHO: \"All batches of these products should be considered unsafe until they can be analyzed by the relevant National Regulatory Authorities.\" The alert title calls them paediatric medicines.",
+  "rows": [
+    {
+      "product": "PROMETHAZINE ORAL SOLUTION BP",
+      "batch": "ML21-202",
+      "mfg": "12/2021",
+      "exp": "11/2024",
+      "manufacturer": "Maiden Pharmaceuticals Limited (Haryana, India)",
+      "reason": "Contaminated with diethylene glycol and ethylene glycol (WHO laboratory analysis)",
+      "reportedBy": "WHO (identified in The Gambia)",
+      "paediatricUse": true
+    },
+    {
+      "product": "KOFEXMALIN BABY COUGH SYRUP",
+      "batch": "ML21-199",
+      "mfg": "12/2021",
+      "exp": "11/2024",
+      "manufacturer": "Maiden Pharmaceuticals Limited (Haryana, India)",
+      "reason": "Contaminated with diethylene glycol and ethylene glycol (WHO laboratory analysis)",
+      "reportedBy": "WHO (identified in The Gambia)",
+      "paediatricUse": true
+    },
+    {
+      "product": "MAKOFF BABY COUGH SYRUP",
+      "batch": "ML21-203",
+      "mfg": "12/2021",
+      "exp": "11/2024",
+      "manufacturer": "Maiden Pharmaceuticals Limited (Haryana, India)",
+      "reason": "Contaminated with diethylene glycol and ethylene glycol (WHO laboratory analysis)",
+      "reportedBy": "WHO (identified in The Gambia)",
+      "paediatricUse": true
+    },
+    {
+      "product": "MAGRIP N COLD SYRUP",
+      "batch": "ML21-198",
+      "mfg": "12/2021",
+      "exp": "11/2024",
+      "manufacturer": "Maiden Pharmaceuticals Limited (Haryana, India)",
+      "reason": "Contaminated with diethylene glycol and ethylene glycol (WHO laboratory analysis)",
+      "reportedBy": "WHO (identified in The Gambia)",
+      "paediatricUse": true
+    }
+  ]
+}

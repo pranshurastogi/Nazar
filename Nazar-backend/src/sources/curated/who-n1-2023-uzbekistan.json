@@ -1,0 +1,218 @@
+{
+  "id": "who-n1-2023-uzbekistan",
+  "title": "WHO Medical Product Alert N°1/2023: Substandard (contaminated) liquid dosage medicines identified in WHO European Region and Western Pacific Region",
+  "authority": "WHO",
+  "jurisdiction": "IN",
+  "url": "https://www.who.int/news/item/11-01-2023-medical-product-alert-n-1-2023-substandard-(contaminated)-liquid-dosage-medicines",
+  "publishedAt": "2023-01-11",
+  "noticeYm": 202301,
+  "reviewedBy": "Claude Code, transcribed from the WHO alert PDF; pending review by Pranshu Rastogi",
+  "reviewedAt": "2026-10-18",
+  "sources": [
+    {
+      "label": "WHO Medical Product Alert N°1/2023 (2023-01-11)",
+      "url": "https://www.who.int/news/item/11-01-2023-medical-product-alert-n-1-2023-substandard-(contaminated)-liquid-dosage-medicines"
+    },
+    {
+      "label": "WHO alert PDF with the annex of affected batches",
+      "url": "https://cdn.who.int/media/docs/default-source/substandard-and-falsified/n1_2023_contaminated-syrup2_en.pdf"
+    }
+  ],
+  "notes": "Identified in Uzbekistan (reported 22 December 2022) and Cambodia (reported 3 April 2023; update of 19 May 2023). One DOK-1 MAX batch printed across a line break in the annex (\"P/DXS- H/2101\", Jul-24) is left out until it is checked against the photograph; DXSH2202's expiry is \"not reported\".",
+  "rows": [
+    {
+      "product": "AMBRONOL cough syrup (ambroxol HCl)",
+      "batch": "AAS2203",
+      "mfg": null,
+      "exp": "03/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan and Cambodia)",
+      "note": "English packaging"
+    },
+    {
+      "product": "AMBRONOL cough syrup (ambroxol HCl)",
+      "batch": "AAS2103",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan and Cambodia)",
+      "note": "Russian packaging"
+    },
+    {
+      "product": "AMBRONOL cough syrup (ambroxol HCl)",
+      "batch": "AAS2202",
+      "mfg": null,
+      "exp": "12/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan and Cambodia)",
+      "note": "Russian packaging"
+    },
+    {
+      "product": "AMBRONOL cough syrup (ambroxol HCl)",
+      "batch": "AAS2201",
+      "mfg": null,
+      "exp": "12/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan and Cambodia)",
+      "note": "Russian packaging"
+    },
+    {
+      "product": "AMBRONOL cough syrup (ambroxol HCl)",
+      "batch": "AAS2204",
+      "mfg": null,
+      "exp": "03/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan and Cambodia)",
+      "note": "Russian packaging"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2104",
+      "mfg": null,
+      "exp": "04/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2105",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2106",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2107",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2108",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2109",
+      "mfg": null,
+      "exp": "08/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2201",
+      "mfg": null,
+      "exp": "12/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2202",
+      "mfg": null,
+      "exp": "12/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2203",
+      "mfg": null,
+      "exp": "12/2024",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2205",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2206",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2207",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2208",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXS2209",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXSH2201",
+      "mfg": null,
+      "exp": "07/2025",
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    },
+    {
+      "product": "DOK-1 MAX syrup (paracetamol, guaifenesin, phenylephrine HCl)",
+      "batch": "DXSH2202",
+      "mfg": null,
+      "exp": null,
+      "manufacturer": "MARION BIOTECH PVT. LTD (Uttar Pradesh, India)",
+      "reason": "Contaminated with diethylene glycol and/or ethylene glycol (laboratory analysis reported to WHO)",
+      "reportedBy": "WHO (identified in Uzbekistan)"
+    }
+  ]
+}
