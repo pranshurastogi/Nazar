@@ -1,6 +1,7 @@
 'use client'
 
-import { Baby, CalendarCheck, Database, Fingerprint, RotateCcw, Tag } from 'lucide-react'
+import { useState } from 'react'
+import { Activity, Baby, Building2, CalendarCheck, Database, FileText, Fingerprint, Layers, MapPin, MousePointerClick, Pill, RotateCcw, ShieldAlert, Tag, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { timeAgo } from '@/components/nazar/status-pill'
@@ -101,29 +102,151 @@ export function DirectoryHeader({ summary, block, onRefresh }: { summary: Summar
 
 type Apply = (patch: Partial<DirectoryFilters>) => void
 
-function sortCounts(c: Counts) {
-  return Object.entries(c).sort((a, b) => b[1] - a[1])
+const sortCounts = (c: Counts) => Object.entries(c).sort((a, b) => b[1] - a[1])
+/** Share as a label: tiny groups read "<1%", not a misleading "0%". */
+const pct = (n: number, total: number) => {
+  if (!total || !n) return '0%'
+  const p = (n / total) * 100
+  return p < 1 ? '<1%' : `${Math.round(p)}%`
+}
+const ring = 'focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none'
+
+/** Values that are not a queryable attribute value ("state not listed", catch-all buckets). */
+const NOT_FILTERABLE = new Set(['unknown', ''])
+
+// ---------------------------------------------------------------------------------------------
+// Headline stats: one even row, the alert total leading.
+
+type Stat = {
+  key: string
+  count: number | null
+  label: string
+  hint: string
+  icon: React.ComponentType<{ className?: string }>
+  tone?: 'primary' | 'flagged' | 'quiet'
+  pressed?: boolean
+  onClick?: () => void
+  live?: boolean
 }
 
-function Bars({ title, counts, label, active, onPick, limit = 6, filterable = (k: string) => k !== 'unknown' }: {
+function StatTile({ s, lead }: { s: Stat; lead?: boolean }) {
+  const Icon = s.icon
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-2">
+        <span
+          className={cn(
+            'grid size-6 shrink-0 place-items-center rounded-md',
+            s.tone === 'flagged' ? 'bg-flagged-soft text-flagged' : s.tone === 'quiet' ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary',
+          )}
+          aria-hidden="true"
+        >
+          <Icon className="size-3.5" />
+        </span>
+        <span className="text-xs font-semibold whitespace-nowrap text-muted-foreground">{s.label}</span>
+      </span>
+      <span className={cn('mt-2 flex items-baseline gap-2 font-mono font-semibold tabular-nums', lead ? 'text-3xl' : 'text-2xl')} data-count={s.key}>
+        {s.count === null ? <Skeleton className="h-7 w-16" /> : nf(s.count)}
+        {s.live && s.count ? <span className="size-2 rounded-full bg-primary motion-safe:animate-pulse" aria-label="renewing" /> : null}
+      </span>
+      <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{s.hint}</span>
+    </>
+  )
+  const cls = cn(
+    'flex h-full w-full flex-col rounded-xl border bg-background/60 p-3.5 text-left',
+    lead && 'border-primary/25 bg-primary/[0.04]',
+    s.pressed && 'border-primary/50 bg-primary/10',
+  )
+  return s.onClick ? (
+    <button type="button" aria-pressed={!!s.pressed} onClick={s.onClick} className={cn(cls, 'transition-colors hover:bg-muted/60', ring)} title={`Show ${s.label.toLowerCase()}`}>
+      {body}
+    </button>
+  ) : (
+    <div className={cls}>{body}</div>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Severity: one proportional bar, so the shape of the risk reads at a glance.
+
+const SEV_TONE: Record<number, { bar: string; chip: string }> = {
+  1: { bar: 'bg-quiet/35', chip: 'border-quiet-border bg-quiet-soft text-quiet' },
+  2: { bar: 'bg-quiet/65', chip: 'border-quiet-border bg-quiet-soft text-quiet' },
+  3: { bar: 'bg-caution', chip: 'border-caution-border bg-caution-soft text-caution' },
+  4: { bar: 'bg-flagged/70', chip: 'border-flagged-border bg-flagged-soft text-flagged' },
+  5: { bar: 'bg-flagged', chip: 'border-flagged-border bg-flagged-soft text-flagged' },
+}
+
+function SeverityStrip({ bySev, total, filters, onApply }: { bySev: Counts; total: number; filters: DirectoryFilters; onApply: Apply }) {
+  const sevs = [5, 4, 3, 2, 1]
+  const serious = (bySev['4'] ?? 0) + (bySev['5'] ?? 0)
+  return (
+    <section className="rounded-xl border bg-background/60 p-3.5 sm:p-4" aria-labelledby="ov-sev">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 id="ov-sev" className="text-sm font-semibold">Severity</h3>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-semibold text-flagged">{nf(serious)}</span> serious (4–5) · {pct(serious, total)} of alerts
+        </p>
+      </div>
+      <div className="mt-3 flex h-3 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((s) => {
+          const n = bySev[String(s)] ?? 0
+          return n ? <span key={s} className={cn('h-full first:rounded-l-full last:rounded-r-full', SEV_TONE[s]!.bar)} style={{ width: `${(n / Math.max(1, total)) * 100}%` }} /> : null
+        })}
+      </div>
+      <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Filter by severity">
+        {sevs.map((s) => {
+          const n = bySev[String(s)] ?? 0
+          const on = filters.sevMin === s && filters.sevMax === s
+          return (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={on}
+              aria-label={`Severity ${s}: ${nf(n)} alerts`}
+              onClick={() => onApply(on ? { type: 'alert', sevMin: 0, sevMax: 0 } : { type: 'alert', sevMin: s, sevMax: s })}
+              className={cn('flex min-h-12 flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-colors', SEV_TONE[s]!.chip, on ? 'ring-2 ring-primary' : 'hover:brightness-95', ring)}
+            >
+              <span className="text-[10px] font-bold tracking-wider uppercase opacity-80">Sev {s}</span>
+              <span className="font-mono text-sm font-semibold tabular-nums">{nf(n)}</span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------------------------
+// Breakdowns: one card each, top rows with share bars, the rest one tap away.
+
+function Breakdown({ title, icon: Icon, counts, label, active, onPick, total }: {
   title: string
+  icon: React.ComponentType<{ className?: string }>
   counts: Counts
   label: (k: string) => string
   active: string
   onPick: (k: string) => void
-  limit?: number
-  filterable?: (k: string) => boolean
+  total: number
 }) {
+  const [open, setOpen] = useState(false)
   const rows = sortCounts(counts)
-  const shown = rows.slice(0, limit)
-  const rest = rows.slice(limit).reduce((s, [, n]) => s + n, 0)
+  const LIMIT = 5
+  const shown = open ? rows : rows.slice(0, LIMIT)
+  const hidden = rows.length - LIMIT
   const max = Math.max(1, ...rows.map(([, n]) => n))
   return (
-    <div className="min-w-0" data-breakdown={title}>
-      <h3 className="text-xs font-semibold text-muted-foreground">{title}</h3>
-      <ul className="mt-2 space-y-1">
+    <section className="flex min-w-0 flex-col rounded-xl border bg-background/60 p-3.5 sm:p-4" data-breakdown={title}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+          {title}
+        </h3>
+        <span className="text-[11px] text-muted-foreground tabular-nums">{rows.length} groups</span>
+      </div>
+      <ul className="mt-2.5 space-y-0.5">
         {shown.map(([k, n]) => {
-          const can = filterable(k)
+          const can = !NOT_FILTERABLE.has(k)
           const on = active === k
           return (
             <li key={k}>
@@ -132,153 +255,90 @@ function Bars({ title, counts, label, active, onPick, limit = 6, filterable = (k
                 disabled={!can}
                 aria-pressed={on}
                 onClick={() => onPick(on ? '' : k)}
-                title={can ? `Show only ${label(k)}` : 'Not a queryable value'}
+                title={can ? `Show only ${label(k)}` : 'Not recorded on the notice, so it cannot be filtered'}
                 className={cn(
-                  'group grid min-h-9 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-lg px-2 py-1 text-left text-[13px] transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
-                  can && 'hover:bg-muted/70',
+                  'group grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-3 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors',
+                  can ? 'hover:bg-muted/70' : 'cursor-default text-muted-foreground',
                   on && 'bg-primary/10 ring-1 ring-primary/30',
-                  !can && 'cursor-default',
+                  ring,
                 )}
               >
-                <span className="truncate font-medium">{label(k)}</span>
-                <span className="font-mono text-xs text-muted-foreground tabular-nums">{nf(n)}</span>
-                <span className="col-span-2 mt-1 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-                  <span className={cn('block h-full rounded-full', on ? 'bg-primary' : 'bg-primary/55 group-hover:bg-primary/75')} style={{ width: `${Math.max(2, (n / max) * 100)}%` }} />
+                <span className={cn('truncate', can ? 'font-medium' : 'italic')}>{label(k)}</span>
+                <span className="font-mono text-xs font-semibold tabular-nums">{nf(n)}</span>
+                <span className="text-right font-mono text-[11px] text-muted-foreground tabular-nums">{pct(n, total)}</span>
+                <span className="col-span-3 mt-1 h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                  <span className={cn('block h-full rounded-full', on ? 'bg-primary' : can ? 'bg-primary/50 group-hover:bg-primary/75' : 'bg-muted-foreground/30')} style={{ width: `${Math.max(2, (n / max) * 100)}%` }} />
                 </span>
               </button>
             </li>
           )
         })}
       </ul>
-      {rest > 0 && <p className="mt-1 px-2 text-xs text-muted-foreground">+ {nf(rest)} more in {rows.length - limit} others</p>}
-    </div>
+      {hidden > 0 && (
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={cn('mt-auto self-start rounded-md px-2 pt-2 text-xs font-semibold text-primary hover:underline', ring)}>
+          {open ? 'Show fewer' : `Show all ${rows.length}`}
+        </button>
+      )}
+    </section>
   )
 }
-
-const TYPE_TILES = [
-  { type: 'alert', label: 'Alerts', hint: 'One flagged batch each' },
-  { type: 'notice', label: 'Notices', hint: 'Regulator documents' },
-  { type: 'retraction', label: 'Retractions', hint: 'Corrections' },
-  { type: 'heartbeat', label: 'Heartbeat', hint: 'Pipeline lease' },
-] as const
 
 export function Overview({ summary, filters, onApply }: { summary: SummaryState; filters: DirectoryFilters; onApply: Apply }) {
   if (summary.kind === 'error') return null
   const d = summary.kind === 'ok' ? summary.data : null
   const alertPatch = (p: Partial<DirectoryFilters>) => onApply({ type: 'alert', ...p })
+  const total = d?.entities.alert ?? 0
+
+  const stats: Stat[] = [
+    { key: 'alert', count: d?.entities.alert ?? null, label: 'Alerts', hint: 'One flagged batch each', icon: ShieldAlert, tone: 'flagged', pressed: filters.type === 'alert' && !filters.peds && !filters.inDate, onClick: () => onApply({ type: 'alert' }) },
+    { key: 'notice', count: d?.entities.notice ?? null, label: 'Notices', hint: 'Regulator documents', icon: FileText, pressed: filters.type === 'notice', onClick: () => onApply({ type: 'notice' }) },
+    { key: 'peds', count: d?.alerts.peds ?? null, label: 'Child Shield', hint: 'Paediatric formulations', icon: Baby, tone: 'flagged', pressed: filters.type === 'alert' && filters.peds === '1', onClick: () => alertPatch({ peds: filters.peds === '1' ? '' : '1' }) },
+    { key: 'inDate', count: d?.alerts.inDate ?? null, label: 'Still in date', hint: 'Could still be on shelves', icon: CalendarCheck, pressed: filters.type === 'alert' && filters.inDate, onClick: () => alertPatch({ inDate: !filters.inDate }) },
+    { key: 'heartbeat', count: d?.entities.heartbeat ?? null, label: 'Heartbeat', hint: 'Pipeline lease, every 5 min', icon: Activity, live: true, pressed: filters.type === 'heartbeat', onClick: () => onApply({ type: 'heartbeat' }) },
+    { key: 'retraction', count: d?.entities.retraction ?? null, label: 'Retractions', hint: 'Corrections, never silent edits', icon: Undo2, tone: 'quiet' },
+  ]
+
   return (
     <Panel id="overview" kicker="Overview" title="What is on Arkiv right now" className="min-w-0">
-      <div aria-busy={!d} data-overview={d ? 'ready' : 'loading'}>
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-          {TYPE_TILES.map((t) => {
-            const n = d?.entities[t.type] ?? null
-            const clickable = t.type !== 'retraction'
-            const on = clickable && filters.type === t.type
-            const body = (
-              <>
-                <span className="block text-xs font-semibold text-muted-foreground">{t.label}</span>
-                <span className="mt-1 block font-mono text-2xl font-semibold tabular-nums" data-count={t.type}>
-                  {n === null ? <Skeleton className="h-7 w-16" /> : nf(n)}
-                </span>
-                <span className="mt-0.5 block text-[11px] text-muted-foreground">{t.hint}</span>
-              </>
-            )
-            return (
-              <li key={t.type}>
-                {clickable ? (
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => onApply({ type: t.type })}
-                    className={cn('w-full rounded-xl border bg-background/60 p-3 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none', on && 'border-primary/40 bg-primary/5')}
-                  >
-                    {body}
-                  </button>
-                ) : (
-                  <div className="rounded-xl border bg-background/60 p-3">{body}</div>
-                )}
-              </li>
-            )
-          })}
+      <div aria-busy={!d} data-overview={d ? 'ready' : 'loading'} className="grid gap-3">
+        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+          {stats.map((s, i) => (
+            <li key={s.key} className="min-w-0">
+              <StatTile s={s} lead={i === 0} />
+            </li>
+          ))}
         </ul>
 
         {d ? (
           <>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                aria-pressed={filters.type === 'alert' && filters.peds === '1'}
-                onClick={() => alertPatch({ peds: filters.peds === '1' ? '' : '1' })}
-                className={cn('flex min-h-14 items-center gap-3 rounded-xl border bg-background/60 p-3 text-left hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none', filters.peds === '1' && 'border-primary/40 bg-primary/5')}
-              >
-                <Baby className="size-5 shrink-0 text-primary" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block font-mono text-base font-semibold tabular-nums" data-count="peds">{nf(d.alerts.peds)}</span>
-                  <span className="block text-xs text-muted-foreground">Child Shield (paediatric)</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                aria-pressed={filters.type === 'alert' && filters.inDate}
-                onClick={() => alertPatch({ inDate: !filters.inDate })}
-                className={cn('flex min-h-14 items-center gap-3 rounded-xl border bg-background/60 p-3 text-left hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none', filters.inDate && 'border-primary/40 bg-primary/5')}
-              >
-                <CalendarCheck className="size-5 shrink-0 text-primary" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block font-mono text-base font-semibold tabular-nums" data-count="inDate">{nf(d.alerts.inDate)}</span>
-                  <span className="block text-xs text-muted-foreground">Batch still in date</span>
-                </span>
-              </button>
+            <SeverityStrip bySev={d.alerts.bySev} total={total} filters={filters} onApply={onApply} />
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+              <Breakdown title="Source" icon={Building2} counts={d.alerts.bySrc} label={sourceLabel} total={total} active={filters.src} onPick={(k) => alertPatch({ src: k })} />
+              <Breakdown title="Category" icon={Layers} counts={d.alerts.byCat} label={(k) => CATEGORY_LABEL[k] ?? k} total={total} active={filters.cat} onPick={(k) => alertPatch({ cat: k })} />
+              <Breakdown title="Made in" icon={MapPin} counts={d.alerts.byState} label={placeName} total={total} active={filters.state} onPick={(k) => alertPatch({ state: k })} />
+              <Breakdown title="Dosage form" icon={Pill} counts={d.alerts.byForm} label={(k) => k[0]!.toUpperCase() + k.slice(1)} total={total} active={filters.form} onPick={(k) => alertPatch({ form: k })} />
             </div>
-
-            <div className="mt-4">
-              <h3 className="text-xs font-semibold text-muted-foreground">By severity</h3>
-              <div className="mt-2 grid grid-cols-5 gap-1.5" role="group" aria-label="Filter by severity">
-                {[1, 2, 3, 4, 5].map((s) => {
-                  const n = d.alerts.bySev[String(s)] ?? 0
-                  const on = filters.sevMin === s && filters.sevMax === s
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => alertPatch(on ? { sevMin: 0, sevMax: 0 } : { sevMin: s, sevMax: s })}
-                      aria-label={`Severity ${s}: ${nf(n)} alerts`}
-                      className={cn(
-                        'rounded-xl border p-2 text-center transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
-                        s >= 4 ? 'border-flagged-border bg-flagged-soft text-flagged' : 'bg-background/60 hover:bg-muted/60',
-                        on && 'ring-2 ring-primary',
-                      )}
-                    >
-                      <span className="block font-mono text-[11px] font-bold uppercase opacity-80">Sev {s}</span>
-                      <span className="block font-mono text-sm font-semibold tabular-nums">{nf(n)}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Bars title="By source" counts={d.alerts.bySrc} label={sourceLabel} active={filters.src} onPick={(k) => alertPatch({ src: k })} />
-              <Bars title="By category" counts={d.alerts.byCat} label={(k) => CATEGORY_LABEL[k] ?? k} active={filters.cat} onPick={(k) => alertPatch({ cat: k })} />
-              <Bars title="By manufacturing state" counts={d.alerts.byState} label={placeName} active={filters.state} onPick={(k) => alertPatch({ state: k })} />
-              <Bars title="By dosage form" counts={d.alerts.byForm} label={(k) => k[0]!.toUpperCase() + k.slice(1)} active={filters.form} onPick={(k) => alertPatch({ form: k })} />
-            </div>
-            <p className="mt-3 text-[11px] text-muted-foreground">
-              Counted from Arkiv at block {blk(d.generatedAtBlock)}, {timeAgo(Date.parse(d.generatedAt))}. Tap any row to filter.
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              <Database className="size-3.5" aria-hidden="true" />
+              Counted from Arkiv at block <span className="font-mono">{blk(d.generatedAtBlock)}</span> · {timeAgo(Date.parse(d.generatedAt))}
+              <span aria-hidden="true">·</span>
+              <MousePointerClick className="size-3.5" aria-hidden="true" /> Tap any tile or row to filter the results below
             </p>
           </>
         ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="space-y-2">
-                <Skeleton className="h-3 w-24" />
-                <Skeleton className="h-8 w-full" />
-                <Skeleton className="h-8 w-5/6" />
-                <Skeleton className="h-8 w-2/3" />
-              </div>
-            ))}
-          </div>
+          <>
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="space-y-2 rounded-xl border p-4">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-5/6" />
+                  <Skeleton className="h-8 w-2/3" />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </Panel>

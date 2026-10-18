@@ -180,8 +180,8 @@ export function ArkivDirectory() {
     <div className="space-y-4" data-arkiv-directory>
       <DirectoryHeader summary={summary} block={block} onRefresh={() => loadSummary(undefined, true)} />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Overview summary={summary} filters={filters} onApply={apply} />
+      <Overview summary={summary} filters={filters} onApply={apply} />
+      <div>
         <QueryPanel query={query} sdk={sdk} mode={mode} onMode={(m) => setMode(m)} apiAvailable={!!API_URL} meta={meta} />
       </div>
 
