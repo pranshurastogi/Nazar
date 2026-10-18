@@ -88,9 +88,11 @@ export const whoMpa: ManagedSource = {
   schedule: '0 7 * * *',
 
   async discover(ctx) {
-    const list = await fetchJson<{ value: WhoNewsItem[] }>(ctx.http, whoListUrl())
+    // A larger --limit (a backfill run) reaches further back: older India alerts such as the 2022
+    // Gambia and Uzbekistan syrups sit beyond the newest 25. Scheduled runs keep the small window.
+    const list = await fetchJson<{ value: WhoNewsItem[] }>(ctx.http, whoListUrl(Math.min(100, Math.max(25, ctx.limit * 4))))
     // The list API has no body text, so each alert page is read to find India-related ones; cap the reads.
-    const maxPages = Math.min(12, Math.max(4, ctx.limit * 2))
+    const maxPages = Math.min(60, Math.max(4, ctx.limit * 2))
     const docs: DiscoveredDoc[] = []
     for (const c of whoCandidates(list, ctx.sinceYm).slice(0, maxPages)) {
       if (ctx.signal?.aborted || docs.length >= ctx.limit) break
