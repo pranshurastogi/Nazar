@@ -1,6 +1,6 @@
 import * as cheerio from 'cheerio'
 
-import { findYmInText } from '../domain/dates.ts'
+import { FIRST_SEEN_ISSUE, findYmInText } from '../domain/dates.ts'
 import { decodeText, type PoliteFetchOptions, type PoliteHttp } from '../lib/http.ts'
 import type { DiscoveredDoc } from '../domain/types.ts'
 import type { SourceAdapter, SourceContext } from './types.ts'
@@ -8,8 +8,10 @@ import type { SourceAdapter, SourceContext } from './types.ts'
 /**
  * A registered adapter. `enabled: false` keeps a source listed (so /v1/sources can say why it is off)
  * without polling it; naming it explicitly in NAZAR_SOURCES turns it on, e.g. when deployed inside India.
+ * `disabledReason` is shown to the public, so it is plain language with no setup details;
+ * `operatorNote` carries the how-to-enable hint (env vars, hosting) for operators only.
  */
-export type ManagedSource = SourceAdapter & { readonly enabled?: boolean; readonly disabledReason?: string }
+export type ManagedSource = SourceAdapter & { readonly enabled?: boolean; readonly disabledReason?: string; readonly operatorNote?: string }
 
 export const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
 
@@ -20,7 +22,7 @@ export const monthLabel = (ym: number) => `${MONTH_ABBR[(ym % 100) - 1] ?? '?'} 
  * Issue on rows from pages that print no publication date (Maharashtra): the alert month is the
  * month Nazar first saw the row, and the pipeline keeps that earliest month when the page is re-read.
  */
-export const FIRST_SEEN_ISSUE = 'date not published; first seen'
+export { FIRST_SEEN_ISSUE }
 export const firstSeenIssue = (ym: number) => `${FIRST_SEEN_ISSUE} ${monthLabel(ym)}`
 
 /** "Aug" → 8, "august" → 8. */

@@ -23,10 +23,11 @@ export function getSource(id: string): SourceAdapter | undefined {
   return SOURCES.find((s) => s.id === id)
 }
 
-/** Whether a source runs by default, and why not. */
-export function sourceStatus(s: SourceAdapter): { enabled: boolean; disabledReason: string | null } {
+/** Whether a source runs by default; why not (public wording) and how to switch it on (operators only). */
+export function sourceStatus(s: SourceAdapter): { enabled: boolean; disabledReason: string | null; operatorNote: string | null } {
   const m = s as ManagedSource
-  return { enabled: m.enabled !== false, disabledReason: m.enabled === false ? (m.disabledReason ?? 'disabled') : null }
+  if (m.enabled !== false) return { enabled: true, disabledReason: null, operatorNote: null }
+  return { enabled: false, disabledReason: m.disabledReason ?? 'Paused for now.', operatorNote: m.operatorNote ?? null }
 }
 
 /**

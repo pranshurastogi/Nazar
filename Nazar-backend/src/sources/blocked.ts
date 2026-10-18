@@ -15,7 +15,10 @@ function blockedState(o: {
   homepage: string
   listing: string
   description: string
+  /** Shown to the public: plain words, no setup details. */
   disabledReason: string
+  /** For operators: how to switch the source on. */
+  operatorNote: string
 }): ManagedSource {
   const source: ManagedSource = {
     id: o.id,
@@ -26,6 +29,7 @@ function blockedState(o: {
     schedule: env().NAZAR_CRON_STATES,
     enabled: false,
     disabledReason: o.disabledReason,
+    operatorNote: o.operatorNote,
     async discover(ctx) {
       const page = await fetchHtml(ctx.http, o.listing)
       const docs = relevantDocLinks(page.$, page.finalUrl).map((l) => ({
@@ -50,7 +54,8 @@ export const telanganaDca = blockedState({
   homepage: 'https://dca.telangana.gov.in/',
   listing: 'https://dca.telangana.gov.in/',
   description: 'Telangana DCA drug alerts and NSQ/spurious notices (documents served via openfile.php?f=<id>).',
-  disabledReason: 'dca.telangana.gov.in refuses connections from outside India; enable from an Indian host via NAZAR_SOURCES=tg-dca.',
+  disabledReason: "Paused: this regulator's website blocks requests from outside India, where Nazar's server runs.",
+  operatorNote: 'dca.telangana.gov.in refuses connections from outside India; enable from an Indian host via NAZAR_SOURCES=tg-dca.',
 })
 
 export const karnatakaDc = blockedState({
@@ -60,7 +65,8 @@ export const karnatakaDc = blockedState({
   homepage: 'https://drugs.karnataka.gov.in/',
   listing: 'https://drugs.karnataka.gov.in/',
   description: 'Karnataka Drugs Control Department NSQ and spurious drug notices.',
-  disabledReason: 'drugs.karnataka.gov.in is geo-blocked outside India; enable from an Indian host via NAZAR_SOURCES=ka-dc.',
+  disabledReason: "Paused: this regulator's website blocks requests from outside India, where Nazar's server runs.",
+  operatorNote: 'drugs.karnataka.gov.in is geo-blocked outside India; enable from an Indian host via NAZAR_SOURCES=ka-dc.',
 })
 
 export const keralaDc = blockedState({
@@ -70,7 +76,8 @@ export const keralaDc = blockedState({
   homepage: 'https://dc.kerala.gov.in/',
   listing: 'https://dc.kerala.gov.in/',
   description: 'Kerala Drugs Control Department banned/NSQ drug notices.',
-  disabledReason:
+  disabledReason: "Paused: this regulator's website is refusing requests and its security certificate has expired.",
+  operatorNote:
     'dc.kerala.gov.in currently answers 403 and serves an expired certificate; enable via NAZAR_SOURCES=kl-dc (and NAZAR_INSECURE_TLS_HOSTS=dc.kerala.gov.in) once it is reachable.',
 })
 

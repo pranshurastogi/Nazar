@@ -126,3 +126,28 @@ export const NTI_DRUGS = [
 ]
 
 export const isNtiDrug = (text: string) => NTI_DRUGS.some((d) => new RegExp(`\\b${d}`, 'i').test(text))
+
+/**
+ * What kind of product an alert is about. Regulators list cosmetics and household hygiene products
+ * (hand sanitisers, cleaning liquids) in the same NSQ tables as medicines; the app ranks medicines
+ * first and can filter the rest out. Decided from product-type words in the product line and the
+ * maker's name, never from brand names; anything unrecognised stays a medicine.
+ */
+export const PRODUCT_CLASSES = ['medicine', 'cosmetic', 'hygiene'] as const
+export type ProductClass = (typeof PRODUCT_CLASSES)[number]
+
+const HYGIENE_PRODUCT =
+  /\bsanit[iy][sz]er|\bhand\s*(?:wash|rub|cleanser|cleaner)|\bcleaning\s+(?:solution|liquid|agent)|\b(?:floor|surface|toilet|glass)\s+cleaner|\bdetergent|\bdish\s*wash|\bphenyle\b|\bdisinfectant\s+(?:liquid|spray)\b/i
+const COSMETIC_PRODUCT =
+  /\b(?:beauty|fairness|whitening|brightening|lightening|bleach|complexion)\b|\bface\s*(?:wash|cream|pack|mask|serum|scrub)|\bfacewash\b|\bserum\b|\bsoap\b|\bshampoo|\bhair\s*(?:oil|dye|colou?r|cream|gel|serum)|\bhenna\b|\bmehndi\b|\bkajal\b|\bkohl\b|\blipstick|\blip\s*(?:balm|gloss)|\bnail\s*(?:polish|paint|lacquer)|\btalc(?:um)?\b|\bdeodorant|\bperfume|\bsun\s*(?:screen|block)|\bspf\s*\d|\bmoisturi[sz]|\bbody\s*(?:lotion|wash|butter)|\bday\s*(?:&|and)\s*night\b|\banti[-\s]?(?:marks|ageing|aging|wrinkle|tan)\b|\bde-?tan\b|\bunder\s*arm\b|\bmake-?up\b|\bcosmetics?\b/i
+const COSMETIC_MAKER = /\bcosmetics?\b/i
+/** A medicated soap or shampoo is a medicine: it says so, carries a pharmacopoeia mark, or names a drug. */
+const MEDICINE_MARK =
+  /\bmedicated\b|\b(?:I\.?P|B\.?P|U\.?S\.?P)\b\.?|\d\s*%\s*w\s*\/\s*[wv]\b|ketoconazole|permethrin|clotrimazole|miconazole|luliconazole|terbinafine|ciclopirox|chlor\w*xidine|cetrimide|povidone|selenium\s+sulph|coal\s+tar|lindane|clobetasol|betamethasone|mometasone|hydroquinone|tretinoin|minoxidil/i
+
+export function classifyProduct(product: string, manufacturer?: string | null): ProductClass {
+  if (MEDICINE_MARK.test(product)) return 'medicine'
+  if (HYGIENE_PRODUCT.test(product)) return 'hygiene'
+  if (COSMETIC_PRODUCT.test(product) || COSMETIC_MAKER.test(manufacturer ?? '')) return 'cosmetic'
+  return 'medicine'
+}

@@ -144,3 +144,106 @@ describe('splitFirm: door numbers', () => {
     expect(splitFirm('Sresan Pharmaceutical, No. 787, Bangalore Highways, Kancheepuram Dist. 602106').name).toBe('Sresan Pharmaceutical')
   })
 })
+
+describe('parseManufacturer: label words', () => {
+  it('drops a trailing "manufacturer" left between the firm and its address', () => {
+    // CDSCO portal and WHO annex cells, verbatim
+    const portal = parseManufacturer('Sresan Pharmaceutical Manufacturer No. 787. Bangalore Highways, Sunguvarchathra m(Mathuга), Kancheepuram, Dist-602106')
+    const who = parseManufacturer('Sresan Pharmaceutical manufacturer, No. 787 Bangalore Highways Sunguvarchatraam (Mathura) Kancheepuram, Dist. 602106')
+    const curated = parseManufacturer('Sresan Pharmaceutical, No. 787, Bangalore Highways, Sunguvarchatraam (Mathura), Kancheepuram Dist. 602106, Tamil Nadu')
+    expect(portal).toMatchObject({ name: 'Sresan Pharmaceutical', key: 'sresan-pharmaceutical', pin: '602106' })
+    expect(who).toMatchObject({ name: 'Sresan Pharmaceutical', key: 'sresan-pharmaceutical' })
+    expect(curated?.key).toBe(who?.key)
+  })
+  it('strips leading "Mfd. by", "Manufactured by:" and "M/s." labels', () => {
+    expect(parseManufacturer('Mfd. by: M/s. Example Pharma Pvt. Ltd., Plot 5, Baddi 173205')).toMatchObject({ name: 'Example Pharma Pvt Ltd', key: 'example-pharma', state: 'IN-HP' })
+    expect(parseManufacturer('Manufactured by M/s Hind Pharma, 11-G, Industrial Area, Bhopal-462022')).toMatchObject({ name: 'Hind Pharma', pin: '462022' })
+    expect(parseManufacturer('Manufacturer: Not Known')).toBeNull()
+  })
+  it('keeps the maker, not the marketer named after it', () => {
+    const m = parseManufacturer('Micro Formulations, Chambaghat, Near Railway Crossing, Solan, Distt. Solan (H.P.) 173213 Mkt by M/s Boyel Pharma Pvt Ltd')
+    expect(m).toMatchObject({ pin: '173213', state: 'IN-HP' })
+    expect(m?.name).toMatch(/^Micro Formulations/)
+    expect(`${m?.name} ${m?.address}`).not.toMatch(/Boyel|Mkt/)
+  })
+  it('leaves firm names that merely contain the word alone', () => {
+    expect(parseManufacturer('SK SOAP MANUFACTURING')?.name).toBe('SK SOAP MANUFACTURING')
+    expect(parseManufacturer('Medicare Manufacturers Pvt. Ltd., Baddi 173205')?.name).toBe('Medicare Manufacturers Pvt Ltd')
+  })
+})
+
+describe('resolveRows: repeat listings', () => {
+  const mh = rawDoc({ title: 'Maharashtra FDA NSQ alerts', sourceId: 'mh-fda', jurisdiction: 'IN-MH', noticeYm: 202610, publishedAt: null })
+  const maker = 'Dr. Puri Proprietory Product, Sinnar, Dist -Nashik'
+  const spurious = 'Identification Test for the Presence of Pioglitazone Hydrochloride. The Sample is declared as Spurious.'
+
+  it('folds case, spacing, punctuation and form words in the product key, not strengths', async () => {
+    const { productKey } = await import('../../src/resolve/drug.ts')
+    expect(productKey('DIABETIES-ALL POWDER')).toBe(productKey('Diabeties -ALL'))
+    expect(productKey('Paracetamol Tablets I.P. 500 mg')).toBe(productKey('PARACETAMOL TABLETS IP 500MG'))
+    expect(productKey('Paracetamol Tablets IP 500 mg')).not.toBe(productKey('Paracetamol Tablets IP 650 mg'))
+  })
+
+  it('merges the same batch, maker, notice and product into one alert', () => {
+    // Maharashtra rows 93 and 94, as printed
+    const a = row(mh, 1, { product: 'Diabeties -ALL', batch: 'A-1', manufacturer: maker, reason: spurious })
+    const b = row(mh, 2, { product: 'DIABETIES-ALL POWDER', batch: 'A-1', manufacturer: `${maker},`, reason: spurious })
+    const skipped: Record<string, number> = {}
+    const r = resolveRows(mh, [a, b], skipped)
+    expect(r.alerts).toHaveLength(1)
+    expect(r.alerts[0]).toMatchObject({ rid: a.rid, batch: 'A-1', category: 'spurious' })
+    expect(r.merged).toEqual([{ rid: b.rid, into: a.rid }])
+    expect(skipped).toEqual({ 'repeat listing of the same batch': 1 })
+  })
+
+  it('keeps listings apart when the maker, product or notice differs', () => {
+    const a = row(mh, 1, { product: 'Diabeties -ALL', batch: 'A-1', manufacturer: maker })
+    const otherMaker = row(mh, 2, { product: 'Diabeties -ALL', batch: 'A-1', manufacturer: 'Other Labs Ltd, Pune 411001' })
+    const otherProduct = row(mh, 3, { product: 'Glucoright Powder', batch: 'A-1', manufacturer: maker })
+    expect(resolveRows(mh, [a, otherMaker, otherProduct]).alerts).toHaveLength(3)
+    const tn = rawDoc({ title: 'TN NSQ list June 2026', sourceId: 'tn-dc', noticeYm: 202606 })
+    expect(resolveRows(tn, [row(tn, 1, { product: 'Diabeties -ALL', batch: 'A-1', manufacturer: maker })]).merged).toEqual([])
+  })
+
+  it('keeps the publishable listing when only one of the pair is', () => {
+    const low = row(mh, 1, { product: 'Diabeties -ALL', batch: 'A-1', manufacturer: maker, confidence: 0.3 })
+    const good = row(mh, 2, { product: 'DIABETIES-ALL POWDER', batch: 'A-1', manufacturer: maker })
+    const r = resolveRows(mh, [low, good])
+    expect(r.alerts.map((x) => x.rid)).toEqual([good.rid])
+    expect(r.curator).toEqual([])
+    expect(r.merged).toEqual([{ rid: low.rid, into: good.rid }])
+  })
+})
+
+describe('resolveRows: dates and product class', () => {
+  it('marks rows from undated pages dateKnown: false, keeping the first-seen month', () => {
+    const mh = rawDoc({ title: 'Maharashtra FDA NSQ alerts (as of 2026-10-17)', sourceId: 'mh-fda', noticeYm: 202610, publishedAt: null })
+    const [a] = resolveRows(mh, [row(mh, 1, { issues: ['date not published; first seen Oct 2026'] })]).alerts
+    expect(a).toMatchObject({ alertYm: 202610, dateKnown: false })
+    const cdsco = rawDoc()
+    expect(resolveRows(cdsco, [row(cdsco, 1)]).alerts[0]).toMatchObject({ alertYm: 202509, dateKnown: true })
+  })
+
+  it('treats the fetch month as unknown when a notice names no month at all', () => {
+    const bare = rawDoc({ title: 'Drug alert', noticeYm: null, publishedAt: null, fetchedAt: '2026-10-17T00:00:00.000Z' })
+    expect(resolveRows(bare, [row(bare, 1)]).alerts[0]).toMatchObject({ alertYm: 202610, dateKnown: false })
+  })
+
+  it('classifies cosmetics and hygiene products by product type, never by brand', async () => {
+    const { classifyProduct } = await import('../../src/domain/vocab.ts')
+    expect(classifyProduct('Faiza Beauty Cream', 'POONIA BROTHERS (PVT) LTD')).toBe('cosmetic')
+    expect(classifyProduct('GOREE EMERGENCY WHITENING SERUM', null)).toBe('cosmetic')
+    expect(classifyProduct('UV ETO SPF 50+ Sunscreen Lotion', 'Elegant Cosmed Pvt Ltd')).toBe('cosmetic')
+    expect(classifyProduct('Lipstick', 'Kiss Love Cosmetics Delhi')).toBe('cosmetic')
+    expect(classifyProduct('Advanced HAND Sanitizer', 'Chemstellar Chemical Pvt Ltd')).toBe('hygiene')
+    expect(classifyProduct('ELLOT Cleaning Solutions', 'Laxmi Industries')).toBe('hygiene')
+    // Medicated soaps and shampoos, and topical medicines, stay medicines.
+    expect(classifyProduct('Ketoconazole 1% Medicated Soap', 'Jaisanshu Medicare Pvt Ltd')).toBe('medicine')
+    expect(classifyProduct('Permethrin Medicated Soap (Permi-5 Soap)', 'Vimson Derma')).toBe('medicine')
+    expect(classifyProduct('Clobetasol Propionate Cream IP 0.05% w/w', null)).toBe('medicine')
+    expect(classifyProduct('Fosfomycin Phenyl Ethyl Amine', null)).toBe('medicine')
+    expect(classifyProduct('COLDRIF Syrup', 'Sresan Pharmaceutical')).toBe('medicine')
+    const doc = rawDoc()
+    expect(resolveRows(doc, [row(doc, 1, { product: 'Faiza Beauty Cream' })]).alerts[0]!.productClass).toBe('cosmetic')
+  })
+})

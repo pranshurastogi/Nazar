@@ -1,5 +1,5 @@
 import type { AlertView } from '../arkiv/schema.ts'
-import { CATEGORIES, DOSAGE_FORMS, FAILURES } from '../domain/vocab.ts'
+import { CATEGORIES, DOSAGE_FORMS, FAILURES, classifyProduct, type ProductClass } from '../domain/vocab.ts'
 import type { AlertRecord, NoticeRecord } from '../domain/types.ts'
 import type { AlertRow } from '../storage/ledger.ts'
 
@@ -10,7 +10,14 @@ export interface Explorer {
   tx: string | null
 }
 
-export type AlertDTO = AlertRecord & {
+export type AlertDTO = Omit<AlertRecord, 'dateKnown' | 'productClass' | 'supersededBy'> & {
+  /**
+   * False when the regulator gave no date for this alert (alertYm is then the month Nazar first saw
+   * it): show "date not given" rather than a month. Undated alerts sort after dated ones in /v1/alerts.
+   */
+  dateKnown: boolean
+  /** 'medicine', 'cosmetic' or 'hygiene' (hand sanitiser, cleaning liquid). Filter with /v1/alerts?productClass=. */
+  productClass: ProductClass
   entityKey: string | null
   txHash: string | null
   creator: string | null
@@ -37,8 +44,11 @@ export function explorerFor(ctx: DtoContext, entityKey: string | null, txHash: s
 
 export function alertDto(row: AlertRow, ctx: DtoContext): AlertDTO {
   const txHash = isHash(row.txHash) ? row.txHash : null
+  const { dateKnown, productClass, supersededBy: _superseded, ...record } = row.record
   return {
-    ...row.record,
+    ...record,
+    dateKnown: dateKnown !== false,
+    productClass: productClass ?? classifyProduct(record.product, record.manufacturer),
     entityKey: row.entityKey,
     txHash,
     creator: row.entityKey ? ctx.publisher : null,
@@ -77,6 +87,9 @@ export function viewDto(v: AlertView, retracted: boolean, ctx: DtoContext): Aler
     mfgYm: v.mfgYm,
     expYm: v.expYm,
     alertYm: v.alertYm,
+    // The on-chain payload does not say whether the month came from the regulator; assume it did.
+    dateKnown: true,
+    productClass: classifyProduct(p?.product ?? v.brand, p?.manufacturer),
     sourceId: v.sourceId,
     authority: p?.authority ?? '',
     jurisdiction: v.jurisdiction,

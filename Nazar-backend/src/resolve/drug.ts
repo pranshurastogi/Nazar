@@ -76,3 +76,15 @@ export const slugify = (s: string | null | undefined, max = 64) =>
     .replace(/^-|-$/g, '')
     .slice(0, max)
     .replace(/-$/, '')
+
+/**
+ * A product line folded for duplicate detection: case, spacing, punctuation and dosage-form words
+ * go, so "DIABETIES-ALL POWDER" and "Diabeties -ALL" meet at "diabetiesall". Strengths stay, so a
+ * 250 mg and a 500 mg line never fold together.
+ */
+export const productKey = (product: string) =>
+  product
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(FORM_WORDS, ' ')
+    .replace(/[^a-z0-9]+/g, '')

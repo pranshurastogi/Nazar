@@ -67,3 +67,11 @@ export function endOfYm(v: number): Date {
   const m = v % 100
   return new Date(Date.UTC(y, m, 0, 23, 59, 59))
 }
+
+/**
+ * Issue on rows from pages that print no publication date (Maharashtra): the alert month is the
+ * month Nazar first saw the row, not a date the regulator gave. Resolve reads it to mark the alert
+ * `dateKnown: false`, so lists can sort it after dated alerts and the app can say "date not given".
+ */
+export const FIRST_SEEN_ISSUE = 'date not published; first seen'
+export const isFirstSeenIssue = (issue: string) => issue.startsWith(FIRST_SEEN_ISSUE)

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { CATEGORIES, DOSAGE_FORMS, FAILURES } from './vocab.ts'
+import { CATEGORIES, DOSAGE_FORMS, FAILURES, PRODUCT_CLASSES } from './vocab.ts'
 
 /**
  * Stage contracts. Every stage reads and writes these shapes, so each one can be
@@ -102,7 +102,17 @@ export const AlertRecord = z.object({
   state: z.string().nullable(),
   mfgYm: z.number().int().nullable(),
   expYm: z.number().int().nullable(),
+  /** Month of the notice, or for undated lists the month Nazar first saw the row (see dateKnown). */
   alertYm: z.number().int(),
+  /**
+   * False when the regulator gave no date for this row (Maharashtra's running table): alertYm is
+   * then only the month Nazar first saw it. Absent on records resolved before this field existed.
+   */
+  dateKnown: z.boolean().optional(),
+  /** Medicine, cosmetic or household hygiene product (see classifyProduct). Absent = medicine. */
+  productClass: z.enum(PRODUCT_CLASSES).optional(),
+  /** Set by the ledger when a repeat listing of the same batch on the same notice was merged into this rid. */
+  supersededBy: z.string().optional(),
   sourceId: z.string(),
   authority: z.string(),
   jurisdiction: Jurisdiction,

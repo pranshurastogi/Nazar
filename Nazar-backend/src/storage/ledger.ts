@@ -4,6 +4,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 
 import { dataPath } from '../config/env.ts'
 import type { AlertRecord, ExtractedRow, NoticeRecord, RawDoc } from '../domain/types.ts'
+import { migrateResolved } from '../resolve/reresolve.ts'
 
 /**
  * Local ledger (SQLite, Node's built-in driver). It is a cache and a work queue,
@@ -131,13 +132,26 @@ export class Ledger {
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true })
     this.db = new DatabaseSync(file)
     this.db.exec(SCHEMA)
+    this.addColumns()
+  }
+
+  /**
+   * Columns added after the first deploys. Existing rows get the defaults (dated, medicine) until
+   * reresolveLedger() recomputes them from the stored rows; see src/resolve/reresolve.ts.
+   */
+  private addColumns() {
+    const have = new Set((this.db.prepare('PRAGMA table_info(alerts)').all() as { name: string }[]).map((c) => c.name))
+    if (!have.has('date_known')) this.db.exec('ALTER TABLE alerts ADD COLUMN date_known INTEGER NOT NULL DEFAULT 1')
+    if (!have.has('product_class')) this.db.exec("ALTER TABLE alerts ADD COLUMN product_class TEXT NOT NULL DEFAULT 'medicine'")
   }
 
   close() {
     this.db.close()
   }
 
+  /** Runs fn in one write transaction; nested calls join the outer one. */
   tx<T>(fn: () => T): T {
+    if (this.db.isTransaction) return fn()
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const out = fn()
@@ -217,19 +231,20 @@ export class Ledger {
   upsertAlerts(records: AlertRecord[], confusionKey: (b: string) => string) {
     this.tx(() => {
       const ins = this.db.prepare(
-        `INSERT INTO alerts (rid, case_id, batch_key, confusion_key, batch, brand, category, severity, peds, state, alert_ym, exp_ym, tier, source_id, notice_sha, data)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO alerts (rid, case_id, batch_key, confusion_key, batch, brand, category, severity, peds, state, alert_ym, exp_ym, tier, source_id, notice_sha, data, date_known, product_class)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(rid) DO UPDATE SET case_id = excluded.case_id, severity = excluded.severity, tier = excluded.tier,
            -- pages refreshed in place (e.g. Maharashtra) re-list old rows: keep the month we first saw the alert
            data = json_set(excluded.data, '$.alertYm', alerts.alert_ym),
-           brand = excluded.brand, category = excluded.category, peds = excluded.peds, state = excluded.state, exp_ym = excluded.exp_ym`,
+           brand = excluded.brand, category = excluded.category, peds = excluded.peds, state = excluded.state, exp_ym = excluded.exp_ym,
+           date_known = excluded.date_known, product_class = excluded.product_class`,
       )
       const delFts = this.db.prepare('DELETE FROM alerts_fts WHERE rid = ?')
       const insFts = this.db.prepare('INSERT INTO alerts_fts (rid, batch, brand, product, manufacturer, reason) VALUES (?, ?, ?, ?, ?, ?)')
       for (const a of records) {
         ins.run(
           a.rid, a.caseId, a.batchKey, confusionKey(a.batch), a.batch, a.brand, a.category, a.severity, a.peds ? 1 : 0, a.state,
-          a.alertYm, a.expYm, a.tier, a.sourceId, a.noticeSha, JSON.stringify(a),
+          a.alertYm, a.expYm, a.tier, a.sourceId, a.noticeSha, JSON.stringify(a), a.dateKnown === false ? 0 : 1, a.productClass ?? 'medicine',
         )
         delFts.run(a.rid)
         insFts.run(a.rid, a.batch, a.brand, a.product, a.manufacturer ?? '', a.reason)
@@ -253,7 +268,7 @@ export class Ledger {
     if (o.peds !== undefined) (where.push('peds = ?'), args.push(o.peds ? 1 : 0))
     if (o.sinceYm) (where.push('alert_ym >= ?'), args.push(o.sinceYm))
     args.push(o.limit ?? 50, o.offset ?? 0)
-    return this.alertRows(`SELECT * FROM alerts WHERE ${where.join(' AND ')} ORDER BY alert_ym DESC, severity DESC, rid LIMIT ? OFFSET ?`, args)
+    return this.alertRows(`SELECT * FROM alerts WHERE ${where.join(' AND ')} ORDER BY ${FEED_ORDER} LIMIT ? OFFSET ?`, args)
   }
 
   searchAlerts(q: string, limit = 25): AlertRow[] {
@@ -279,6 +294,23 @@ export class Ledger {
 
   markRetracted(rid: string) {
     this.db.prepare('UPDATE alerts SET retracted = 1 WHERE rid = ?').run(rid)
+  }
+
+  /**
+   * Hides a repeat listing that resolve folded into another alert of the same notice. It drops to the
+   * curator tier, which every read path, the snapshot and the publisher already leave out. This is
+   * Nazar's own de-duplication, not a regulator retraction, so nothing is written on chain. Returns
+   * whether a row changed (an unknown rid, or the kept rid itself, is a no-op).
+   */
+  markSuperseded(rid: string, into: string): boolean {
+    if (rid === into) return false
+    const r = this.db
+      .prepare(
+        `UPDATE alerts SET tier = 'curator_only', data = json_set(data, '$.tier', 'curator_only', '$.supersededBy', ?)
+         WHERE rid = ? AND (tier != 'curator_only' OR json_extract(data, '$.supersededBy') IS NOT ?)`,
+      )
+      .run(into, rid, into)
+    return Number(r.changes) > 0
   }
 
   stats() {
@@ -377,5 +409,22 @@ function toRawDoc(r: Record<string, unknown>): RawDoc & { status: DocStatus; err
   }
 }
 
+/**
+ * Feed order: alerts with a regulator date first (newest month first), then undated ones (Maharashtra's
+ * running table, by the month first seen); within a month medicines before cosmetics and hygiene
+ * products, then the most severe.
+ */
+export const FEED_ORDER = "date_known DESC, alert_ym DESC, (product_class = 'medicine') DESC, severity DESC, rid"
+
 let shared: Ledger | undefined
-export const ledger = () => (shared ??= new Ledger())
+/**
+ * The process-wide ledger. Opening it brings stored alerts up to the current resolve rules once per
+ * RESOLVE_VERSION (idempotent; see src/resolve/reresolve.ts), so a deploy needs no manual step.
+ */
+export const ledger = () => {
+  if (!shared) {
+    shared = new Ledger()
+    migrateResolved(shared)
+  }
+  return shared
+}

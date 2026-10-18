@@ -1,14 +1,14 @@
 import { cleanBatch, isUnspecifiedBatch, matchKey, unspecifiedBatchKey } from '../domain/batch.ts'
-import { findYmInText, parseYm, ymOf } from '../domain/dates.ts'
+import { findYmInText, isFirstSeenIssue, parseYm, ymOf } from '../domain/dates.ts'
 import { scoreSeverity } from '../domain/severity.ts'
 import type { AlertRecord, ExtractedRow, NoticeRecord, RawDoc } from '../domain/types.ts'
-import { classifyCategory, classifyFailures, detectForm, isPaediatric, type Category } from '../domain/vocab.ts'
-import { batchUncertain, caseIdFor, isPublishableTier, tierFor } from './case.ts'
-import { slugify, splitDrug } from './drug.ts'
+import { classifyCategory, classifyFailures, classifyProduct, detectForm, isPaediatric, type Category } from '../domain/vocab.ts'
+import { PUBLISHABLE_TIERS, batchUncertain, caseIdFor, isPublishableTier, tierFor } from './case.ts'
+import { productKey, slugify, splitDrug } from './drug.ts'
 import { parseManufacturer } from './manufacturer.ts'
 
 export { caseIdFor, isPublishableTier, tierFor } from './case.ts'
-export { splitDrug } from './drug.ts'
+export { productKey, splitDrug } from './drug.ts'
 export { parseManufacturer, stateFromPin } from './manufacturer.ts'
 
 /**
@@ -17,20 +17,24 @@ export { parseManufacturer, stateFromPin } from './manufacturer.ts'
  * (and the same rids and case ids), which is what makes publishing idempotent.
  */
 
-/** Which month the notice covers: listing hint, then title, then the publish date, then fetch date. */
-export function noticeYmOf(doc: RawDoc): number {
-  return (
+/**
+ * Which month the notice covers: listing hint, then title, then the publish date, then fetch date.
+ * `known` is false only for the last resort: the fetch month is when we looked, not a notice date.
+ */
+export function noticeMonthOf(doc: RawDoc): { ym: number; known: boolean } {
+  const ym =
     doc.noticeYm ??
     findYmInText(doc.title) ??
-    (doc.publishedAt ? parseYm(doc.publishedAt.slice(0, 7)) ?? ymOf(new Date(doc.publishedAt)) : null) ??
-    ymOf(new Date(doc.fetchedAt))
-  )
+    (doc.publishedAt ? parseYm(doc.publishedAt.slice(0, 7)) ?? ymOf(new Date(doc.publishedAt)) : null)
+  return ym ? { ym, known: true } : { ym: ymOf(new Date(doc.fetchedAt)), known: false }
 }
+
+export const noticeYmOf = (doc: RawDoc): number => noticeMonthOf(doc).ym
 
 const isSpuriousDoc = (doc: RawDoc) =>
   doc.hints.category === 'spurious' || doc.hints.tab === 'spurious' || /spurious/i.test(doc.title)
 
-export function resolveRow(doc: RawDoc, row: ExtractedRow, alertYm = noticeYmOf(doc)): AlertRecord {
+export function resolveRow(doc: RawDoc, row: ExtractedRow, month = noticeMonthOf(doc)): AlertRecord {
   const batch = cleanBatch(row.batch) ?? row.batch.trim().toUpperCase()
   // A notice row with no batch is a drug-level record: visible in the ledger, never a batch match.
   const unspecified = isUnspecifiedBatch(batch)
@@ -71,7 +75,10 @@ export function resolveRow(doc: RawDoc, row: ExtractedRow, alertYm = noticeYmOf(
     state: mfr?.state ?? null,
     mfgYm: row.mfgYm,
     expYm: row.expYm,
-    alertYm,
+    alertYm: month.ym,
+    // Rows from undated pages carry the "first seen" issue: their month is ours, not the regulator's.
+    dateKnown: month.known && !row.issues.some(isFirstSeenIssue),
+    productClass: classifyProduct(row.product, row.manufacturer),
     sourceId: doc.sourceId,
     authority: doc.authority,
     jurisdiction: doc.jurisdiction,
@@ -101,16 +108,33 @@ export function noticeFor(doc: RawDoc, rows: ExtractedRow[]): NoticeRecord {
   }
 }
 
-/** `skipped`, when given, counts rows dropped here by reason (duplicate row id, empty batch key). */
+/** Same notice, same batch, same maker, same product once case, spacing, punctuation and form words are folded. */
+export function duplicateKey(rec: AlertRecord, row: ExtractedRow): string {
+  return [rec.noticeSha, rec.batchKey, parseManufacturer(row.manufacturer)?.key ?? '', productKey(row.product)].join('|')
+}
+
+const tierRank = (t: AlertRecord['tier']) => {
+  const i = PUBLISHABLE_TIERS.indexOf(t)
+  return i < 0 ? PUBLISHABLE_TIERS.length + (t === 'drug_level' ? 0 : 1) : i
+}
+/** Which of two listings of one batch to keep: the better tier, then the higher severity, then the first listed. */
+const better = (a: AlertRecord, b: AlertRecord) => tierRank(b.tier) < tierRank(a.tier) || (tierRank(b.tier) === tierRank(a.tier) && b.severity > a.severity)
+
+/**
+ * `skipped`, when given, counts rows dropped here by reason (duplicate row id, empty batch key,
+ * repeat listing). A notice that lists the same batch twice ("DIABETIES-ALL POWDER" and
+ * "Diabeties -ALL", both A-1 from one maker) yields one alert; `merged` names the rids folded
+ * away and the rid they were folded into, so the ledger can hide a copy it already holds.
+ */
 export function resolveRows(
   doc: RawDoc,
   rows: ExtractedRow[],
   skipped?: Record<string, number>,
-): { notice: NoticeRecord; alerts: AlertRecord[]; curator: AlertRecord[] } {
+): { notice: NoticeRecord; alerts: AlertRecord[]; curator: AlertRecord[]; merged: { rid: string; into: string }[] } {
   const skip = (reason: string) => skipped && (skipped[reason] = (skipped[reason] ?? 0) + 1)
-  const alertYm = noticeYmOf(doc)
-  const alerts: AlertRecord[] = []
-  const curator: AlertRecord[] = []
+  const month = noticeMonthOf(doc)
+  const kept = new Map<string, AlertRecord>()
+  const merged: { rid: string; into: string }[] = []
   const seen = new Set<string>()
   for (const row of rows) {
     if (seen.has(row.rid)) {
@@ -118,12 +142,25 @@ export function resolveRows(
       continue
     }
     seen.add(row.rid)
-    const rec = resolveRow(doc, row, alertYm)
+    const rec = resolveRow(doc, row, month)
     if (!rec.batchKey) {
       skip('empty batch key')
       continue
     }
-    ;(isPublishableTier(rec.tier) ? alerts : curator).push(rec)
+    const key = duplicateKey(rec, row)
+    const prev = kept.get(key)
+    if (!prev) {
+      kept.set(key, rec)
+      continue
+    }
+    skip('repeat listing of the same batch')
+    const [keep, drop] = better(prev, rec) ? [rec, prev] : [prev, rec]
+    kept.set(key, keep)
+    for (const m of merged) if (m.into === drop.rid) m.into = keep.rid
+    merged.push({ rid: drop.rid, into: keep.rid })
   }
-  return { notice: noticeFor(doc, rows), alerts, curator }
+  const alerts: AlertRecord[] = []
+  const curator: AlertRecord[] = []
+  for (const rec of kept.values()) (isPublishableTier(rec.tier) ? alerts : curator).push(rec)
+  return { notice: noticeFor(doc, rows), alerts, curator, merged }
 }

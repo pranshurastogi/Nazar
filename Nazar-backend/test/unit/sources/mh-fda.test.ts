@@ -106,3 +106,22 @@ describe('mhFda.discover', () => {
     expect(docs[0]).toMatchObject({ url: 'https://fda.maharashtra.gov.in/nsq-alerts/', kind: 'html', jurisdiction: 'IN-MH', hints: { refresh: 'always' } })
   })
 })
+
+describe('mhRows → resolve (live page fixture)', () => {
+  it('yields one undated alert for the batch listed twice (A-1, "DIABETIES-ALL POWDER" and "Diabeties -ALL")', async () => {
+    const { resolveRows } = await import('../../../src/resolve/index.ts')
+    const raw = {
+      ...doc, sourceId: 'mh-fda', url: 'https://fda.maharashtra.gov.in/nsq-alerts/', finalUrl: 'https://fda.maharashtra.gov.in/nsq-alerts/',
+      title: 'Maharashtra FDA NSQ alerts (as of 2026-10-17)', authority: 'Food and Drug Administration, Maharashtra', jurisdiction: 'IN-MH',
+      publishedAt: null, noticeYm: 202610, kind: 'html' as const, hints: {}, path: '/tmp/mh.html', contentType: 'text/html', size: html.length,
+    }
+    const rows = mhRows(html, raw)
+    expect(rows.filter((r) => r.batch === 'A-1')).toHaveLength(2)
+    const r = resolveRows(raw, rows)
+    const a1 = r.alerts.filter((a) => a.batchKey === 'a1')
+    expect(a1).toHaveLength(1)
+    expect(r.merged.some((m) => m.into === a1[0]!.rid)).toBe(true)
+    expect(r.alerts.every((a) => a.dateKnown === false && a.alertYm === 202610)).toBe(true)
+    expect(r.alerts.find((a) => a.batch === 'CA-251')).toMatchObject({ productClass: 'cosmetic' })
+  })
+})

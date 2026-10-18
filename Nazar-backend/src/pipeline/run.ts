@@ -217,8 +217,10 @@ export async function processDocument(
   rows = keepFirstSeen(ledger, rows)
   ledger.setDocumentStatus(raw.sha256, 'extracted', { rows: rows.length, rejected, parser: parser ?? rows[0]?.parser, method: method ?? rows[0]?.method })
   ledger.replaceRows(raw.sha256, rows)
-  const { notice, alerts, curator } = resolveRows(raw, rows, skipped)
+  const { notice, alerts, curator, merged } = resolveRows(raw, rows, skipped)
   ledger.upsertAlerts([...alerts, ...curator], confusionKey)
+  // A repeat listing folded into another alert: hide the copy if an earlier run stored it.
+  for (const m of merged) ledger.markSuperseded(m.rid, m.into)
   ledger.upsertNotice(notice)
   ledger.setDocumentStatus(raw.sha256, 'resolved')
   let published = 0

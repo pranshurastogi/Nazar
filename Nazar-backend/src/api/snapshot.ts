@@ -6,6 +6,7 @@ import type { Context } from 'hono'
 import { sha256 } from '../lib/hash.ts'
 import { child } from '../lib/logger.ts'
 import type { AlertRecord } from '../domain/types.ts'
+import { classifyProduct, type ProductClass } from '../domain/vocab.ts'
 import type { Ledger } from '../storage/ledger.ts'
 
 const log = child('snapshot')
@@ -22,7 +23,10 @@ const gz = promisify(gzip)
  *   Row = [batch|null (same as the key), notice#, brand, product|null (same as brand),
  *          generic|null (same as product), form, category, failure, reason, severity, peds 0|1,
  *          manufacturer|null, labelClaim 0|1, state|null, mfgYm|null, expYm|null, alertYm,
- *          machineRead 0|1, onArkiv 0|1, retracted 0|1]
+ *          machineRead 0|1, onArkiv 0|1, retracted 0|1, dateKnown 0|1, productClass]
+ * The last two were appended later (still v1): readers that predate them see the first 20 fields
+ * unchanged. dateKnown 0 means the regulator gave no date and alertYm is the month Nazar first saw
+ * the row; productClass is 'medicine', 'cosmetic' or 'hygiene'.
  * Entity keys and row ids are left out on purpose: they are random hex (~50 incompressible bytes
  * per alert, more than everything else combined). The verdict needs none of it; the live check
  * that follows brings the proof. The "did you mean" index is derived on the device with the same
@@ -36,7 +40,7 @@ export type SnapshotRow = [
   string | null, number, string, string | null, string | null,
   string, string, string, string, number, 0 | 1, string | null,
   0 | 1, string | null, number | null, number | null, number, 0 | 1,
-  0 | 1, 0 | 1,
+  0 | 1, 0 | 1, 0 | 1, ProductClass,
 ]
 
 export interface Snapshot {
@@ -88,7 +92,7 @@ export function buildSnapshot(ledger: Ledger, now = new Date()): Snapshot {
       a.batch.toLowerCase() === a.batchKey ? null : a.batch, n, a.brand, product, generic,
       a.form, a.category, a.failures[0] ?? 'other', a.reason, a.severity, a.peds ? 1 : 0, a.manufacturer ?? null,
       a.manufacturerRole === 'label_claim' ? 1 : 0, a.state ?? null, a.mfgYm ?? null, a.expYm ?? null, a.alertYm, a.tier === 'machine_read' ? 1 : 0,
-      r.entity_key ? 1 : 0, r.retracted === 1 ? 1 : 0,
+      r.entity_key ? 1 : 0, r.retracted === 1 ? 1 : 0, a.dateKnown === false ? 0 : 1, a.productClass ?? classifyProduct(a.product, a.manufacturer),
     ]
     ;(alerts[a.batchKey] ??= []).push(row)
   }

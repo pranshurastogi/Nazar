@@ -10,6 +10,7 @@ import { DirectoryError, EntitiesQuery, type ArkivDirectory } from '../arkiv/dir
 import type { ArkivReader } from '../arkiv/reader.ts'
 import { env } from '../config/env.ts'
 import { BATCH_SHAPE, confusionKey, matchKey } from '../domain/batch.ts'
+import { PRODUCT_CLASSES } from '../domain/vocab.ts'
 import { NazarError, errorMessage, redactSecrets } from '../lib/errors.ts'
 import { child } from '../lib/logger.ts'
 import { ExplainError, MedicineExplainer } from '../medicine/explain.ts'
@@ -20,7 +21,7 @@ import { readProof, type ProofClient } from '../mcp/proof.ts'
 import type { PipelineStatus } from '../pipeline/status.ts'
 import { isPublishableTier } from '../resolve/case.ts'
 import type { EgressStatus } from '../pipeline/egress.ts'
-import type { AlertRow, Ledger } from '../storage/ledger.ts'
+import { FEED_ORDER, type AlertRow, type Ledger } from '../storage/ledger.ts'
 import { alertDto, noticeDto, viewDto, type AlertDTO, type DtoContext } from './dto.ts'
 import { CACHE, CheckCache, cdnCacheHeaders } from './cache-policy.ts'
 import { SnapshotService, serveSnapshot } from './snapshot.ts'
@@ -43,7 +44,10 @@ export interface SourceInfo {
   description: string
   schedule: string
   enabled: boolean
+  /** Why a source is paused, in plain words for people using the app. */
   disabledReason?: string | null
+  /** How an operator would switch it on (env vars, hosting). Not for display to the public. */
+  operatorNote?: string | null
   lastRun: unknown
 }
 
@@ -107,6 +111,7 @@ const AlertsQuery = z.object({
   peds: boolParam.optional(),
   sinceYm: ymParam.optional(),
   source: z.string().regex(/^[a-z][a-z0-9-]{1,31}$/, 'must be a source id like cdsco-online').optional(),
+  productClass: z.enum(PRODUCT_CLASSES).optional(),
 })
 const CheckQuery = z.object({ batch: z.string().max(200) })
 const SearchQuery = z.object({ q: z.string().trim().min(1).max(100), limit: intParam(1, 100).default(25) })
@@ -146,11 +151,12 @@ function listAlerts(ledger: Ledger, q: z.infer<typeof AlertsQuery>) {
   if (q.peds !== undefined) (where.push('peds = ?'), args.push(q.peds ? 1 : 0))
   if (q.sinceYm) (where.push('alert_ym >= ?'), args.push(q.sinceYm))
   if (q.source) (where.push('source_id = ?'), args.push(q.source))
+  if (q.productClass) (where.push('product_class = ?'), args.push(q.productClass))
   const w = where.join(' AND ')
   const total = (ledger.db.prepare(`SELECT COUNT(*) n FROM alerts WHERE ${w}`).get(...args) as { n: number }).n
   const rows = (
     ledger.db
-      .prepare(`SELECT * FROM alerts WHERE ${w} ORDER BY alert_ym DESC, severity DESC, rid LIMIT ? OFFSET ?`)
+      .prepare(`SELECT * FROM alerts WHERE ${w} ORDER BY ${FEED_ORDER} LIMIT ? OFFSET ?`)
       .all(...args, q.limit, q.offset) as Record<string, unknown>[]
   ).map(parseRow)
   return { rows, total }
@@ -185,6 +191,7 @@ async function defaultSources(ledger: Ledger): Promise<SourceInfo[]> {
       schedule: s.schedule,
       enabled: st.enabled,
       disabledReason: st.disabledReason,
+      operatorNote: st.operatorNote,
       lastRun: sourceLastCheck(ledger, s.id),
     }
   })

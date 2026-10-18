@@ -87,7 +87,7 @@ program
     const { allSources, sourceStatus } = await registry()
     for (const s of allSources()) {
       const st = sourceStatus(s)
-      print(`${st.enabled ? 'on ' : 'off'}  ${s.id.padEnd(14)} ${s.jurisdiction.padEnd(6)} ${s.schedule.padEnd(14)} ${s.authority}${st.disabledReason ? `\n      (${st.disabledReason})` : ''}`)
+      print(`${st.enabled ? 'on ' : 'off'}  ${s.id.padEnd(14)} ${s.jurisdiction.padEnd(6)} ${s.schedule.padEnd(14)} ${s.authority}${st.disabledReason ? `\n      (${st.operatorNote ?? st.disabledReason})` : ''}`)
     }
   })
 
@@ -269,6 +269,22 @@ program
       for (const x of r.explorer) print(`  ${x}`)
       if (r.chunks.some((c) => c.status === 'failed')) process.exitCode = 1
       if (o.verbose) print(r.chunks)
+    }
+  })
+
+program
+  .command('reresolve')
+  .description('re-run resolve over every stored document from the ledger\'s extracted rows (idempotent; no network, nothing published)')
+  .option('--dry-run', 'report what would change and roll back')
+  .option('--db <file>', 'ledger file (default: the configured data dir)')
+  .action(async (o: { dryRun?: boolean; db?: string }) => {
+    // Opened directly, not through ledger(), which would apply the same migration on open and defeat --dry-run.
+    const [{ Ledger }, { reresolveLedger }] = await Promise.all([import('./storage/ledger.ts'), import('./resolve/reresolve.ts')])
+    const l = new Ledger(o.db)
+    try {
+      print(reresolveLedger(l, { dryRun: o.dryRun }))
+    } finally {
+      l.close()
     }
   })
 

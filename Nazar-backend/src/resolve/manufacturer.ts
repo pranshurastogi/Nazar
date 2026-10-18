@@ -21,6 +21,20 @@ export interface Manufacturer {
 
 const UNKNOWN = /^(?:under\s+investigation|not\s+(?:known|mentioned|available|given)|unknown|n\.?\s?a\.?|nil|-+|—)$/i
 const PREFIX = /^\s*(?:m\s*\/\s*s\.?|messrs\.?|m\.s\.)\s*/i
+/** Field labels that ride along with the firm in some cells: "Mfd. by: M/s. X", "Manufacturer: X". */
+const LEAD_LABEL = /^\s*(?:(?:mfd|mfg|mfr|manufactured|manufacturer|mnf)\.?\s*(?:by)?\s*[:.\-–]?\s*)+/i
+/** The same labels left at the end of the firm name: "Sresan Pharmaceutical manufacturer, No. 787 ...". */
+const TRAIL_LABEL = /[\s,.;:\-–]+(?:manufacturer|mfr|mfd|mfg|manufactured)\.?(?:\s*by)?\.?$/i
+/** A marketer named after the maker ("... 173213 Mkt by M/s Boyel Pharma Pvt Ltd") is not the maker. */
+const MARKETER_TAIL = /[\s,;.(]*\b(?:mkt|mktd|marketed|distributed)\.?\s*by\b.*$/i
+
+/** Strips field labels and a trailing "marketed by" clause, keeping the maker's own name and address. */
+export function stripLabels(raw: string): string {
+  let s = raw.replace(/\s+/g, ' ').trim()
+  const cut = s.replace(MARKETER_TAIL, '')
+  if (cut.trim().length >= 3) s = cut
+  return s.replace(LEAD_LABEL, '').replace(PREFIX, '').trim()
+}
 
 const SUFFIXES: [RegExp, string][] = [
   [/\bp(?:vt|rivate)\.?\s*,?\s*l(?:td|imited)\.?/i, 'Pvt Ltd'],
@@ -36,7 +50,13 @@ const ADDRESS_START =
   /(?:\s+[-–]\s+|\s*,\s*|\.\s+|\s+)(?=(?:(?:plot|sy\.?|survey|s\.?\s?no|d\.?\s?no|khasra|kh\.?\s?no|vill(?:age)?\.?|at\s*[:&]|at\s*post|door|unit|gat|g\.?i\.?d\.?c|m\.?i\.?d\.?c|sidcul|i\.?i\.?e|industrial|phase|sector|block|near|opp\.?|road|street|nh-?\d|fac\.?|baddi|kala\s+amb|paonta|selaqui|haridwar)\b|\d|#|[A-Z]-\d|no\.?\s*\d))/i
 
 export function splitFirm(raw: string): { name: string; address: string | null } {
-  const s = raw.replace(PREFIX, '').replace(/\s+/g, ' ').trim()
+  const s = stripLabels(raw)
+  const firm = splitFirmName(s)
+  const name = firm.name.replace(TRAIL_LABEL, '').trim()
+  return { name: name.length >= 2 ? name : firm.name, address: firm.address }
+}
+
+function splitFirmName(s: string): { name: string; address: string | null } {
   // The legal suffix is the most reliable end of a firm name.
   let end = -1
   for (const [re] of SUFFIXES) {
@@ -203,8 +223,8 @@ export function resolveState(text: string, pin: string | null): string | null {
 
 export function parseManufacturer(raw: string | null | undefined): Manufacturer | null {
   if (!raw) return null
-  const s = raw.replace(/\s+/g, ' ').trim()
-  if (!s || UNKNOWN.test(s.replace(PREFIX, ''))) return null
+  const s = stripLabels(raw)
+  if (!s || UNKNOWN.test(s)) return null
   const { name, address } = splitFirm(s)
   if (!name || UNKNOWN.test(name)) return null
   const pin = extractPin(s)
