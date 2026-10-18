@@ -117,6 +117,8 @@ let mockResponse = function mockResponse(url) {
   }
   return null
 }
+/** Fallback-mode switches: serve the site's saved copy, and how long its 404 takes otherwise. */
+const fb = { savedCopy: false, staticDelayMs: 700 }
 const mock = { apiDown: false, arkiv429: false, arkivHits: 0, medicine: 'ok', medicineBodies: [], snapshot: false, checkDelayMs: 0 }
 const MEDICINE_FIXTURE = JSON.parse(fs.readFileSync(new globalThis.URL('./fixtures/medicine-explain.json', import.meta.url), 'utf8'))
 const CORS = [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Access-Control-Allow-Headers', value: 'content-type' }, { name: 'Access-Control-Allow-Methods', value: 'POST, OPTIONS' }, { name: 'Access-Control-Expose-Headers', value: 'Retry-After' }]
@@ -145,9 +147,19 @@ if (MODE === 'mock') {
 }
 
 if (MODE === 'fallback') {
-  // Refuse the Nazar API even if one is running locally, so answers are deterministic.
-  await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }] })
-  handlers.push(m => { if (m.method === 'Fetch.requestPaused') send('Fetch.failRequest', { requestId: m.params.requestId, errorReason: 'ConnectionRefused' }) })
+  // Refuse the Nazar API even if one is running locally, so answers are deterministic. The site's
+  // own saved copy (/data/snapshot.json) answers 404 after a short wait, so this flow exercises the
+  // last resort (demo data) and the loading card has a dependable window whatever Arkiv is doing;
+  // the "Saved copy" block at the end serves the real file.
+  await send('Fetch.enable', { patterns: [{ urlPattern: 'http://localhost:8787/*' }, { urlPattern: '*/data/snapshot.json*' }] })
+  handlers.push(async m => {
+    if (m.method !== 'Fetch.requestPaused') return
+    const { requestId, request } = m.params
+    if (!request.url.includes('/data/snapshot.json')) return send('Fetch.failRequest', { requestId, errorReason: 'ConnectionRefused' })
+    if (fb.savedCopy) return send('Fetch.continueRequest', { requestId })
+    await wait(fb.staticDelayMs)
+    send('Fetch.fulfillRequest', { requestId, responseCode: 404, responseHeaders: [{ name: 'Content-Type', value: 'text/plain' }], body: Buffer.from('not here').toString('base64') })
+  })
 
   // ---- Mobile, light: onboarding flow
   await vp(390, 844, false); await fresh()
@@ -187,7 +199,7 @@ if (MODE === 'fallback') {
   await waitIdle()
   const busy = await js(`window.__busy`)
   ok('loading card shows with aria-busy while checking', !!busy && busy.label === 'Checking batch R01GL2523' && /Checking batch R01GL2523/.test(busy.text), JSON.stringify(busy))
-  ok('loading card names the stage (Arkiv)', !!busy && busy.text.includes('Arkiv'))
+  ok("loading card names the stage (Arkiv, or Nazar's saved copy while Arkiv is rate limiting)", !!busy && /Arkiv|saved copy/.test(busy.text), busy?.text?.slice(0, 120))
   ok('check button shows Checking while busy', !!busy && busy.btn.includes('Checking'))
   ok('R01GL2523 lands as flagged (Respifresh TR, Rednex)', (await body()).includes('Respifresh TR · Rednex Pharmaceutical Pvt Ltd, Ahmedabad, Gujarat'))
   await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
@@ -761,13 +773,13 @@ if (MODE === 'mock') {
   for (let prev = -1, t = Date.now(); prev !== mock.arkivHits && Date.now() - t < 20000;) { prev = mock.arkivHits; await wait(3000) }
   const hits = mock.arkivHits
   ok('429: page load sends at most 4 Arkiv requests and does not retry in a loop', hits >= 1 && hits <= 4, String(hits))
-  ok('429: status pill falls back to Offline · demo data', (await js(`document.querySelector('[data-status]')?.dataset.status`)) === 'offline')
-  ok('429: home lists fall back to demo data', (await js(`document.querySelector('[aria-label="High-severity alerts"]')?.parentElement.querySelector('[data-source]')?.dataset.source`)) === 'demo')
+  ok('429: status pill says live sources are down and the saved copy answers (not demo data)', (await js(`document.querySelector('[data-status]')?.dataset.status`)) === 'offline' && /saved copy/.test(await js(`document.querySelector('[data-status]').getAttribute('aria-label')`)), await js(`document.querySelector('[data-status]')?.getAttribute('aria-label')`))
+  ok("429: home lists fall back to Nazar's saved copy, not demo data", (await js(`document.querySelector('[aria-label="High-severity alerts"]')?.parentElement.querySelector('[data-source]')?.dataset.source`)) === 'snapshot')
   await typeBatch('SR-13')
   // On a loaded machine the first call can time out instead (a shorter network backoff), so the bound is on the whole phase.
-  ok('429: checks during the backoff answer from demo data, no retry storm', (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'demo' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
+  ok("429: checks during the backoff answer from the saved copy, no retry storm", (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'snapshot' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
   await openFeed()
-  ok('429: feed during the backoff uses demo data, no retry storm', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'demo' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
+  ok('429: feed during the backoff uses the saved copy, no retry storm', (await js(`document.querySelector('[data-feed]').dataset.feedSource`)) === 'snapshot' && mock.arkivHits <= 4, `${hits} → ${mock.arkivHits}`)
   mock.apiDown = false; mock.arkiv429 = false
 }
 
@@ -1115,6 +1127,30 @@ if (MODE === 'fallback') {
   ok('share page: CTA opens Check and runs the batch', (await js(`location.pathname`)) === '/' && (await cardState()) === 'flagged')
 }
 // ======== end Share links ========
+
+// ======== Saved copy (fallback): the API is refused and Arkiv knows nothing for this build's publisher,
+// so the site's own /data/snapshot.json must answer with real alerts instead of demo data. ========
+if (MODE === 'fallback') {
+  fb.savedCopy = true
+  await vp(390, 844, false)
+  await send('Page.navigate', { url: URL }); await wait(1200)
+  await js(`localStorage.clear(); localStorage.setItem('nazar:onboarded', '1'); new Promise((r) => { const q = indexedDB.deleteDatabase('nazar'); q.onsuccess = q.onerror = q.onblocked = () => r(true) })`)
+  await send('Page.reload'); await wait(1500); await settle(); await wait(800)
+  const lists = await js(`[...document.querySelectorAll('[data-source]')].map((e) => e.dataset.source).join(',')`)
+  ok('saved copy: home lists come from the saved copy, not demo data', lists.includes('snapshot') && !lists.includes('demo') && !(await body()).includes('3 active'), lists)
+  await typeBatch('SR-13')
+  ok('saved copy: SR-13 is flagged from the saved copy (Sresan)', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged' && (await js(`document.querySelector('section[data-state] [data-source]')?.dataset.source`)) === 'snapshot' && (await body()).includes('Sresan Pharmaceutical'))
+  ok("saved copy: the proof says it came from the saved copy, not that it is confirming forever", (await js(`!!document.querySelector('[data-proof-saved]') && !document.querySelector('[data-proof-pending]')`)))
+  await typeBatch('TG25-2281A')
+  ok('saved copy: a real CDSCO batch (TG25-2281A, Levcon-M) is flagged without any live source', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'flagged' && (await body()).includes('Levcon-M'))
+  await typeBatch('DEMO-RT1')
+  ok('saved copy: demo-only records are not invented once real data is loaded', (await js(`document.querySelector('section[data-state]')?.dataset.state`)) === 'no_alert')
+  await send('Page.navigate', { url: new globalThis.URL('/feed', URL).href }); await wait(1500)
+  await waitFor(`!!document.querySelector('[data-feed-source]')`, 15000)
+  ok('saved copy: the Feed shows real alerts and says they are the saved copy', (await js(`document.querySelector('[data-feed]')?.dataset.feedSource`)) === 'snapshot' && !!(await js(`document.querySelector('[data-feed-saved-copy]')?.innerText`)))
+  fb.savedCopy = false
+}
+// ======== end Saved copy ========
 
 ok('no console errors or warnings', consoleErrors.length === 0, consoleErrors.join(' | '))
 for (const r of results) console.log(r.filter(Boolean).join('  '))

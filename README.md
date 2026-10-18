@@ -54,7 +54,7 @@ Nazar turns those scattered notices into one live, verifiable feed that a chemis
 | 📖 | **More** | How Nazar works, live source status, proof on Arkiv, privacy, settings and about. |
 | ✨ | **First-run guide** | A short animated guide: where to find "B.No.", the four answers, and how the proof works. |
 
-**It keeps working when Nazar's servers don't.** Every check tries the Nazar API first, then reads Arkiv directly from the browser (filtered by the publisher's `$creator`), then falls back to built-in demo data. The answer always says which source it came from.
+**It keeps working when Nazar's servers don't.** Every check tries the Nazar API first, then reads Arkiv directly from the browser (filtered by the publisher's `$creator`), then Nazar's saved copy of every published alert: kept on the device, and also served by the website itself (`/data/snapshot.json`, refreshed on every build). Only with none of those, offline on a first visit, does it fall back to built-in demo data. The answer always says which source it came from.
 
 ## Screenshots
 
@@ -225,7 +225,7 @@ cp .env.example .env && pnpm cli wallet:new     # prints only the address; the k
 pnpm cli run --since 202601 --limit 6           # discover → harvest → extract → resolve (dry-run publish)
 pnpm start
 
-# 2. Web app on :3000 (reads the API, then Arkiv directly, then demo data)
+# 2. Web app on :3000 (reads the API, then Arkiv directly, then the saved copy, then demo data)
 cd ../Nazar-frontend
 pnpm install
 cp .env.example .env.local
@@ -245,7 +245,7 @@ To publish for real:
 
 | Suite | What it covers | Run |
 |---|---|---|
-| Backend unit + golden | **367 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, snapshot and caches, medicine explainer (schema, guardrails, limits, Gemini retry and fallback), API, MCP server (tools, stateless HTTP round trip, limits), watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
+| Backend unit + golden | **389 tests.** Domain rules, sources (real HTML/JSON fixtures), harvest, extraction golden files for every real PDF, resolve, publisher (dry-run, idempotency, chunking, catch-up), reader, Arkiv directory, snapshot and caches, medicine explainer (schema, guardrails, limits, Gemini retry and fallback), API, MCP server (tools, stateless HTTP round trip, limits), watchdogs, egress check, secret redaction | `cd Nazar-backend && pnpm test` |
 | Scanner parsers | 22 tests: GS1 element strings and Digital Links, pack key-value text, full pack labels, noise | `cd Nazar-frontend && pnpm test:scan` |
 | Frontend e2e | ~250 checks in headless Chrome over CDP, with the API down and with a mocked API. Covers onboarding, every result state, look-alikes, the proof sheet and on-chain module, Feed, Cabinet, More, the Arkiv directory, Strip Scan (upload path), 360–430px layouts, dark mode, reduced motion and console errors | `cd Nazar-frontend && pnpm build && pnpm e2e` |
 | Backend live | Hits the real regulator sites (opt-in) | `pnpm test:live` |

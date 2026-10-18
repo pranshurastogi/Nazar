@@ -106,6 +106,29 @@ function toDto(key: string, r: Row, i: number, notices: SnapshotFile['notices'])
   }
 }
 
+/** Filters for lists read from the snapshot (Home, Feed) when no live source answers. */
+export type SnapshotListFilter = { minSeverity?: number; peds?: boolean; state?: string; source?: string }
+
+/**
+ * Every alert in the snapshot as app alerts, newest first: dated before undated, then by month,
+ * then by severity. Retractions are left out, as in the live feed.
+ */
+export function snapshotAlerts(f: SnapshotListFilter = {}, s = index): Alert[] {
+  if (!s) return []
+  const out: Alert[] = []
+  for (const [key, rows] of Object.entries(s.file.alerts)) {
+    rows.forEach((r, i) => {
+      if (r[19] === 1) return
+      if (f.minSeverity && r[9] < f.minSeverity) return
+      if (f.peds && r[10] !== 1) return
+      if (f.state && r[13] !== f.state) return
+      if (f.source && (s.file.notices[r[1]]?.[4] ?? '') !== f.source) return
+      out.push({ ...fromDto(toDto(key, r, i, s.file.notices)), fromSnapshot: true })
+    })
+  }
+  return out.sort((a, b) => b.noticeOrder - a.noticeOrder || b.severity - a.severity)
+}
+
 /** The loaded snapshot, if any (synchronous, so a check can answer before any await). */
 export const currentSnapshot = () => index
 
@@ -132,33 +155,46 @@ export function snapshotCheck(batch: string, s = index): CheckResult | null {
   return { ...resolveResult(batch, exact, lookAlike, 'snapshot'), asOf: s.generatedAt }
 }
 
+/** Nazar's copy of the snapshot, served by the site itself (refreshed on every build; see scripts/fetch-snapshot.mjs). */
+export const STATIC_SNAPSHOT = '/data/snapshot.json'
+
+const newer = (f: SnapshotFile) => !index || (Date.parse(f.generatedAt) || 0) > index.generatedAt.getTime()
+
+async function fetchSnapshot(url: string): Promise<SnapshotFile | null> {
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!res.ok) return null
+    const file: unknown = await res.json()
+    return valid(file) ? file : null
+  } catch {
+    return null
+  }
+}
+
 /**
- * Loads the snapshot: the saved copy from IndexedDB first (instant, offline), then the
- * network copy when it is newer. The HTTP cache and ETag make the refresh a 304 most of the time.
+ * Loads the snapshot: the saved copy from IndexedDB first (instant, offline), then the API's copy
+ * when it is newer. When the API is not configured, is cooling off after a failed connection, or
+ * fails now, the site's own static copy is used instead, so a check never has to fall back to demo
+ * data just because the API is down and Arkiv is rate limiting the browser. The HTTP cache and
+ * ETag make refreshes cheap.
  */
 export function loadSnapshot(): Promise<SnapshotIndex | null> {
   if (loading) return loading
   loading = (async () => {
     const saved = await idbGet<SnapshotFile>(IDB_KEY)
     if (valid(saved)) adopt(saved)
-    // Offline, or the API just failed to connect (shared cool-off): the saved copy answers.
-    if (!API_URL || apiLikelyDown() || (typeof navigator !== 'undefined' && navigator.onLine === false)) return index
-    try {
-      const res = await fetch(`${API_URL}/v1/snapshot`, { headers: { Accept: 'application/json' } })
-      if (res.ok) {
-        const file: unknown = await res.json()
-        if (valid(file) && file.version !== index?.version) {
-          adopt(file)
-          void idbSet(IDB_KEY, file)
-        }
-      }
-    } catch {
-      // Offline or the API is down: the saved copy (if any) keeps answering.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return index
+    const live = API_URL && !apiLikelyDown() ? await fetchSnapshot(`${API_URL}/v1/snapshot`) : null
+    const file = live ?? (await fetchSnapshot(STATIC_SNAPSHOT))
+    if (file && file.version !== index?.version && newer(file)) {
+      adopt(file)
+      void idbSet(IDB_KEY, file)
     }
     return index
   })().finally(() => {
-    // Allow a later refresh (e.g. when the tab regains focus) to fetch again.
-    setTimeout(() => (loading = null), 60_000)
+    // Allow a later refresh (e.g. when the tab regains focus) to fetch again; straight away if
+    // nothing loaded, so the next check can try again.
+    setTimeout(() => (loading = null), index ? 60_000 : 0)
   })
   return loading
 }

@@ -19,6 +19,7 @@ import {
   type CheckResult,
   type FeedFilters,
   type FeedPage,
+  currentSnapshot,
 } from '@/lib/source'
 import { feedKey, notDemo } from '@/lib/source/prefetch'
 import { peek, revalidate } from '@/lib/source/swr'
@@ -273,6 +274,8 @@ export function Feed() {
   const update = (patch: Partial<Filters>) => setFilters((f) => ({ ...(f ?? DEFAULTS), ...patch }))
   const f = filters ?? DEFAULTS
   const first = loading === 'first'
+  const saved = page?.source === 'snapshot' ? currentSnapshot() : null
+  const savedAt = saved ? saved.generatedAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
   const total = page?.total ?? null
   const count = first || !page ? null : total !== null ? plural(total, 'alert') : `${plural(items.length, 'alert')}${page.more ? ' so far' : ''}`
 
@@ -352,6 +355,12 @@ export function Feed() {
         </div>
       </div>
 
+      {page?.source === 'snapshot' && !first && (
+        <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground" data-feed-saved-copy>
+          The Nazar API and Arkiv could not answer just now, so this is Nazar&apos;s saved copy of every published alert
+          {savedAt ? `, as of ${savedAt}` : ''}. It refreshes when they are back.
+        </p>
+      )}
       {page?.source === 'demo' && !first && (
         <p className="mt-2 rounded-xl bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">
           Demo data: the Nazar API and Arkiv could not answer, so built-in sample alerts are shown.

@@ -4,6 +4,7 @@ import type { Stage } from '@/lib/source'
 const STAGE_TEXT: Record<Stage, string> = {
   api: 'Asking the Nazar API…',
   arkiv: 'Reading published alerts on Arkiv directly…',
+  snapshot: "Live sources are busy. Reading Nazar's saved copy of the alerts…",
 }
 
 /** Placeholder shown while a check is in flight. Shaped like a result card so nothing jumps when it lands. */

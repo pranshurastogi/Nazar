@@ -4,7 +4,7 @@ import type { ArkivFeedPage } from './arkiv'
 import { checkDemo, demoActiveAlerts } from './demo'
 import { STATIC_SOURCES } from './sources'
 import { validateBatch } from './match'
-import { currentSnapshot, snapshotCheck, SNAPSHOT_MAX_AGE_MS } from './snapshot'
+import { currentSnapshot, loadSnapshot, snapshotAlerts, snapshotCheck, SNAPSHOT_MAX_AGE_MS, type SnapshotIndex } from './snapshot'
 import type { Alert, CheckResult, PipelineStatus, SourceKind } from './types'
 
 export * from './types'
@@ -64,7 +64,7 @@ export async function checkBatch(
   const instant = snapshotCheck(v.batch, snap)
   if (instant && snap) {
     const age = Date.now() - snap.generatedAt.getTime()
-    if (isOffline()) return instant
+    if (isOffline()) return asFinal(instant)
     const leads = age < SNAPSHOT_MAX_AGE_MS && (instant.state !== 'no_alert' || age < INSTANT_NO_ALERT_MS)
     if (leads) onInstant?.(instant)
   }
@@ -86,7 +86,27 @@ export async function checkBatch(
     if (isAbort(err, signal)) throw err
   }
 
-  return instant ?? checkDemo(v.batch)
+  if (instant) return asFinal(instant)
+  // Both live sources failed and no saved copy is loaded yet: read Nazar's static copy (served by
+  // this site) before falling back to demo data.
+  onStage?.('snapshot')
+  const late = snapshotCheck(v.batch, await snapshotSoon(signal))
+  return late ? asFinal(late) : checkDemo(v.batch)
+}
+
+/** Marks a saved-copy answer as final, so the proof stops saying it is confirming on Arkiv. */
+function asFinal(r: CheckResult): CheckResult {
+  if (r.state !== 'flagged' && r.state !== 'retracted') return r
+  return { ...r, alert: { ...r.alert, savedCopyFinal: true }, alerts: r.alerts.map((a) => ({ ...a, savedCopyFinal: true })) }
+}
+
+/** The loaded snapshot, else one load attempt (API copy, then the site's static copy), bounded in time. */
+async function snapshotSoon(signal?: AbortSignal, ms = 6000): Promise<SnapshotIndex | null> {
+  const have = currentSnapshot()
+  if (have) return have
+  const s = await Promise.race([loadSnapshot(), new Promise<null>((r) => setTimeout(() => r(null), ms))])
+  if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
+  return s
 }
 
 export type AlertFeed = { items: Alert[]; total: number; source: SourceKind }
@@ -109,6 +129,11 @@ export async function loadAlerts(q: { minSeverity?: number; peds?: boolean; limi
     if (items) return { items, total: items.length, source: 'arkiv' }
   } catch (err) {
     if (isAbort(err, signal)) throw err
+  }
+  const snap = await snapshotSoon(signal)
+  if (snap) {
+    const all = snapshotAlerts({ minSeverity: q.minSeverity, peds: q.peds }, snap)
+    return { items: all.slice(0, limit), total: all.length, source: 'snapshot' }
   }
   const items = demoActiveAlerts().filter((a) => (!q.peds || a.peds) && (!q.minSeverity || a.severity >= q.minSeverity))
   return { items, total: items.length, source: 'demo' }
@@ -174,7 +199,13 @@ const fromArkivPage = (p: ArkivFeedPage): FeedPage => {
   return { items: p.items, total: null, source: 'arkiv', more: next ? async (sig) => fromArkivPage(await next(sig)) : null }
 }
 
-/** The alert feed, newest first: Nazar API, else Arkiv (Q3), else demo data. */
+/** Pages through a snapshot list locally, a feed page at a time. */
+const snapshotFeedPage = (all: Alert[], from: number): FeedPage => {
+  const end = from + FEED_PAGE_SIZE
+  return { items: all.slice(from, end), total: all.length, source: 'snapshot', more: end < all.length ? async () => snapshotFeedPage(all, end) : null }
+}
+
+/** The alert feed, newest first: Nazar API, else Arkiv (Q3), else Nazar's saved copy, else demo data. */
 export async function loadFeed(f: FeedFilters = {}, signal?: AbortSignal): Promise<FeedPage> {
   try {
     if (!(await probeApi())) throw new Error('API unreachable')
@@ -188,6 +219,8 @@ export async function loadFeed(f: FeedFilters = {}, signal?: AbortSignal): Promi
   } catch (err) {
     if (isAbort(err, signal)) throw err
   }
+  const snap = await snapshotSoon(signal)
+  if (snap) return snapshotFeedPage(snapshotAlerts(f, snap), 0)
   const items = demoActiveAlerts()
     .filter((a) => feedMatch(a, f))
     .sort((a, b) => b.noticeOrder - a.noticeOrder)

@@ -18,7 +18,8 @@ export const feedKey = (q: FeedFilters) =>
 
 export const SUMMARY_KEY = 'arkiv:summary'
 
-export const notDemo = (v: AlertFeed | FeedPage) => v.source !== 'demo'
+/** Only live answers are cached as the tab's data; demo rows and the saved copy are re-asked next time. */
+export const notDemo = (v: AlertFeed | FeedPage) => v.source === 'api' || v.source === 'arkiv'
 
 /** Warms a tab's first data while its nav link is hovered or focused. */
 export function prefetchFor(href: string) {

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { PipelineStatus } from '@/lib/source'
+import { currentSnapshot, onSnapshot, type PipelineStatus } from '@/lib/source'
 import { cn } from '@/lib/utils'
 
 /** The worker renews its heartbeat every 5 minutes; after 20 it is considered stopped. */
@@ -20,7 +20,7 @@ export function timeAgo(ms: number, now = Date.now()) {
   return `${Math.round(h / 24)} d ago`
 }
 
-function describe(status: PipelineStatus, now: number) {
+function describe(status: PipelineStatus, now: number, savedAt: Date | null) {
   switch (status.kind) {
     case 'checking':
       return { live: false, short: 'Connecting', long: 'Connecting…', tip: 'Looking for the Nazar API and Arkiv.' }
@@ -44,6 +44,14 @@ function describe(status: PipelineStatus, now: number) {
       }
     }
     case 'offline':
+      if (savedAt) {
+        return {
+          live: false,
+          short: 'Saved copy',
+          long: 'Live sources down · saved copy',
+          tip: `Neither the Nazar API nor Arkiv answered. Checks use Nazar's saved copy of every published alert, from ${timeAgo(savedAt.getTime(), now)}.`,
+        }
+      }
       return {
         live: false,
         short: 'Offline',
@@ -59,7 +67,14 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
     const t = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(t)
   }, [])
-  const d = describe(status, now)
+  // Whether Nazar's saved copy of the alert set is loaded (on the device or from the site), so an
+  // offline status never claims demo data while real alerts are answering. Read after mount.
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+  useEffect(() => {
+    setSavedAt(currentSnapshot()?.generatedAt ?? null)
+    return onSnapshot((s) => setSavedAt(s.generatedAt))
+  }, [])
+  const d = describe(status, now, savedAt)
   return (
     <Tooltip>
       <TooltipTrigger

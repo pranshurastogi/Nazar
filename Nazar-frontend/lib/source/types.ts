@@ -4,7 +4,8 @@
 export type Category = 'adulterated' | 'spurious' | 'nsq' | 'misbranded'
 export type ResultState = 'flagged' | 'retracted' | 'no_alert' | 'unreadable'
 export type Tier = 'auto' | 'machine_read' | 'drug_level' | 'curator_only'
-export type SourceKind = 'api' | 'arkiv' | 'demo'
+/** Who answered a list or check. 'snapshot' is Nazar's saved copy of the alert set (on the device or served by the site). */
+export type SourceKind = 'api' | 'arkiv' | 'snapshot' | 'demo'
 /**
  * Who answered a check; 'local' means the input was rejected on the device before any lookup,
  * 'snapshot' that the on-device copy of the alert set answered (instantly, or while offline).
@@ -52,6 +53,8 @@ export type Alert = {
   demo: boolean
   /** Answered from the on-device snapshot, which leaves out entity keys: the on-chain proof comes with the live check. */
   fromSnapshot?: boolean
+  /** The saved copy was the final answer (live sources failed or offline), not an instant answer awaiting confirmation. */
+  savedCopyFinal?: boolean
   /** Arkiv entity key of the parent notice (the regulator document), when known. */
   noticeKey?: string | null
   /** Block at which the alert entity expires on Arkiv (decimal string), when read from Arkiv. */
