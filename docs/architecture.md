@@ -18,6 +18,10 @@ Nazar turns scattered regulator notices into one verifiable feed. A Node service
 
 ## The diagram
 
+![Architecture: regulator sources → harvest → extract → resolve → publish → Arkiv, with the SQLite ledger, the Nazar API, the web app and AI assistants](screenshots/architecture.png)
+
+The same flow as a diagram you can edit:
+
 ```mermaid
 flowchart LR
   subgraph Sources

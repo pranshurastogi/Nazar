@@ -35,6 +35,10 @@ On 13 October WHO listed it, with two more contaminated syrups, in Medical Produ
 Every state rewrote the same alert by hand, while the pack's printed expiry ran to April 2027.
 Nazar turns those scattered notices into one live, verifiable feed that a chemist, a parent at 11 PM or an AI agent can check in under three seconds.
 
+![The information problem: CDSCO, Tamil Nadu, Maharashtra, WHO and press notes each publish failed batches in a different format, hundreds of samples fail every month, and the warning never reaches the chemist, the parent or the AI assistant](docs/screenshots/information-problem.png)
+
+**Everything in Nazar is real.** Every alert comes from a regulator document the pipeline downloaded, hashed and read: 1,404 alerts from 21 notices by CDSCO, Tamil Nadu, Maharashtra and WHO, each a live entity on Arkiv that links back to the original document. A handful of hand-reviewed rows are labelled `curated`, and demo data appears only offline on a first visit, labelled as such ([real vs demo](docs/for-judges.md#real-vs-demo)).
+
 ## What Nazar does
 
 Type the batch number from the pack (or scan it). Nazar answers with exactly one of four states:
@@ -99,11 +103,7 @@ Then open **[/arkiv](https://nazar-nu.vercel.app/arkiv)**, set Child Shield and 
 
 ## How it works, in brief
 
-```
-regulator notices → harvest (SHA-256) → extract → resolve → publish → Arkiv
-                                                     ↓
-                             SQLite cache → REST API + MCP → web app, AI assistants
-```
+![Architecture: CDSCO, Tamil Nadu, Maharashtra and WHO sources flow through harvest, extract, resolve and publish on Railway into Arkiv, the source of truth; a SQLite cache and the Nazar API serve the web app and AI assistants, and the web app can read Arkiv directly](docs/screenshots/architecture.png)
 
 - **Sources:** CDSCO (online NSQ portal and alert PDFs), Tamil Nadu, Maharashtra and WHO, fetched on a schedule by a worker on Railway in Singapore.
 - **Deterministic first:** PDF table geometry and per-regulator templates read almost every row; OCR and a grounded LLM only handle the rest, and every LLM value must appear in the source text.
