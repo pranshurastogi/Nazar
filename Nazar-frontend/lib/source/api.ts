@@ -165,7 +165,14 @@ export type MedicineExplain = {
   medicine: MedicineInfo
   disclaimer: string
   aiGenerated: true
+  /** Alerts for this brand (same as brandAlerts; older servers send only this, blended with ingredient matches). */
   nazarAlerts: number
+  /** The brand the count is for, or null for an unbranded/generic product. */
+  brandName: string | null
+  brandAlerts: number
+  ingredientName: string | null
+  /** Alerts for OTHER products sharing an ingredient: context only, never about this pack. */
+  ingredientAlerts: number
   nazarQuery: string | null
   batchAlerts: number
   cached: boolean
@@ -221,6 +228,12 @@ export async function apiExplainMedicine(q: MedicineQuery, { signal, timeoutMs =
         disclaimer: typeof body.disclaimer === 'string' ? body.disclaimer : 'General information, not medical advice. Ask your doctor or pharmacist.',
         aiGenerated: true,
         nazarAlerts: typeof body.nazarAlerts === 'number' ? body.nazarAlerts : 0,
+        // An older server blends brand and ingredient matches into nazarAlerts; without a
+        // brandName that number cannot be attributed to this pack, so it is not shown.
+        brandName: typeof body.brandName === 'string' && body.brandName ? body.brandName : null,
+        brandAlerts: typeof body.brandAlerts === 'number' ? body.brandAlerts : 0,
+        ingredientName: typeof body.ingredientName === 'string' && body.ingredientName ? body.ingredientName : null,
+        ingredientAlerts: typeof body.ingredientAlerts === 'number' ? body.ingredientAlerts : 0,
         nazarQuery: typeof body.nazarQuery === 'string' ? body.nazarQuery : null,
         batchAlerts: typeof body.batchAlerts === 'number' ? body.batchAlerts : 0,
         cached: !!body.cached,

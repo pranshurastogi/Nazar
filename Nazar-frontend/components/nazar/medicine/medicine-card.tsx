@@ -68,22 +68,7 @@ export function MedicineCard({ data }: { data: MedicineExplain }) {
         )}
       </div>
 
-      {data.nazarAlerts > 0 && (
-        <div className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-3 py-2.5 text-sm sm:mx-5" data-medicine-nazar>
-          <p className="flex items-start gap-2">
-            <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span>
-              <span className="font-semibold">
-                Nazar has {data.nazarAlerts} regulator {data.nazarAlerts === 1 ? 'alert' : 'alerts'}
-              </span>{' '}
-              naming this medicine (any batch).
-            </span>
-          </p>
-          <Link href="/feed" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-primary hover:underline">
-            Open Feed <ArrowRight className="size-3.5" aria-hidden="true" />
-          </Link>
-        </div>
-      )}
+      <NazarCounts data={data} />
 
       <p className="mt-4 px-4 text-xs text-muted-foreground sm:hidden" aria-hidden="true">
         Swipe for more →
@@ -130,6 +115,54 @@ export function MedicineCard({ data }: { data: MedicineExplain }) {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * Regulator alerts in Nazar, from Nazar's own ledger (not the AI). The brand count and the
+ * ingredient count are kept apart on purpose: "148 alerts naming this medicine" for a common
+ * ingredient like paracetamol would make an ordinary pack look dangerous.
+ */
+function NazarCounts({ data }: { data: MedicineExplain }) {
+  const { brandName, brandAlerts, ingredientName, ingredientAlerts } = data
+  if (!brandName && !ingredientAlerts) return null
+  return (
+    <div className="mx-4 mt-3 rounded-xl border bg-card px-3 py-2.5 text-sm sm:mx-5" data-medicine-nazar>
+      {brandName && (
+        <div className="flex flex-wrap items-center justify-between gap-2" data-medicine-brand-alerts={brandAlerts}>
+          <p className="flex items-start gap-2">
+            <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {brandAlerts > 0 ? (
+              <span>
+                <span className="font-semibold">Nazar has {plural(brandAlerts, 'regulator alert', 'regulator alerts')} for {brandName}</span>{' '}
+                (any batch). Only a match on your batch number means your pack is affected.
+              </span>
+            ) : (
+              <span>
+                <span className="font-semibold">No regulator alerts for {brandName}</span> in Nazar so far (any batch).
+              </span>
+            )}
+          </p>
+          {brandAlerts > 0 && (
+            <Link href="/feed" className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-primary hover:underline">
+              Open Feed <ArrowRight className="size-3.5" aria-hidden="true" />
+            </Link>
+          )}
+        </div>
+      )}
+      {ingredientAlerts > 0 && ingredientName && (
+        <p className={cn('text-xs text-muted-foreground', brandName ? 'mt-1.5 pl-6' : 'flex items-start gap-2')} data-medicine-ingredient-alerts={ingredientAlerts}>
+          {!brandName && <Landmark className="mt-px size-4 shrink-0" aria-hidden="true" />}
+          <span>
+            {brandName
+              ? `${plural(ingredientAlerts, 'other alert is', 'other alerts are')} for different products that share an ingredient such as ${ingredientName.toLowerCase()}. They are not about ${brandName}.`
+              : `${plural(ingredientAlerts, 'alert in Nazar is', 'alerts in Nazar are')} for products containing ${ingredientName.toLowerCase()}, from many makers. They don't mean your pack is affected: only your batch number can tell.`}
+          </span>
+        </p>
+      )}
     </div>
   )
 }

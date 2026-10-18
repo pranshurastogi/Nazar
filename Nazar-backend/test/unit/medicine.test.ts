@@ -171,13 +171,36 @@ describe('MedicineExplainer', () => {
     expect(r.aiGenerated).toBe(true)
     expect(r.disclaimer).toMatch(/doctor or pharmacist/)
     expect(r.medicine.whatItIsFor).toEqual(['Fever', 'Headache and body ache'])
-    expect(r.nazarAlerts).toBe(2) // "Paracetamol" and "Dolo" rows; not the amoxicillin one
-    expect(r.nazarQuery).toBe('Paracetamol')
+    // Brand and ingredient are counted apart: the DOLO row is about this brand, the plain
+    // paracetamol row is another product that shares the ingredient; amoxicillin is neither.
+    expect(r.brandName).toBe('Dolo 650')
+    expect(r.brandAlerts).toBe(1)
+    expect(r.nazarAlerts).toBe(1)
+    expect(r.ingredientName).toBe('Paracetamol')
+    expect(r.ingredientAlerts).toBe(1)
+    expect(r.nazarQuery).toBe('Dolo 650')
     expect(r.batchAlerts).toBe(1)
     expect(r.cached).toBe(false)
     expect(provider.calls[0]!.user).not.toContain('DL-650A')
     expect(provider.calls[0]!.user).toContain('Paracetamol IP 650 mg')
     expect(provider.calls[0]!.system).toBe(SYSTEM_PROMPT)
+  })
+
+  it('never claims a brand for an unbranded generic, and never counts ingredient matches as brand alerts', async () => {
+    const r = await make().explain({ product: 'Paracetamol Tablets IP 500 mg', composition: ['Paracetamol IP 500 mg'], form: 'tablet' }, '1.2.3.4')
+    expect(r.brandName).toBeNull()
+    expect(r.brandAlerts).toBe(0)
+    expect(r.nazarAlerts).toBe(0)
+    expect(r.ingredientName).toBe('Paracetamol')
+    expect(r.ingredientAlerts).toBeGreaterThanOrEqual(1)
+    expect(r.nazarQuery).toBe('Paracetamol')
+  })
+
+  it('reports zero brand alerts for a brand Nazar has never flagged', async () => {
+    const r = await make().explain({ product: 'Calpol 500', composition: ['Paracetamol IP 500 mg'], form: 'tablet' }, '1.2.3.4')
+    expect(r.brandName).toBe('Calpol 500')
+    expect(r.brandAlerts).toBe(0)
+    expect(r.ingredientAlerts).toBeGreaterThanOrEqual(1)
   })
 
   it('serves repeats from the cache without calling the model or counting against limits', async () => {

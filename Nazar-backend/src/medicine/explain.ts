@@ -186,13 +186,17 @@ export class MedicineExplainer {
   }
 
   private respond(input: ExplainInput, info: MedicineInfo, model: string, cached: boolean, at: number): ExplainResponse {
-    const { count, query } = this.nazarMatches(input, info)
+    const m = this.nazarMatches(input, info)
     return {
       medicine: { ...info, notMedicalAdvice: true },
       disclaimer: DISCLAIMER,
       aiGenerated: true,
-      nazarAlerts: count,
-      nazarQuery: query,
+      nazarAlerts: m.brandAlerts,
+      brandName: m.brandName,
+      brandAlerts: m.brandAlerts,
+      ingredientName: m.ingredientName,
+      ingredientAlerts: m.ingredientAlerts,
+      nazarQuery: m.brandName ?? m.ingredientName,
       batchAlerts: input.batch ? this.deps.ledger.alertsByBatchKey(matchKey(input.batch)).filter((r) => isPublishableTier(r.record.tier)).length : 0,
       cached,
       model,
@@ -200,19 +204,44 @@ export class MedicineExplainer {
     }
   }
 
-  /** Alerts in Nazar's ledger whose product text names this brand or one of its generics. */
-  private nazarMatches(input: ExplainInput, info: MedicineInfo): { count: number; query: string | null } {
-    const brand = genericOf(input.brand || input.product || '').split(' ').filter((w) => w.length >= 3).slice(0, 2).join(' ')
+  /**
+   * Two separate counts, never blended: alerts for THIS brand (precise), and alerts for other
+   * products that merely share an ingredient (context). Paracetamol alone matches well over a
+   * hundred alerts; folding those into one "alerts for this medicine" number would make an
+   * ordinary strip look dangerous.
+   */
+  private nazarMatches(input: ExplainInput, info: MedicineInfo): { brandName: string | null; brandAlerts: number; ingredientName: string | null; ingredientAlerts: number } {
+    const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, '')
     const generics = [...(input.composition ?? []).map(genericOf), ...info.genericNames.map(genericOf)].filter((g) => g.length >= 4)
-    const terms = [...new Set([brand, ...generics].filter((t) => t.length >= 3).map((t) => t.toLowerCase()))].slice(0, 6)
-    const rids = new Set<string>()
-    for (const t of terms) {
+    const genericWords = new Set(generics.flatMap((g) => g.toLowerCase().split(/\s+/)))
+    // A brand is only claimed when the caller named one, or the product line leads with a word
+    // that is not one of its own ingredients ("Dolo 650", "COLDRIF (paracetamol…)").
+    const lead = genericOf(input.product ?? '').split(' ')[0] ?? ''
+    const brandRaw = (input.brand?.trim() || (lead.length >= 3 && !genericWords.has(lead.toLowerCase()) ? (input.product ?? '').split(/[(,]/)[0]!.trim() : '')).replace(/\s+(?:tablets?|capsules?|syrup|suspension|injection|drops)\b.*$/i, '')
+    const brandKey = norm(brandRaw)
+    const brandWord = brandRaw.split(/\s+/).find((w) => w.length >= 3) ?? ''
+
+    const publishable = (rows: ReturnType<Ledger['searchAlerts']>) => rows.filter((r) => isPublishableTier(r.record.tier))
+    const search = (t: string) => {
       try {
-        for (const r of this.deps.ledger.searchAlerts(t, 500)) if (isPublishableTier(r.record.tier)) rids.add(r.rid)
+        return publishable(this.deps.ledger.searchAlerts(t, 500))
       } catch {
-        // An FTS syntax edge case must not break the card; the count is a bonus.
+        return [] // an FTS syntax edge case must not break the card
       }
     }
-    return { count: rids.size, query: generics[0] || brand || null }
+
+    const brandRids = new Set<string>()
+    if (brandKey.length >= 3 && brandWord) {
+      for (const r of search(brandWord)) {
+        const b = norm(r.record.brand)
+        if (b.length >= 3 && (b === brandKey || b.startsWith(brandKey) || (b.length >= 4 && brandKey.startsWith(b)))) brandRids.add(r.rid)
+      }
+    }
+    const ingredientRids = new Set<string>()
+    for (const g of [...new Set(generics.map((x) => x.toLowerCase()))].slice(0, 4)) {
+      for (const r of search(g)) if (!brandRids.has(r.rid)) ingredientRids.add(r.rid)
+    }
+    const ingredient = generics[0] ? generics[0].replace(/\b\w/g, (c) => c.toUpperCase()) : null
+    return { brandName: brandKey.length >= 3 ? brandRaw : null, brandAlerts: brandRids.size, ingredientName: ingredient, ingredientAlerts: ingredientRids.size }
   }
 }

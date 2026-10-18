@@ -47,10 +47,14 @@
   },
   "disclaimer": "General information, not medical advice. Ask your doctor or pharmacist before you start, stop or change a medicine.",
   "aiGenerated": true,
-  "nazarAlerts": 3,
+  "nazarAlerts": 2,
   "nazarQuery": "Paracetamol",
   "batchAlerts": 2,
   "cached": false,
   "model": "gemini:gemini-flash-latest",
-  "generatedAt": "2026-10-18T07:30:22.402Z"
+  "generatedAt": "2026-10-18T07:30:22.402Z",
+  "brandName": "COLDRIF",
+  "brandAlerts": 2,
+  "ingredientName": "Paracetamol",
+  "ingredientAlerts": 116
 }

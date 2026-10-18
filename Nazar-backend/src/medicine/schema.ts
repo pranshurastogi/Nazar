@@ -53,9 +53,20 @@ export interface ExplainResponse {
   medicine: MedicineInfo & { notMedicalAdvice: true }
   disclaimer: string
   aiGenerated: true
-  /** Publishable Nazar alerts whose product names this medicine (by brand or generic name). */
+  /** Publishable Nazar alerts for this brand (any batch). Same as brandAlerts; kept for older clients. */
   nazarAlerts: number
-  /** Search text the app can use to list those alerts (Feed / search). */
+  /** The brand those alerts were matched on, or null for an unbranded/generic product. */
+  brandName: string | null
+  /** Publishable alerts whose own brand matches this pack's brand (any batch). */
+  brandAlerts: number
+  /** Main ingredient used for the broader count, e.g. "Paracetamol". */
+  ingredientName: string | null
+  /**
+   * Alerts for OTHER products that contain the same ingredient (other makers, other brands).
+   * Context only: these are not about the user's pack and must be labelled that way.
+   */
+  ingredientAlerts: number
+  /** Search text the app can use to list the brand alerts (falls back to the ingredient). */
   nazarQuery: string | null
   /** Alerts for the exact batch, when one was given. */
   batchAlerts: number
