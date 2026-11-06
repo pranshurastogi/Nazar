@@ -30,7 +30,7 @@ Nazar's database is public. Every alert Nazar publishes is an entity on [Arkiv](
 | **Network** | Arkiv Tiramisu testnet, chain `7738577`, RPC `https://rpc.tiramisu.db-chain.testnet.arkiv.network` |
 | **Publisher (`$creator`)** | [`0xd06d85Eb20f126f796E4a341b711B1a757c66bD2`](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2) |
 | **Project tag** | `project = "nazar-in-batch-alerts"` on every entity |
-| **Live (18 Oct 2026)** | 21 `notice`, 1,404 `alert`, 0 `retraction`, 1 `heartbeat` (live counts: [`/v1/arkiv/summary`](https://nazar-api-production.up.railway.app/v1/arkiv/summary)) |
+| **Live (18 Oct 2026)** | 21 `notice`, 1,404 `alert`, 0 `retraction`, 1 `heartbeat` (live counts: [`/v1/arkiv/summary`](https://nazar-api-seven.vercel.app/v1/arkiv/summary)) |
 | **SDK** | [`@arkiv-network/sdk`](https://www.npmjs.com/package/@arkiv-network/sdk) `0.8.0` with `viem` |
 
 **Always filter by all three:** `eq('project', …)`, `eq('t', …)` and `.createdBy(PUBLISHER)`. The first two keep other apps' data out. The third means an entity copied by someone else is never shown as official.

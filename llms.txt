@@ -5,10 +5,10 @@
 ## Live
 
 - [Web app](https://nazar-nu.vercel.app): check a batch, alerts, cabinet, shelf sweep, Arkiv directory, AI assistant guide
-- [REST API](https://nazar-api-production.up.railway.app/health): base URL https://nazar-api-production.up.railway.app, e.g. GET /v1/check?batch=SR-13
-- [MCP server](https://nazar-nu.vercel.app/ai): https://nazar-api-production.up.railway.app/mcp, stateless Streamable HTTP, read-only, no key
+- [REST API](https://nazar-api-seven.vercel.app/health): base URL https://nazar-api-seven.vercel.app, e.g. GET /v1/check?batch=SR-13
+- [MCP server](https://nazar-nu.vercel.app/ai): https://nazar-api-seven.vercel.app/mcp, stateless Streamable HTTP, read-only, no key
 - [Publisher on the Arkiv explorer](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2): 0xd06d85Eb20f126f796E4a341b711B1a757c66bD2, project tag "nazar-in-batch-alerts"
-- [Alerts RSS feed](https://nazar-api-production.up.railway.app/v1/alerts.rss): also .atom and .json
+- [Alerts RSS feed](https://nazar-api-seven.vercel.app/v1/alerts.rss): also .atom and .json
 
 ## Docs
 

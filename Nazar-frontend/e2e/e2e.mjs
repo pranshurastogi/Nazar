@@ -551,7 +551,7 @@ if (MODE === 'fallback') {
   await js(`document.getElementById('proof').scrollIntoView({ block: 'start' })`); await shot('more-desktop-proof')
 
   // ---- AI assistant: /more#mcp is a short teaser now, the full guide lives at /ai
-  const MCP = 'https://nazar-api-production.up.railway.app/mcp'
+  const MCP = 'https://nazar-api-seven.vercel.app/mcp'
   const AI_FX = Object.fromEntries(['sr-13', '5r-13', 'ab1234'].map(k => [k, JSON.parse(fs.readFileSync(new globalThis.URL(`../components/nazar/ai/fixtures/check-${k}.json`, import.meta.url), 'utf8'))]))
   ok('shell: "Skip to content" is the first focusable element and targets main#content', (await js(`(() => { const a = document.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'); return a?.textContent.trim() + '|' + a?.getAttribute('href') + '|' + document.getElementById('content')?.tagName })()`)) === 'Skip to content|#content|MAIN')
   ok('more: the hero headline is the only h1 (the shell title is not a heading)', (await js(`[...document.querySelectorAll('h1')].map(h => h.id).join()`)) === 'more-hero-title')

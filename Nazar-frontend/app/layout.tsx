@@ -16,7 +16,7 @@ const devanagari = Noto_Sans_Devanagari({ subsets: ['devanagari'], variable: '--
 
 // Absolute URLs for social cards: the production domain unless a deploy says otherwise.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://nazar-nu.vercel.app'
-const API_ORIGIN = (process.env.NEXT_PUBLIC_NAZAR_API_URL?.startsWith('http') ? process.env.NEXT_PUBLIC_NAZAR_API_URL : 'https://nazar-api-production.up.railway.app').replace(/\/+$/, '')
+const API_ORIGIN = (process.env.NEXT_PUBLIC_NAZAR_API_URL?.startsWith('http') ? process.env.NEXT_PUBLIC_NAZAR_API_URL : 'https://nazar-api-seven.vercel.app').replace(/\/+$/, '')
 
 // Structured data: what Nazar is, for search engines and AI crawlers. It describes the app and its
 // sources; it never claims a medicine is safe or that Nazar is a regulator.

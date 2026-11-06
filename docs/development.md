@@ -80,7 +80,7 @@ Names only. See `Nazar-backend/.env.example` and `Nazar-frontend/.env.example`; 
 
 ## Deploy
 
-- **Backend:** Railway, Fly.io, Render or any Docker host; step-by-step in [`Nazar-backend/docs/deploy.md`](../Nazar-backend/docs/deploy.md). The live service runs on Railway in **Singapore** because CDSCO refuses connections from US cloud regions; the region and volume are pinned in [`Nazar-backend/.railway/railway.ts`](../Nazar-backend/.railway/railway.ts) (notes in [`.railway/README.md`](../Nazar-backend/.railway/README.md)). It runs `NAZAR_ROLE=all` with a volume at `/app/data`. **One replica only:** one publisher wallet means one writer. After deploying, `/health` must show `egress.cdsco: "ok"`.
+- **Backend:** the live read API is a Vercel function in Mumbai (`bom1`), project `nazar-api`, root `Nazar-backend`. `pnpm build:vercel` bundles it with the committed ledger `seed/nazar.sqlite`; the Pipeline workflow refreshes that file. For a full always-on worker use Fly.io, Render or any Docker host; step-by-step in [`Nazar-backend/docs/deploy.md`](../Nazar-backend/docs/deploy.md). **One worker only:** one publisher wallet means one writer.
 - **Web app:** Vercel, project root `Nazar-frontend`. Set the frontend variables above: either `NAZAR_API_ORIGIN` (the same-origin proxy, no CORS) or `NEXT_PUBLIC_NAZAR_API_URL` (direct calls; then the Vercel domains must be in the backend's `NAZAR_CORS_ORIGINS`). `pnpm build` first fetches the latest snapshot into `public/data/snapshot.json`.
 
 ## Tests and CI
@@ -120,8 +120,8 @@ Nazar/
 │   │   ├── medicine/       explain and identify: schema, prompts, grounding, guardrails, limits, providers
 │   │   └── cli.ts
 │   ├── test/               unit/, golden/, fixtures/ (real regulator documents), live/
-│   ├── .railway/           Railway infrastructure as code (Singapore)
-│   └── Dockerfile, fly.toml, render.yaml, docs/deploy.md
+│   ├── seed/nazar.sqlite   committed ledger, shipped by the Vercel read API
+│   └── vercel.json, Dockerfile, fly.toml, render.yaml, docs/deploy.md
 ├── Nazar-frontend/         Next.js 16 web app
 │   ├── app/(main)/         / (Check), feed, sweep, cabinet, arkiv, ai, more (How it works)
 │   ├── app/b/[batch]/      public share pages and their preview images
@@ -142,7 +142,7 @@ Nazar/
 - **Web:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui on Base UI, Motion, zxing-wasm, tesseract.js.
 - **Backend:** Node 24, TypeScript, Hono, pdfjs-dist, tesseract.js, `node:sqlite` (FTS5), Zod, `@modelcontextprotocol/sdk`.
 - **Arkiv:** `@arkiv-network/sdk` 0.8 with viem.
-- **Hosting:** Vercel (web) and Railway, Singapore (API and worker).
+- **Hosting:** Vercel (web, and the read API in Mumbai); GitHub Actions (pipeline).
 
 ## Contributing
 

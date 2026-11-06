@@ -20,5 +20,5 @@ Reference material elsewhere in the repo:
 | [`arkiv/schema.md`](../arkiv/schema.md) | the full Arkiv data contract |
 | [`arkiv/friction.md`](../arkiv/friction.md) | what was hard while building on Arkiv, with workarounds |
 | [`Nazar-backend/README.md`](../Nazar-backend/README.md) | the pipeline internals: sources, extraction, resolve, publishing, CLI |
-| [`Nazar-backend/docs/deploy.md`](../Nazar-backend/docs/deploy.md) | step-by-step deployment (Railway, Fly.io, Render, Docker, Vercel) |
+| [`Nazar-backend/docs/deploy.md`](../Nazar-backend/docs/deploy.md) | step-by-step deployment (Vercel read API, Fly.io, Render, Docker) |
 | [`llms.txt`](../llms.txt) | a short index of these docs for language models |

@@ -17,8 +17,8 @@ Check any Indian medicine batch against CDSCO, state drug regulator and WHO aler
 | | |
 |---|---|
 | **Web app** | **[nazar-nu.vercel.app](https://nazar-nu.vercel.app)** |
-| **REST API** | [`https://nazar-api-production.up.railway.app`](https://nazar-api-production.up.railway.app/health) ([docs](docs/api.md)) |
-| **MCP server** | `https://nazar-api-production.up.railway.app/mcp` ([setup guide](https://nazar-nu.vercel.app/ai), [docs](docs/mcp.md)) |
+| **REST API** | [`https://nazar-api-seven.vercel.app`](https://nazar-api-seven.vercel.app/health) ([docs](docs/api.md)) |
+| **MCP server** | `https://nazar-api-seven.vercel.app/mcp` ([setup guide](https://nazar-nu.vercel.app/ai), [docs](docs/mcp.md)) |
 | **Data on Arkiv** | Tiramisu testnet, publisher [`0xd06d…6bD2`](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2) ([directory](https://nazar-nu.vercel.app/arkiv), [docs](docs/arkiv.md)) |
 
 **[For judges: 2-minute tour](docs/for-judges.md)** · [Features](docs/features.md) · [Arkiv](docs/arkiv.md) · [MCP](docs/mcp.md) · [API](docs/api.md) · [How it works](docs/architecture.md) · [Development](docs/development.md)
@@ -103,9 +103,9 @@ Then open **[/arkiv](https://nazar-nu.vercel.app/arkiv)**, set Child Shield and 
 
 ## How it works, in brief
 
-![Architecture: CDSCO, Tamil Nadu, Maharashtra and WHO sources flow through harvest, extract, resolve and publish on Railway into Arkiv, the source of truth; a SQLite cache and the Nazar API serve the web app and AI assistants, and the web app can read Arkiv directly](docs/screenshots/architecture.png)
+![Architecture: CDSCO, Tamil Nadu, Maharashtra and WHO sources flow through harvest, extract, resolve and publish into Arkiv, the source of truth; a SQLite cache and the Nazar API serve the web app and AI assistants, and the web app can read Arkiv directly](docs/screenshots/architecture.png)
 
-- **Sources:** CDSCO (online NSQ portal and alert PDFs), Tamil Nadu, Maharashtra and WHO, fetched on a schedule by a worker on Railway in Singapore.
+- **Sources:** CDSCO (online NSQ portal and alert PDFs), Tamil Nadu, Maharashtra and WHO, fetched on a schedule by the pipeline (GitHub Actions, plus manual runs from an Asian IP for CDSCO). The read API runs on Vercel in Mumbai and serves the ledger the pipeline commits.
 - **Deterministic first:** PDF table geometry and per-regulator templates read almost every row; OCR and a grounded LLM only handle the rest, and every LLM value must appear in the source text.
 - **Truth on chain:** each notice and each batch alert is a `readonly` Arkiv entity; Nazar's database is a cache that can be rebuilt from Arkiv.
 - **Always answers:** API → Arkiv from the browser → the saved copy on the device → demo data (offline first visit only).
@@ -138,8 +138,8 @@ Runnable scripts: `cd arkiv/queries && npm install && npx tsx check-batch.ts SR-
 
 ## Quick start: MCP
 
-Endpoint: `https://nazar-api-production.up.railway.app/mcp` (stateless Streamable HTTP, read-only, no key).
-Claude Code: `claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp`.
+Endpoint: `https://nazar-api-seven.vercel.app/mcp` (stateless Streamable HTTP, read-only, no key).
+Claude Code: `claude mcp add --transport http nazar https://nazar-api-seven.vercel.app/mcp`.
 Other clients, the six tools and the rules: [docs/mcp.md](docs/mcp.md), or the guide at [nazar-nu.vercel.app/ai](https://nazar-nu.vercel.app/ai).
 
 ## Built for

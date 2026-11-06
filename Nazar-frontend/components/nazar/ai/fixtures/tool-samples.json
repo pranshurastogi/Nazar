@@ -1,6 +1,6 @@
 {
   "fetchedAt": "2026-10-18",
-  "server": "https://nazar-api-production.up.railway.app/mcp",
+  "server": "https://nazar-api-seven.vercel.app/mcp",
   "tools": {
     "check_batch": {
       "args": {

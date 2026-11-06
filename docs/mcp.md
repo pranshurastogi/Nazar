@@ -3,7 +3,7 @@
 Nazar runs a hosted [Model Context Protocol](https://modelcontextprotocol.io) server, so an assistant (Claude, ChatGPT, Cursor, VS Code or any MCP client) can answer "is this batch flagged?" with the same four states as the app, cite the regulator notice, and prove the alert on Arkiv. It is **read-only**, needs **no sign-in or API key**, and tells the model never to call a medicine "safe". The web guide with a live demo is at **[nazar-nu.vercel.app/ai](https://nazar-nu.vercel.app/ai)**.
 
 ```
-https://nazar-api-production.up.railway.app/mcp
+https://nazar-api-seven.vercel.app/mcp
 ```
 
 **Contents**
@@ -29,7 +29,7 @@ https://nazar-api-production.up.railway.app/mcp
 
 | Client | Do this |
 |---|---|
-| **Claude Code** | Run once in a terminal: `claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp`. Then run `/mcp`: nazar should be listed as connected. |
+| **Claude Code** | Run once in a terminal: `claude mcp add --transport http nazar https://nazar-api-seven.vercel.app/mcp`. Then run `/mcp`: nazar should be listed as connected. |
 | **Project `.mcp.json`** | Save the file below at a project's root, so everyone who opens it gets Nazar. Claude Code asks you to approve project servers the first time. |
 | **Cursor** | Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in one project). Cursor Settings → MCP shows nazar with its six tools. |
 | **VS Code** | Add `.vscode/mcp.json` to your workspace, start the server from the file, then ask in Copilot Chat in Agent mode. |
@@ -43,7 +43,7 @@ https://nazar-api-production.up.railway.app/mcp
   "mcpServers": {
     "nazar": {
       "type": "http",
-      "url": "https://nazar-api-production.up.railway.app/mcp"
+      "url": "https://nazar-api-seven.vercel.app/mcp"
     }
   }
 }
@@ -55,7 +55,7 @@ https://nazar-api-production.up.railway.app/mcp
 {
   "mcpServers": {
     "nazar": {
-      "url": "https://nazar-api-production.up.railway.app/mcp"
+      "url": "https://nazar-api-seven.vercel.app/mcp"
     }
   }
 }
@@ -68,7 +68,7 @@ https://nazar-api-production.up.railway.app/mcp
   "servers": {
     "nazar": {
       "type": "http",
-      "url": "https://nazar-api-production.up.railway.app/mcp"
+      "url": "https://nazar-api-seven.vercel.app/mcp"
     }
   }
 }
@@ -128,19 +128,19 @@ The server is stateless, so any single JSON-RPC call works on its own (no `initi
 
 ```bash
 # initialize: server info and the instructions
-curl -s https://nazar-api-production.up.railway.app/mcp \
+curl -s https://nazar-api-seven.vercel.app/mcp \
   -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
 
 # tools/list
-curl -s https://nazar-api-production.up.railway.app/mcp \
+curl -s https://nazar-api-seven.vercel.app/mcp \
   -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
 # tools/call check_batch: the reply should start with "FLAGGED: batch SR-13"
-curl -s https://nazar-api-production.up.railway.app/mcp \
+curl -s https://nazar-api-seven.vercel.app/mcp \
   -H 'content-type: application/json' \
   -H 'accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"check_batch","arguments":{"batch":"SR-13"}}}'
@@ -149,8 +149,8 @@ curl -s https://nazar-api-production.up.railway.app/mcp \
 With the MCP Inspector CLI:
 
 ```bash
-npx -y @modelcontextprotocol/inspector@0.17.2 --cli https://nazar-api-production.up.railway.app/mcp --transport http --method tools/list
-npx -y @modelcontextprotocol/inspector@0.17.2 --cli https://nazar-api-production.up.railway.app/mcp --transport http --method tools/call --tool-name check_batch --tool-arg batch=SR-13
+npx -y @modelcontextprotocol/inspector@0.17.2 --cli https://nazar-api-seven.vercel.app/mcp --transport http --method tools/list
+npx -y @modelcontextprotocol/inspector@0.17.2 --cli https://nazar-api-seven.vercel.app/mcp --transport http --method tools/call --tool-name check_batch --tool-arg batch=SR-13
 ```
 
 Locally, run `pnpm start` in `Nazar-backend` and use `http://localhost:8787/mcp` ([development](development.md#run-it-yourself)).
@@ -172,7 +172,7 @@ Code: `src/mcp/server.ts` (tools, resources, prompt, instructions), `src/mcp/htt
 Agents and scripts can call the same [REST API](api.md) the app uses, or read [Arkiv directly](arkiv.md):
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/check?batch=SR-13' | jq '{state, batch, alerts: [.alerts[] | {brand, authority, noticeTitle, severity, entityKey}]}'
+curl -s 'https://nazar-api-seven.vercel.app/v1/check?batch=SR-13' | jq '{state, batch, alerts: [.alerts[] | {brand, authority, noticeTitle, severity, entityKey}]}'
 ```
 
 The whole publishable alert set is also a static file, [`nazar-nu.vercel.app/data/snapshot.json`](https://nazar-nu.vercel.app/data/snapshot.json) (format in [docs/api.md](api.md#get-v1snapshot)).

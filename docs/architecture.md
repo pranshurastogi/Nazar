@@ -1,6 +1,6 @@
 # How Nazar works
 
-Nazar turns scattered regulator notices into one verifiable feed. A Node service on Railway fetches each regulator's documents, reads the batch rows out of them, resolves each row into an alert with a severity, and publishes the alerts to Arkiv, which is the source of truth. A read API (REST and MCP) serves the web app and AI assistants from a local cache, and the web app can also read Arkiv directly from the browser. This page covers the diagram, the pipeline stages, extraction, resolution and severity, the Arkiv data contract in brief, how it stays up to date, the fallback chain and privacy.
+Nazar turns scattered regulator notices into one verifiable feed. A scheduled Node pipeline fetches each regulator's documents, reads the batch rows out of them, resolves each row into an alert with a severity, and publishes the alerts to Arkiv, which is the source of truth. A read API (REST and MCP) serves the web app and AI assistants from a local cache, and the web app can also read Arkiv directly from the browser. This page covers the diagram, the pipeline stages, extraction, resolution and severity, the Arkiv data contract in brief, how it stays up to date, the fallback chain and privacy.
 
 **Contents**
 
@@ -31,7 +31,7 @@ flowchart LR
     D[Maharashtra FDA<br/>NSQ table]
     E[WHO Medical<br/>Product Alerts]
   end
-  subgraph Railway [Nazar-backend · Railway, Singapore]
+  subgraph Backend [Nazar-backend · pipeline in GitHub Actions · read API on Vercel, Mumbai]
     H[Harvest<br/>sha256 store]
     X[Extract<br/>ruled tables · OCR ·<br/>grounded LLM]
     R[Resolve<br/>brand · plant · case ·<br/>severity rules]
@@ -87,7 +87,7 @@ Every request, document and source has a hard deadline, so one slow government s
 | `curated` | Nazar curators | Reviewed rows with source links, e.g. the Oct 2025 DEG syrups | on |
 | `tg-dca`, `ka-dc`, `kl-dc` | Telangana, Karnataka, Kerala | | off: geo-blocked outside India, or site down |
 
-**What the live server holds (18 Oct 2026):** 23 documents from 6 sources, 1,438 rows, **1,404 alerts published to Arkiv** (21 notices), 32 drug-level records, 9 rows in the curator queue, 0 failed documents. Live numbers: [`/health`](https://nazar-api-production.up.railway.app/health).
+**What the live server holds (18 Oct 2026):** 23 documents from 6 sources, 1,438 rows, **1,404 alerts published to Arkiv** (21 notices), 32 drug-level records, 9 rows in the curator queue, 0 failed documents. Live numbers: [`/health`](https://nazar-api-seven.vercel.app/health).
 
 ## Extraction tiers
 
@@ -160,15 +160,13 @@ No one is in the loop. A new notice is fetched, read, resolved and published to 
 
 | Where | What | When |
 |---|---|---|
-| Railway worker | CDSCO sources | every 6 hours (`NAZAR_CRON_CDSCO`, default `0 */6 * * *`) |
-| Railway worker | State regulators and WHO | every 3 hours (`NAZAR_CRON_STATES`, default `30 */3 * * *`) |
-| Railway worker | Renew the heartbeat entity on Arkiv | every 5 minutes (`NAZAR_CRON_HEARTBEAT`) |
+| Vercel (`nazar-api`, `bom1`) | Read API (REST, MCP, feeds, snapshot) from the committed ledger `Nazar-backend/seed/nazar.sqlite` | on every push that changes `Nazar-backend/` |
 | GitHub Actions: **CI** (`ci.yml`) | Backend typecheck and tests with coverage; frontend typecheck, scanner tests and build; then the e2e suite in headless Chrome | every push |
-| GitHub Actions: **Pipeline** (`pipeline.yml`) | Harvest, extract and publish (dry-run unless `NAZAR_PUBLISH_MODE=live` and the key are in the repo secrets) | every 6 hours |
-| GitHub Actions: **Monitor** (`monitor.yml`) | Fails (and emails the owner) if the API is down, CDSCO is unreachable from the server's region, the heartbeat is stale, or SR-13 stops being flagged | hourly |
+| GitHub Actions: **Pipeline** (`pipeline.yml`) | Harvest, extract and publish (dry-run unless `NAZAR_PUBLISH_MODE=live` and the key are in the repo secrets), starting from the committed ledger and committing it back when alerts change, which redeploys the API | every 6 hours |
+| GitHub Actions: **Monitor** (`monitor.yml`) | Fails (and emails the owner) if the API is down, SR-13 stops being flagged, or the snapshot is missing | hourly |
 | GitHub Actions: **Refresh saved snapshot** (`snapshot.yml`) | Fetches the API snapshot into `Nazar-frontend/public/data/snapshot.json` and commits it only if it changed, which redeploys the site | daily (07:10 IST) |
 
-Each run reconciles with Arkiv before sending, so nothing is published twice. The backend runs on Railway in **Singapore** because CDSCO refuses connections from US cloud regions; `/health` reports the region and CDSCO reachability on every boot.
+Each run reconciles with Arkiv before sending, so nothing is published twice. CDSCO refuses connections from US cloud regions, which includes GitHub's runners, so CDSCO documents are harvested from an Asian IP (`pnpm cli run && pnpm seed:export`, then commit). A Docker worker in Asia (Fly.io `bom`, see `Nazar-backend/docs/deploy.md`) can take over the whole schedule.
 
 ## The fallback chain
 

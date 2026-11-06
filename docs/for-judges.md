@@ -32,15 +32,15 @@ Arkiv is the database, not a badge on a dashboard.
 | 3 | Open the entity on the explorer: [`0x346f…fe54`](https://tiramisu.explorer.arkiv.network/entity/0x346f83d7a8bed1003081605c0ad3bc76fa953b4eefea2c8a0cc9128ed180fe54) (publisher: [`0xd06d…6bD2`](https://tiramisu.explorer.arkiv.network/address/0xd06d85Eb20f126f796E4a341b711B1a757c66bD2)) | The same alert on Arkiv Tiramisu, created by Nazar's publisher |
 | 4 | Type `B.No. SR-13`, then `5R-13` | The label is ignored (still **Flagged**); `5R-13` is **Can't tell** with "Did you mean SR-13?", never a flag |
 | 5 | Open **[/arkiv](https://nazar-nu.vercel.app/arkiv)**, switch the run mode to **From my browser**, set **Child Shield** and severity 4+ | The query string and SDK code change with each filter; results come straight from the Arkiv RPC |
-| 6 | Open **[/ai](https://nazar-nu.vercel.app/ai)**, or run `claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp` and ask "Is batch SR-13 of Coldrif flagged?" | The same four-state answer, with the notice and the Arkiv proof |
+| 6 | Open **[/ai](https://nazar-nu.vercel.app/ai)**, or run `claude mcp add --transport http nazar https://nazar-api-seven.vercel.app/mcp` and ask "Is batch SR-13 of Coldrif flagged?" | The same four-state answer, with the notice and the Arkiv proof |
 | 7 | Open **[/b/SR-13](https://nazar-nu.vercel.app/b/SR-13)** | The public share page with its preview card, the notice and "Verify on Arkiv" |
-| 8 | Open **[Alerts](https://nazar-nu.vercel.app/feed)** → **Subscribe (RSS)**, or the feed itself: [`/v1/alerts.rss`](https://nazar-api-production.up.railway.app/v1/alerts.rss) | An RSS feed that follows your filters; items link to `/b/` pages |
+| 8 | Open **[Alerts](https://nazar-nu.vercel.app/feed)** → **Subscribe (RSS)**, or the feed itself: [`/v1/alerts.rss`](https://nazar-api-seven.vercel.app/v1/alerts.rss) | An RSS feed that follows your filters; items link to `/b/` pages |
 
 More batches to try: `TG25-2281A` (Levcon-M, CDSCO spurious), `R01GL2523` and `LSL25160` (Respifresh TR and ReLife, the same WHO alert), `AB1234` (**No alert found**, "not a safety certificate"). Optional: **EN | हिं** in the header switches to Hindi.
 
 ## Real vs demo
 
-- **Real:** every alert comes from a regulator document Nazar downloaded and read; the live API holds 23 documents from 6 sources and **1,404 alerts published to Arkiv** in 21 notices (18 Oct 2026; [`/health`](https://nazar-api-production.up.railway.app/health), [`/v1/arkiv/summary`](https://nazar-api-production.up.railway.app/v1/arkiv/summary)). A heartbeat entity on Arkiv is renewed every 5 minutes.
+- **Real:** every alert comes from a regulator document Nazar downloaded and read; the live API holds 23 documents from 6 sources and **1,404 alerts published to Arkiv** in 21 notices (18 Oct 2026; [`/health`](https://nazar-api-seven.vercel.app/health), [`/v1/arkiv/summary`](https://nazar-api-seven.vercel.app/v1/arkiv/summary)). A heartbeat entity on Arkiv is renewed every 5 minutes.
 - **Curated, and labelled:** a small seed of reviewed rows with source links (for example the Oct 2025 DEG syrups) is its own source, `curated`.
 - **Demo data:** only when the device is offline on a first visit and none of the API, Arkiv or the saved copy can answer. The status pill then says "Offline · demo data".
 
@@ -52,7 +52,7 @@ More batches to try: `TG25-2281A` (Levcon-M, CDSCO spurious), `R01GL2523` and `L
 | Extraction | PDF table geometry first, 6 templates, OCR fallback, a grounded LLM only for rejected rows (every value must appear in the source text); confidence tiers ≥ 0.90 auto, 0.60–0.89 "machine-read", below 0.60 curator queue |
 | Publishing | one atomic `executeBatch` per notice with predicted keys, idempotent by row id, dry-run by default |
 | Tests | **430** backend unit and golden tests, **39** scanner parser tests, **750** e2e checks in headless Chrome (363 with the API down, 387 with a mocked API) |
-| Automation | Railway worker (CDSCO every 6 h, states and WHO every 3 h, heartbeat every 5 min) and 4 GitHub workflows: CI, Pipeline, Monitor (hourly: API, CDSCO egress, heartbeat, SR-13 still flagged), daily snapshot refresh |
+| Automation | Read API on Vercel (Mumbai) serving the committed ledger, and 4 GitHub workflows: CI, Pipeline (every 6 h, commits the ledger when alerts change, which redeploys the API), Monitor (hourly: API up, SR-13 still flagged, snapshot served), daily snapshot refresh |
 | On the device | QR, Data Matrix and GS1 decoding, a Pack Reader that reads the brand and salts, a saved copy for instant and offline checks, a 500-row Shelf sweep |
 | Interfaces | web app, REST API with RSS/Atom/JSON feeds, read-only MCP server with 6 tools |
 | Quality | WebGL2 particle hero with a still-image fallback (software renderer, performance caveat, reduced motion); 44 px touch targets; reduced motion respected; skip link and ARIA labels; 360–430 px layouts and dark mode tested |

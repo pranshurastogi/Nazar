@@ -3,8 +3,8 @@
 > Nazar checks Indian medicine batch numbers against official regulator alerts (CDSCO, state drug controllers, WHO) and publishes every alert as a verifiable, read-only public entity on Arkiv. It gives one of four honest answers and never certifies a medicine as safe. Built by Pranshu Rastogi for the Arkiv Global Tour, Best Indian Use Case track.
 
 Live app: https://nazar-nu.vercel.app
-API: https://nazar-api-production.up.railway.app
-MCP: https://nazar-api-production.up.railway.app/mcp
+API: https://nazar-api-seven.vercel.app
+MCP: https://nazar-api-seven.vercel.app/mcp
 Source: https://github.com/pranshurastogi/Nazar (MIT)
 Short version of this file: https://nazar-nu.vercel.app/llms.txt
 
@@ -53,14 +53,14 @@ How to answer users (the same instructions the MCP server sends):
 
 ## MCP server (for AI agents)
 
-Endpoint: `https://nazar-api-production.up.railway.app/mcp`. Stateless Streamable HTTP, JSON responses, read-only, no authentication. Limits: 60 tool calls and 240 requests per minute per client (salted IP hash), 64 KB bodies. GET returns 405 by design.
+Endpoint: `https://nazar-api-seven.vercel.app/mcp`. Stateless Streamable HTTP, JSON responses, read-only, no authentication. Limits: 60 tool calls and 240 requests per minute per client (salted IP hash), 64 KB bodies. GET returns 405 by design.
 
 Setup:
 
-- Claude Code: `claude mcp add --transport http nazar https://nazar-api-production.up.railway.app/mcp`
-- `.mcp.json`: `{"mcpServers":{"nazar":{"type":"http","url":"https://nazar-api-production.up.railway.app/mcp"}}}`
-- Cursor: `{"mcpServers":{"nazar":{"url":"https://nazar-api-production.up.railway.app/mcp"}}}`
-- VS Code: `{"servers":{"nazar":{"type":"http","url":"https://nazar-api-production.up.railway.app/mcp"}}}`
+- Claude Code: `claude mcp add --transport http nazar https://nazar-api-seven.vercel.app/mcp`
+- `.mcp.json`: `{"mcpServers":{"nazar":{"type":"http","url":"https://nazar-api-seven.vercel.app/mcp"}}}`
+- Cursor: `{"mcpServers":{"nazar":{"url":"https://nazar-api-seven.vercel.app/mcp"}}}`
+- VS Code: `{"servers":{"nazar":{"type":"http","url":"https://nazar-api-seven.vercel.app/mcp"}}}`
 - Claude Desktop, claude.ai, ChatGPT: add a custom connector with the URL (no auth).
 
 Tools:
@@ -80,7 +80,7 @@ Worked example. User: "Is batch SR-13 of Coldrif safe for my child?" The agent c
 
 ## REST API
 
-Base: `https://nazar-api-production.up.railway.app`. JSON. Errors: `{ "error": { "code", "message", "retryAfterSec"? } }`.
+Base: `https://nazar-api-seven.vercel.app`. JSON. Errors: `{ "error": { "code", "message", "retryAfterSec"? } }`.
 
 - `GET /v1/check?batch=SR-13`: `{ state, batch, asOf, alerts[], suggestion?, source }`
 - `GET /v1/alerts`: newest first; filters `minSeverity`, `peds`, `state`, `source`, `productClass` (medicine | cosmetic | hygiene), `sinceYm`, `limit`, `offset`
@@ -114,7 +114,7 @@ Base: `https://nazar-api-production.up.railway.app`. JSON. Errors: `{ "error": {
 4. Publish: write notices and alerts to Arkiv in batches from one publisher wallet; renew the heartbeat.
 5. Serve: REST API, MCP server, RSS/Atom/JSON feeds, and a snapshot for instant, offline checks.
 
-Automation: the Railway worker (Singapore, so Indian sites answer) checks CDSCO every 6 hours and the state regulators every 3 hours. GitHub Actions run CI on every push, a backup pipeline every 6 hours, an hourly monitor (API up, CDSCO reachable, heartbeat fresh, SR-13 still flagged), and a daily refresh of the site's saved snapshot.
+Automation: the read API runs on Vercel in Mumbai and serves the ledger the pipeline commits. GitHub Actions run CI on every push, the pipeline every 6 hours, an hourly monitor (API up, SR-13 still flagged, snapshot served), and a daily refresh of the site's saved snapshot.
 
 Fallback chain in the app: Nazar API → Arkiv read directly from the browser → Nazar's saved copy (on the device and on the site) → built-in demo data (only offline on a first visit). Every answer says which source answered.
 

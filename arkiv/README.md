@@ -121,8 +121,8 @@ const nazar = (e.attributes as Record<string, { value: unknown }>).project?.valu
 ### Other ways to run the same queries
 
 - **In the app:** [`/arkiv`](https://nazar-nu.vercel.app/arkiv). "Via Nazar API" calls `GET /v1/arkiv/entities` (which reads Arkiv, never Nazar's ledger). "From my browser" sends the query straight from your browser to the public RPC. Both show the query string and a copyable SDK program.
-- **Over HTTP:** `GET https://nazar-api-production.up.railway.app/v1/arkiv/entities?type=alert&peds=1&sevMin=4` returns one page with the exact `query` string, a `cursor` and the pinned `block`; pass `cursor` and `block` back for the next page. `GET /v1/arkiv/summary` returns live counts and breakdowns.
-- **From an AI assistant:** the MCP `arkiv_proof` tool, at `https://nazar-api-production.up.railway.app/mcp`.
+- **Over HTTP:** `GET https://nazar-api-seven.vercel.app/v1/arkiv/entities?type=alert&peds=1&sevMin=4` returns one page with the exact `query` string, a `cursor` and the pinned `block`; pass `cursor` and `block` back for the next page. `GET /v1/arkiv/summary` returns live counts and breakdowns.
+- **From an AI assistant:** the MCP `arkiv_proof` tool, at `https://nazar-api-seven.vercel.app/mcp`.
 
 ## How an alert is shaped
 

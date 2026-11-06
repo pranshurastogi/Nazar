@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data', 'snapshot.json')
-const PROD = 'https://nazar-api-production.up.railway.app'
+const PROD = 'https://nazar-api-seven.vercel.app'
 
 const origin = (() => {
   for (const v of [process.env.NAZAR_API_ORIGIN, process.env.NEXT_PUBLIC_NAZAR_API_URL]) {

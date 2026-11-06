@@ -2,7 +2,7 @@
 
 Nazar's HTTP API is the same one the web app uses: batch checks, the alert feed and search, the regulator documents, a daily snapshot, live reads from Arkiv, subscribable feeds, and the two opt-in AI endpoints. It is read-only for regulator data, needs no key, and answers with the same four states as the app; it never calls a medicine "safe". This page lists every endpoint with its parameters, an example, the error shape, rate limits, CORS and caching.
 
-**Base URL:** `https://nazar-api-production.up.railway.app` (Railway, Singapore). Locally: `http://localhost:8787` ([development](development.md#run-it-yourself)).
+**Base URL:** `https://nazar-api-seven.vercel.app` (Vercel, Mumbai). Locally: `http://localhost:8787` ([development](development.md#run-it-yourself)).
 
 **Contents**
 
@@ -46,7 +46,7 @@ All responses are JSON unless noted. Alert objects (`AlertDTO`) carry the resolv
 | `batch` | required, up to 200 characters. A printed label ("B.No. SR-13") is stripped first. |
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/check?batch=SR-13' \
+curl -s 'https://nazar-api-seven.vercel.app/v1/check?batch=SR-13' \
   | jq '{state, batch, source, alerts: [.alerts[] | {brand, authority, noticeTitle, severity, entityKey}]}'
 ```
 
@@ -87,7 +87,7 @@ The feed, newest first (undated rows after dated ones). Only publishable tiers (
 | `productClass` | `medicine`, `cosmetic` or `hygiene` (hand sanitiser, cleaning liquid) |
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/alerts?minSeverity=4&peds=1&productClass=medicine&limit=5' | jq '{total, first: .items[0].brand}'
+curl -s 'https://nazar-api-seven.vercel.app/v1/alerts?minSeverity=4&peds=1&productClass=medicine&limit=5' | jq '{total, first: .items[0].brand}'
 ```
 
 Returns `{ "items": AlertDTO[], "total": number }`.
@@ -107,7 +107,7 @@ One alert by row id (hex, 8–64 characters). 404 if unknown or not publishable.
 They take the same filters as `/v1/alerts` (`limit` default 50, max 200) and contain the same rows. The feed title reflects the filters; each item links to the batch's share page on the site (`NAZAR_SITE_URL`, e.g. `https://nazar-nu.vercel.app/b/SR-13`) and, in Atom, to the regulator notice. Every item ends with: "Nazar repeats what the regulator published. It is not medical advice and never a safety certificate." Regulator text is XML-escaped and only http(s) links are emitted. CORS is open on these three paths so browser-based feed readers can fetch them.
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/alerts.rss?peds=1&minSeverity=4'
+curl -s 'https://nazar-api-seven.vercel.app/v1/alerts.rss?peds=1&minSeverity=4'
 ```
 
 ### `GET /v1/search`
@@ -120,7 +120,7 @@ curl -s 'https://nazar-api-production.up.railway.app/v1/alerts.rss?peds=1&minSev
 Full-text search (SQLite FTS5) over brand, product, generic, manufacturer and reason. Returns `{ "items": AlertDTO[] }`.
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/search?q=coldrif&limit=5' | jq '[.items[] | {batch, brand, authority}]'
+curl -s 'https://nazar-api-seven.vercel.app/v1/search?q=coldrif&limit=5' | jq '[.items[] | {batch, brand, authority}]'
 ```
 
 ### `GET /v1/cases/:caseId`
@@ -163,7 +163,7 @@ Entity keys and row ids are left out on purpose (random hex, incompressible), so
 `ok`, `version`, `mode` (`dry-run` or `live`), `publisher`, `chainId`, ledger `stats` (documents, alerts, published, pending, drug-level, curator queue, failed documents), `egress` (the server's region and whether CDSCO is reachable from it) and `warnings`.
 
 ```bash
-curl -s https://nazar-api-production.up.railway.app/health | jq '{mode, chainId, stats, egress: .egress.country}'
+curl -s https://nazar-api-seven.vercel.app/health | jq '{mode, chainId, stats, egress: .egress.country}'
 ```
 
 ## Arkiv
@@ -193,7 +193,7 @@ One page of entities with the exact Arkiv query string and an SDK program for it
 Filters that do not apply to the chosen `type` and reversed ranges are rejected with 400.
 
 ```bash
-curl -s 'https://nazar-api-production.up.railway.app/v1/arkiv/entities?type=alert&peds=1&sevMin=4&limit=5' | jq '{block, cursor, query: .query.string, first: .items[0].key}'
+curl -s 'https://nazar-api-seven.vercel.app/v1/arkiv/entities?type=alert&peds=1&sevMin=4&limit=5' | jq '{block, cursor, query: .query.string, first: .items[0].key}'
 ```
 
 Returns `{ items, cursor, block, query: { string, sdk }, cached }`. Each item has `key`, `type`, `creator`, `owner`, `official`, `flags` (`readonly`, `permissionlessExtension`), `createdAtBlock`, `expiresAtBlock`, `expiresAtEstimate`, typed `attributes` and `payload`. Why the block is pinned: [docs/arkiv.md](arkiv.md#pagination-must-pin-the-block).

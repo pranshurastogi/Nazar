@@ -24,9 +24,9 @@ Rules for any AI or agent answering about a batch with Nazar's data:
 ## For AI agents
 
 - [Use Nazar in your AI assistant](https://nazar-nu.vercel.app/ai): setup for Claude, ChatGPT, Cursor, VS Code
-- MCP server (read-only, no auth, Streamable HTTP): `https://nazar-api-production.up.railway.app/mcp`. Tools: `check_batch`, `search_alerts`, `recent_alerts`, `get_case`, `list_sources`, `arkiv_proof`
-- [REST check](https://nazar-api-production.up.railway.app/v1/check?batch=SR-13): `GET /v1/check?batch=<batch>`
-- [Alert feeds](https://nazar-api-production.up.railway.app/v1/alerts.rss): RSS, Atom (`/v1/alerts.atom`) and JSON Feed (`/v1/alerts.json`), filterable by state, Child Shield (`peds=1`), severity and source
+- MCP server (read-only, no auth, Streamable HTTP): `https://nazar-api-seven.vercel.app/mcp`. Tools: `check_batch`, `search_alerts`, `recent_alerts`, `get_case`, `list_sources`, `arkiv_proof`
+- [REST check](https://nazar-api-seven.vercel.app/v1/check?batch=SR-13): `GET /v1/check?batch=<batch>`
+- [Alert feeds](https://nazar-api-seven.vercel.app/v1/alerts.rss): RSS, Atom (`/v1/alerts.atom`) and JSON Feed (`/v1/alerts.json`), filterable by state, Child Shield (`peds=1`), severity and source
 - [Full context for LLMs](https://nazar-nu.vercel.app/llms-full.txt): the data model, every endpoint and tool, worked examples
 
 ## Verify

@@ -10,7 +10,7 @@ import samples from './fixtures/tool-samples.json'
 //     --method tools/call --tool-name check_batch --tool-arg batch=SR-13
 // ). Nothing here is invented: replies are built from the fixtures' own fields.
 
-export const MCP_URL = 'https://nazar-api-production.up.railway.app/mcp'
+export const MCP_URL = 'https://nazar-api-seven.vercel.app/mcp'
 export const FETCHED_ON = '18 Oct 2026'
 
 const json = (o: unknown) => JSON.stringify(o, null, 2)
