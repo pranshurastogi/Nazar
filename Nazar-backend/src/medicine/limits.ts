@@ -10,7 +10,7 @@ export const hashIp = (ip: string, salt: string) => createHash('sha256').update(
 
 export const randomSalt = () => randomBytes(16).toString('hex')
 
-/** First hop of X-Forwarded-For (what Railway's proxy sets), then X-Real-IP, then the socket address. */
+/** First hop of X-Forwarded-For (what Vercel's and most hosts' proxies set), then X-Real-IP, then the socket address. */
 export function clientIp(headers: Record<string, string | undefined>, socketAddress?: string): string {
   const xff = headers['x-forwarded-for']?.split(',')[0]?.trim()
   return xff || headers['x-real-ip']?.trim() || socketAddress || 'unknown'

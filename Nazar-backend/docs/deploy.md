@@ -1,6 +1,26 @@
 # Deploying the Nazar backend
 
-One Docker image runs everything: the read API, the pipeline worker, or both. It runs on Fly.io, Render, Railway or any Docker host.
+The live read API runs on **Vercel** (see [Vercel read API](#vercel-read-api-live)). For an always-on worker, one Docker image runs everything: the read API, the pipeline worker, or both, on Fly.io, Render or any Docker host.
+
+## Vercel read API (live)
+
+Live at <https://nazar-api-seven.vercel.app>: Vercel project `nazar-api`, root directory `Nazar-backend`, one Node 24 function in Mumbai (`bom1`), free Hobby plan.
+
+- **What it serves:** every route of `src/api/app.ts` (REST, feeds, snapshot, MCP, the medicine explainer). Live batch checks still confirm against Arkiv through the reader.
+- **Where the data comes from:** the committed ledger `seed/nazar.sqlite`. `pnpm build:vercel` (`scripts/build-vercel.mjs`) bundles `src/api/vercel.ts` with esbuild into `.vercel/output` (Build Output API) and ships the seed next to it. At cold start the seed is copied to `/tmp` and opened there; nothing written survives, so the function only reads.
+- **How it updates:** the Pipeline workflow starts from the seed, runs, then `pnpm seed:export --if-changed` and commits the file when alerts or notices changed. The push redeploys the function. `vercel.json` skips the build when nothing under `Nazar-backend/` changed.
+- **No worker here:** functions cannot keep a disk or run long OCR jobs. GitHub's runners are in the US, where CDSCO refuses connections, so harvest CDSCO from a Mac or an Asian host and commit the seed:
+
+```bash
+cd Nazar-backend
+pnpm cli run --since 202601 --limit 20   # harvest, extract, resolve (dry-run)
+pnpm cli publish --limit 500             # with the publisher key in .env: reconciles entity keys from Arkiv (add --live to publish)
+pnpm seed:export && git add seed/nazar.sqlite && git commit -m "Refresh the ledger seed" && git push
+```
+
+- **Variables** (Vercel → `nazar-api` → Settings → Environment Variables): `NAZAR_PUBLISHER_ADDRESS` (public address, never the key), `NAZAR_PUBLISH_MODE=dry-run`, `NAZAR_CORS_ORIGINS=https://nazar-nu.vercel.app`, `NAZAR_SITE_URL`, `NAZAR_IP_SALT`, `GEMINI_API_KEY`, `ARKIV_API_KEY`.
+- **Try the build locally:** `node scripts/build-vercel.mjs --smoke` bundles the function and answers `/health`, `/v1/check`, `/v1/alerts` and `/v1/snapshot` through it. CI runs the same.
+- **Frontend:** the web app's `NAZAR_API_ORIGIN` and `NEXT_PUBLIC_NAZAR_API_URL` point at the URL above.
 
 | `NAZAR_ROLE` | Runs | Use it for |
 |---|---|---|
@@ -16,7 +36,7 @@ Some Indian state regulator sites refuse non-Indian IPs. Telangana DCA (`dca.tel
 
 - **Fly.io, region `bom` (Mumbai).** `fly.toml` is set up for this. The volume is created in the same region.
 - **DigitalOcean droplet in BLR1 (Bengaluru)** or **AWS Lightsail in ap-south-1 (Mumbai)**, running the same image with `docker run` (see [Any Docker host](#any-docker-host)).
-- Render and Railway have no Indian region. They work, but keep `tg-dca` and `ka-dc` off.
+- Render has no Indian region. It works, but keep `tg-dca` and `ka-dc` off.
 
 An Indian IP is necessary but may not be enough: government sites sometimes block data-centre ranges too. Test from the box before enabling a source:
 
@@ -72,42 +92,7 @@ fly machine restart
 
 ## Railway
 
-This is the live deploy: <https://nazar-api-production.up.railway.app>, in Singapore, `NAZAR_ROLE=all`, `NAZAR_PUBLISH_MODE=live`.
-
-> **Region must be Singapore (`asia-southeast1-eqsg3a`).** From Railway's US regions CDSCO refuses every connection, so the pipeline would silently lose all national alerts. Railway starts new services in the US by default. A region written in `railway.toml` was **not** applied to our CLI uploads, so the file has been removed.
-
-The service configuration lives in **`.railway/railway.ts`** (Railway infrastructure as code). It pins the replica *and* the volume to Singapore, sets the `/health` check and a single replica. Variables are deliberately unmanaged, so secrets never enter the repo.
-
-```bash
-cd Nazar-backend
-railway config plan     # diff against the live project; expect "already up to date"
-railway config apply    # enforce it, e.g. after recreating the service
-```
-
-The server also checks itself at startup (`src/pipeline/egress.ts`). It looks up its egress country, probes CDSCO and reports the result on `/health` (`egress`, `warnings`) and `/v1/pipeline/status`. A misplaced server logs an error rather than quietly harvesting nothing. `.github/workflows/monitor.yml` checks this every hour, along with heartbeat freshness and a known-flagged batch, and fails (GitHub emails the owner) if anything is wrong:
-
-```bash
-curl -s https://<service>.up.railway.app/health | jq '.egress, .warnings'
-# expect: country "SG", cdsco "ok", warnings []
-```
-
-**Setting it up from scratch:**
-
-1. New Project → Deploy from GitHub repo → `pranshurastogi/Nazar`. Alternatively, from `Nazar-backend/`, run `railway init` then `railway up`.
-2. Service → Settings → **Root Directory** `Nazar-backend`. The Dockerfile is detected.
-3. Service → Settings → **Regions** → **Southeast Asia (Singapore)**, with 1 replica. **Do this by hand, or run `railway config apply`.** From the CLI: `railway service scale southeast-asia=1 us-west=0`.
-4. Service → **Volumes** → mount at **`/app/data`**, in the same region.
-5. Service → **Variables**:
-   - `NAZAR_ROLE=all`
-   - `NAZAR_RUN_ON_START=true`
-   - `NAZAR_DATA_DIR=/app/data`
-   - `NAZAR_CORS_ORIGINS=https://nazar-nu.vercel.app`
-   - `NAZAR_PUBLISH_MODE=dry-run`, then `live`
-   - `NAZAR_PUBLISHER_PRIVATE_KEY=0x…`
-6. Settings → Networking → **Generate Domain**. Check `/health`: `egress.cdsco` must be `"ok"`.
-7. Set `NEXT_PUBLIC_NAZAR_API_URL` to that domain in Vercel and redeploy.
-
-On a fresh server the first run re-harvests and the publisher reconciles against Arkiv by row id. Alerts that are already published are adopted, never re-sent.
+Nazar ran on Railway (Singapore) until November 2026; it is no longer used. Any Docker host in Asia works the same way (see [Any Docker host](#any-docker-host)): one replica, a volume at `/app/data`, `NAZAR_ROLE=all`, and `/health` must show `egress.cdsco: "ok"`.
 
 ## Render
 
@@ -120,7 +105,7 @@ The persistent disk needs a paid plan. Region is Singapore, so leave the geo-blo
 
 ## Any Docker host
 
-This covers DigitalOcean BLR1, Lightsail ap-south-1, Railway, or a laptop:
+This covers DigitalOcean BLR1, Lightsail ap-south-1, or a laptop:
 
 ```bash
 docker build -t nazar-backend Nazar-backend

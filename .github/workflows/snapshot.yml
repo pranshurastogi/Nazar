@@ -29,7 +29,7 @@ jobs:
           node-version: 24
       - name: Fetch the API snapshot
         env:
-          NAZAR_API_ORIGIN: https://nazar-api-production.up.railway.app
+          NAZAR_API_ORIGIN: ${{ vars.NAZAR_API_URL || 'https://nazar-api-seven.vercel.app' }}
         run: node Nazar-frontend/scripts/fetch-snapshot.mjs
       - name: Commit if the alert set changed
         run: |

@@ -50,11 +50,11 @@ To publish for real:
 2. Set `NAZAR_PUBLISH_MODE=live`.
 3. Run `pnpm cli publish --live`.
 
-Deploying: [`docs/deploy.md`](docs/deploy.md) (Railway in Singapore, Fly.io, Render, any Docker host).
+Deploying: [`docs/deploy.md`](docs/deploy.md) (Vercel read API in Mumbai, plus Fly.io, Render or any Docker host for a full worker).
 
 ## API
 
-Live at `https://nazar-api-production.up.railway.app` (Railway, Singapore). The Hono app is `src/api/app.ts`; every endpoint, its parameters, errors, rate limits, CORS and caching are documented in [**docs/api.md**](../docs/api.md).
+Live at `https://nazar-api-seven.vercel.app` (Vercel function, Mumbai `bom1`, serving the committed ledger `seed/nazar.sqlite`). The Hono app is `src/api/app.ts`; every endpoint, its parameters, errors, rate limits, CORS and caching are documented in [**docs/api.md**](../docs/api.md).
 
 - `/v1/check` answers from the ledger first. If the ledger has nothing, it falls back to the Arkiv reader, which always filters by the `project` tag and the publisher's `$creator`. A look-alike only ever returns a `suggestion`, never a flag.
 - `/v1/alerts`, its feeds (`/v1/alerts.rss`, `.atom`, `.json`, rendered in `src/api/feeds.ts`), `/v1/search`, `/v1/cases/:caseId`, `/v1/notices`, `/v1/sources` and `/v1/snapshot` read the ledger; `/v1/arkiv/summary` and `/v1/arkiv/entities` read Arkiv only (`src/arkiv/directory.ts`).

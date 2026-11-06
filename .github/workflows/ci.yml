@@ -31,6 +31,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test:coverage
+      # The Vercel function: bundle it with the committed ledger and answer real requests through it.
+      - run: node scripts/build-vercel.mjs --smoke
       - uses: actions/upload-artifact@v7
         if: always()
         with:

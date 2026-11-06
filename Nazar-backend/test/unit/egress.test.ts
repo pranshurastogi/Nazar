@@ -25,7 +25,7 @@ describe('checkEgress', () => {
     expect(s.cdsco).toBe('unreachable')
     expect(s.cdscoError).toBe('ETIMEDOUT')
     expect(s.warning).toMatch(/CDSCO is unreachable from Santa Clara, US/)
-    expect(s.warning).toMatch(/Singapore/)
+    expect(s.warning).toMatch(/Host the worker in Asia/)
   })
 
   it('treats an HTTP error as unreachable and survives a failed geo lookup', async () => {

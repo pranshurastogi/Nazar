@@ -1,0 +1,10 @@
+# The Vercel build only needs the source, the lockfile and the committed ledger (seed/).
+data
+coverage
+test
+docker
+docs
+.env
+.env.*
+.vercel/output
+.vercel/smoke-data

@@ -68,7 +68,7 @@ export async function checkEgress(
   const warning =
     cdsco === 'unreachable'
       ? `CDSCO is unreachable from ${where} (${cdscoError}). National alerts will not be harvested. ` +
-        'Host the server in Asia (Railway: Singapore, asia-southeast1-eqsg3a; Fly.io: bom). See Nazar-backend/docs/deploy.md.'
+        'Host the worker in Asia (e.g. Fly.io: bom). See Nazar-backend/docs/deploy.md.'
       : null
   return { checkedAt: now().toISOString(), ip, country, city, cdsco, cdscoError, warning }
 }
